@@ -244,6 +244,7 @@ function renderShare(data) {
   }
   lines.push('');
   lines.push('The finished items are backed by actual checks that ran, not a status update someone typed.');
+  lines.push('Built with atris: https://github.com/atrislabs/atris');
   return lines.join('\n');
 }
 

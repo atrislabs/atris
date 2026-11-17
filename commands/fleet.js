@@ -11,6 +11,9 @@
  *   atris fleet members          : List members
  *   atris fleet prune            : Remove stale members
  *   atris fleet join             : Register this session
+ *   atris fleet up <member>...   : Activate team members on the hub
+ *   atris fleet down <member>... : Deactivate launched members
+ *   atris fleet launched         : List activated members (alias: roster)
  */
 
 const http = require('http');
@@ -375,6 +378,365 @@ async function fleetWorkspaceStatus(root = process.cwd(), { json = false } = {})
   console.log();
 }
 
+// ── Member activation (up / down / launched) ─────────────
+//
+// `fleet up` gives each atris/team member its own Swarlo identity under
+// ~/.swarlo/identities/<server>/<hub>/<member>/ so its board posts carry the
+// member's name, then leaves a ready note in each channel. `fleet down`
+// posts a down note and drops the member from the launched list.
+// `fleet launched` (alias `roster`) shows who is activated. The name
+// `launched` matches the up/down verbs; `roster` is kept as a synonym.
+
+// Flags take `--flag value` or `--flag=value`. Positional args are members.
+// --engine takes member=profile pairs (repeatable); a bare profile applies
+// to every member without its own pair.
+function parseFleetMemberArgs(args) {
+  const out = { members: [], hub: '', server: '', channels: '', dryRun: false, json: false, engines: new Map(), engineAll: '' };
+  const valueFlags = { '--hub': 'hub', '--server': 'server', '--channels': 'channels' };
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = String(args[i]);
+    const eq = arg.indexOf('=');
+    const isFlagValue = eq > 0 && arg.startsWith('--');
+    const flag = isFlagValue ? arg.slice(0, eq) : arg;
+    const inline = isFlagValue ? arg.slice(eq + 1) : null;
+    const takeValue = () => {
+      if (inline !== null) return inline;
+      const next = args[i + 1];
+      if (next === undefined || String(next).startsWith('--')) return '';
+      i += 1;
+      return String(next);
+    };
+    if (flag === '--dry-run' && !isFlagValue) { out.dryRun = true; continue; }
+    if (flag === '--json' && !isFlagValue) { out.json = true; continue; }
+    if (flag === '--engine') {
+      const value = takeValue();
+      const sep = value.indexOf('=');
+      if (sep > 0) out.engines.set(value.slice(0, sep).trim().toLowerCase(), value.slice(sep + 1).trim());
+      else if (value) out.engineAll = value;
+      continue;
+    }
+    if (Object.prototype.hasOwnProperty.call(valueFlags, flag)) {
+      out[valueFlags[flag]] = takeValue();
+      continue;
+    }
+    if (!arg.startsWith('-')) out.members.push(arg);
+  }
+  return out;
+}
+
+// The args after the subcommand word inside scope.args, so flag values are
+// never mistaken for members the way the argv/flags split would.
+function lifecycleTailArgs(scopeArgs, subcommand) {
+  const index = scopeArgs.indexOf(subcommand);
+  return index >= 0 ? scopeArgs.slice(index + 1) : scopeArgs.slice(1);
+}
+
+// A --engine profile names a runner profile ("claude", "codex"); the first
+// word is tried when the whole value does not resolve ("claude haiku").
+function engineIdForProfile(profile) {
+  const { canonicalEngineName } = require('../lib/engine-registry');
+  const text = String(profile || '').trim();
+  if (!text) return '';
+  return canonicalEngineName(text) || canonicalEngineName(text.split(/[\s,]+/)[0]) || '';
+}
+
+function memberResult(member) {
+  return { member, stage: 'resolve', engine: null, channels: [], error: null, identity: '', awake: null, warning: null };
+}
+
+function emitLifecycleResults(kind, results, extra, asJson) {
+  if (asJson) {
+    const ready = results.filter((r) => r.stage === 'ready' || r.stage === 'planned').length;
+    console.log(JSON.stringify({
+      command: kind,
+      hub: extra.hub || null,
+      server: extra.server || null,
+      members: results,
+      summary: { total: results.length, ready, failed: results.length - ready },
+    }, null, 2));
+    return;
+  }
+  for (const r of results) {
+    if (r.stage === 'ready') {
+      console.log(`  ✓ ${r.member} is ${kind === 'down' ? 'down' : `ready on ${r.engine} in ${r.channels.map((c) => `#${c}`).join(' ')}.`}`);
+    } else if (r.stage === 'planned') {
+      console.log(`  ○ ${r.member} would be ready on ${r.engine} in ${r.channels.map((c) => `#${c}`).join(' ')} (dry run).`);
+    } else if (r.stage === 'missing') {
+      console.log(`  · ${r.member} is not launched.`);
+    } else {
+      console.log(`  ✗ ${r.member} failed at ${r.stage}: ${r.error}`);
+    }
+    if (r.warning) console.log(`    note: ${r.warning}`);
+  }
+}
+
+async function fleetUp(parsed, asJson) {
+  const swarlo = require('../lib/swarlo-members');
+  const { workspaceRoot } = require('../lib/workspace-root');
+  const { readMemberCard, resolveEngineForMember } = require('../lib/member-engine');
+  const { setMemberAwake } = require('../lib/member-switches');
+
+  const root = workspaceRoot(process.cwd());
+  const shared = loadConfig();
+  const server = parsed.server || process.env.SWARLO_SERVER || shared.server || DEFAULT_HUB_URL;
+  const hub = parsed.hub || process.env.SWARLO_HUB || shared.hub || DEFAULT_HUB_ID;
+  const configured = swarlo.configuredChannels(shared);
+  const channels = parsed.channels
+    ? parsed.channels.split(',').map((c) => c.trim()).filter(Boolean)
+    : (configured.length ? configured : ['common']);
+
+  const results = parsed.members.map(memberResult);
+
+  // Dry run resolves members and engines locally and never touches the hub.
+  if (!parsed.dryRun) {
+    const health = await swarlo.hubHealth(server);
+    if (!health.ok) {
+      for (const r of results) {
+        r.stage = 'preflight';
+        r.error = `hub not reachable at ${server}`;
+      }
+      emitLifecycleResults('up', results, { hub, server }, asJson);
+      process.exitCode = 2;
+      return;
+    }
+  }
+
+  // The CLI's own hub key can sponsor registrations on hubs that require
+  // an existing member's authority.
+  let sponsorKey = '';
+  try {
+    const state = loadState();
+    if (state.api_key && state.hub_id === hub) sponsorKey = state.api_key;
+  } catch {}
+
+  const launched = swarlo.loadLaunched();
+  let launchedDirty = false;
+
+  for (let index = 0; index < parsed.members.length; index += 1) {
+    const name = parsed.members[index];
+    const r = results[index];
+
+    const card = readMemberCard(root, name);
+    if (!card.found) {
+      r.error = `no team member named ${name} (atris/team/${name}/MEMBER.md)`;
+      continue;
+    }
+    const memberName = card.name || name;
+
+    r.stage = 'engine';
+    const overrideProfile = parsed.engines.get(name) || parsed.engineAll;
+    if (overrideProfile) {
+      const engineId = engineIdForProfile(overrideProfile);
+      if (!engineId) {
+        r.error = `engine profile "${overrideProfile}" is not recognized`;
+        continue;
+      }
+      r.engine = engineId;
+      r.warning = 'engine set by --engine, roster pick skipped';
+    } else {
+      const picked = resolveEngineForMember(name, root);
+      if (!picked.engine) {
+        r.error = picked.reason || 'no ready engine';
+        continue;
+      }
+      r.engine = picked.engine.id;
+      if (picked.runs_here === false) r.warning = `roster says ${name} runs on ${picked.runs_on_label || picked.runs_on}, not this machine`;
+    }
+
+    r.channels = [...channels];
+    if (parsed.dryRun) {
+      r.stage = 'planned';
+      r.identity = 'dry-run';
+      continue;
+    }
+
+    r.stage = 'identity';
+    const identDir = swarlo.identityDirFor({ server, hub, member: name });
+    const existing = swarlo.loadIdentity(identDir);
+    let token = existing ? existing.token : '';
+    if (token) {
+      r.identity = 'reused';
+    } else {
+      const inviteToken = process.env.SWARLO_INVITE_TOKEN || '';
+      const reg = await swarlo.registerMember(
+        { server, hub, memberId: name, memberName, inviteToken, sponsorKey },
+      );
+      if (!reg.ok) {
+        r.error = `register failed (HTTP ${reg.status})`;
+        continue;
+      }
+      token = reg.token;
+      swarlo.saveIdentity(identDir, {
+        server,
+        hub,
+        member_id: name,
+        member_name: memberName,
+        member_type: 'agent',
+        token,
+      });
+      r.identity = 'registered';
+    }
+
+    r.stage = 'channels';
+    r.channels = [];
+    for (const channel of channels) {
+      const post = await swarlo.postChannelNote({
+        server,
+        hub,
+        channel,
+        content: `${name} is ready on ${r.engine}`,
+        kind: 'status',
+        token,
+        memberId: name,
+        memberName,
+      });
+      if (!post.ok) {
+        r.error = `post to #${channel} failed (HTTP ${post.status})`;
+        break;
+      }
+      r.channels.push(channel);
+    }
+    if (r.error) continue;
+
+    try {
+      setMemberAwake(name, true, root);
+      r.awake = true;
+    } catch {
+      r.awake = false;
+    }
+
+    if (!launched[hub] || typeof launched[hub] !== 'object') launched[hub] = {};
+    launched[hub][name] = {
+      server,
+      engine: r.engine,
+      channels: [...r.channels],
+      member_name: memberName,
+      launched_at: new Date().toISOString(),
+    };
+    launchedDirty = true;
+    r.stage = 'ready';
+  }
+
+  if (launchedDirty) swarlo.saveLaunched(launched);
+  emitLifecycleResults('up', results, { hub, server }, asJson);
+
+  const ready = results.filter((r) => r.stage === 'ready' || r.stage === 'planned').length;
+  process.exitCode = ready === results.length ? 0 : (ready > 0 ? 1 : 2);
+}
+
+async function fleetDown(parsed, asJson) {
+  const swarlo = require('../lib/swarlo-members');
+  const launched = swarlo.loadLaunched();
+  const hubFilter = parsed.hub || '';
+  const serverFilter = parsed.server ? swarlo.serverSlug(parsed.server) : '';
+  const results = parsed.members.map(memberResult);
+  let changed = false;
+
+  for (let index = 0; index < parsed.members.length; index += 1) {
+    const name = parsed.members[index];
+    const r = results[index];
+    r.stage = 'down';
+    const hits = [];
+    for (const [hub, members] of Object.entries(launched)) {
+      if (hubFilter && hub !== hubFilter) continue;
+      const entry = members && typeof members === 'object' ? members[name] : null;
+      if (!entry) continue;
+      if (serverFilter && swarlo.serverSlug(entry.server || '') !== serverFilter) continue;
+      hits.push({ hub, entry });
+    }
+    if (!hits.length) {
+      r.stage = 'missing';
+      r.error = hubFilter ? `not launched on ${hubFilter}` : 'not launched';
+      continue;
+    }
+
+    for (const { hub, entry } of hits) {
+      r.hub = hub;
+      r.engine = entry.engine || r.engine;
+      const channels = Array.isArray(entry.channels) && entry.channels.length ? entry.channels : ['common'];
+      const ident = swarlo.loadIdentity(swarlo.identityDirFor({ server: entry.server, hub, member: name }));
+      const token = ident ? ident.token : '';
+      for (const channel of channels) {
+        if (!token) break;
+        try {
+          const post = await swarlo.postChannelNote({
+            server: entry.server,
+            hub,
+            channel,
+            content: `${name} is down`,
+            kind: 'status',
+            token,
+            memberId: name,
+            memberName: entry.member_name || name,
+          });
+          if (post.ok) r.channels.push(channel);
+        } catch {}
+      }
+      delete launched[hub][name];
+      if (!Object.keys(launched[hub]).length) delete launched[hub];
+      changed = true;
+    }
+    r.stage = 'ready';
+    r.error = null;
+  }
+
+  if (changed) swarlo.saveLaunched(launched);
+  emitLifecycleResults('down', results, {}, asJson);
+  process.exitCode = 0;
+}
+
+function fleetLaunchedView(asJson) {
+  const swarlo = require('../lib/swarlo-members');
+  const state = swarlo.loadLaunched();
+  const rows = [];
+  for (const [hub, members] of Object.entries(state)) {
+    for (const [member, entry] of Object.entries(members || {})) {
+      if (!entry || typeof entry !== 'object') continue;
+      rows.push({
+        member,
+        hub,
+        server: entry.server || '',
+        engine: entry.engine || '',
+        channels: Array.isArray(entry.channels) ? entry.channels : [],
+        launched_at: entry.launched_at || '',
+      });
+    }
+  }
+  rows.sort((a, b) => a.member.localeCompare(b.member) || a.hub.localeCompare(b.hub));
+  if (asJson) {
+    console.log(JSON.stringify({ launched: rows, count: rows.length }, null, 2));
+    return;
+  }
+  if (!rows.length) {
+    console.log('  No launched members.');
+    return;
+  }
+  console.log('  Launched members:');
+  for (const row of rows) {
+    const channels = row.channels.length ? row.channels.map((c) => `#${c}`).join(' ') : '';
+    console.log(`    ${row.member} on ${row.hub} (${row.server}) ${row.engine} ${channels}`.trimEnd());
+  }
+}
+
+async function fleetMemberLifecycle(subcommand, scopeArgs, { json } = {}) {
+  const parsed = parseFleetMemberArgs(lifecycleTailArgs(scopeArgs, subcommand));
+  const asJson = json || parsed.json;
+  if (subcommand === 'launched' || subcommand === 'roster') {
+    fleetLaunchedView(asJson);
+    return;
+  }
+  if (!parsed.members.length) {
+    console.error(`Usage: atris fleet ${subcommand} <member> [member...] [--hub <id>] [--server <url>] [--channels <csv>] [--engine <member=profile>] [--dry-run] [--json]`);
+    process.exitCode = 2;
+    return;
+  }
+  if (subcommand === 'down') {
+    await fleetDown(parsed, asJson);
+    return;
+  }
+  await fleetUp(parsed, asJson);
+}
+
 // ── Main ────────────────────────────────────────────────
 
 async function fleet(args = []) {
@@ -398,6 +760,11 @@ async function fleet(args = []) {
     console.log('  fleet members      who is online');
     console.log('  fleet prune [min]  remove stale members (default 60m)');
     console.log('  fleet watch [sec]  live-tail the board (default 10s)');
+    console.log('  fleet up <member>  activate team members on the hub');
+    console.log('                      ([--hub id] [--server url] [--channels a,b]');
+    console.log('                       [--engine member=profile] [--dry-run] [--json])');
+    console.log('  fleet down <member> deactivate launched members ([--hub id])');
+    console.log('  fleet launched     list activated members (alias: roster)');
     console.log('');
     return;
   }
@@ -410,6 +777,13 @@ async function fleet(args = []) {
   if (!scope.global && ['post', 'say', 'task', 'claim', 'done', 'report', 'prune', 'watch', 'tail'].includes(subcommand)) {
     console.error('fleet mutations need the machine hub. re-run with --global.');
     process.exitCode = 1;
+    return;
+  }
+
+  // Member activation manages per-member hub identities; it always targets
+  // the machine hub, so it does not wait on --global or the CLI's own join.
+  if (['up', 'down', 'launched', 'roster'].includes(subcommand)) {
+    await fleetMemberLifecycle(subcommand, scope.args, { json });
     return;
   }
 
@@ -478,4 +852,4 @@ async function fleet(args = []) {
   }
 }
 
-module.exports = { fleet, fleetWorkspaceStatus };
+module.exports = { fleet, fleetWorkspaceStatus, parseFleetMemberArgs };

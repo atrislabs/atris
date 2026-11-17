@@ -1,0 +1,1052 @@
+'use strict';
+
+// The run at 2026-11-15T11:18Z (atris/runs/autoland-tick-2026-11-15T11-18-42-411Z.json)
+// took 4,893 seconds and landed nothing. Four healthy branches ran the whole
+// local suite in a scratch copy on a machine with a load average near 150,
+// hit the 20 minute limit, and were marked red with reason verify_timed_out.
+// The repo already has the real gate: a required merge queue with the hosted
+// check "test". These tests hold the lander to letting that gate decide.
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+
+const { landStaleGreenBranches, followQueuedLandings, summaryLine } = require('../lib/land-green');
+const { isPullRequestLookup, pullRequestAnswer, emptyAnswerJson } = require('./helpers/branch-pull-requests');
+
+const daysAgo = (n) => new Date(Date.now() - n * 24 * 3600 * 1000).toISOString();
+
+function git(cwd, args, env = {}) {
+  const result = spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, ...env } });
+  if (result.status !== 0) throw new Error(`git ${args.join(' ')}: ${result.stderr || result.stdout}`);
+  return result.stdout.trim();
+}
+
+function commitAll(cwd, message, when = daysAgo(3)) {
+  git(cwd, ['add', '-A']);
+  git(cwd, ['-c', 'user.name=Bench Author', '-c', 'user.email=bench@example.com', 'commit', '-q', '-m', message], {
+    GIT_AUTHOR_DATE: when,
+    GIT_COMMITTER_DATE: when,
+  });
+  return git(cwd, ['rev-parse', 'HEAD']);
+}
+
+// The lockfile names a package that does not exist, so an install that runs
+// fails and shows up as install_failed instead of passing quietly.
+function makeRepo() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-'));
+  git(root, ['init', '-q', '-b', 'master']);
+  git(root, ['config', 'user.name', 'Bench Author']);
+  git(root, ['config', 'user.email', 'bench@example.com']);
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'fixture', version: '0.0.0', scripts: { test: 'node -e "process.exit(1)"' } }));
+  fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({
+    name: 'fixture', version: '0.0.0', lockfileVersion: 3, requires: true,
+    packages: { '': { name: 'fixture', version: '0.0.0' }, 'node_modules/no-such-package-for-atris-tests': { version: '0.0.1' } },
+  }, null, 2));
+  fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '# builder\n');
+  commitAll(root, 'base', daysAgo(10));
+  return root;
+}
+
+function withOrigin(root) {
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-origin-'));
+  git(bare, ['init', '-q', '--bare', '-b', 'master']);
+  git(root, ['remote', 'add', 'origin', bare]);
+  git(root, ['push', '-q', 'origin', 'master']);
+  git(root, ['fetch', '-q', 'origin']);
+  return bare;
+}
+
+function branchWith(root, name, file, when = daysAgo(3)) {
+  git(root, ['checkout', '-q', '-b', name]);
+  fs.writeFileSync(path.join(root, file), `${name}\n`);
+  const sha = commitAll(root, `${name} work`, when);
+  git(root, ['checkout', '-q', 'master']);
+  return sha;
+}
+
+// The branch rules GitHub returned for atrislabs/atris master on 2026-11-15.
+const GUARDED_RULES = JSON.stringify([
+  { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'test' }] } },
+  { type: 'merge_queue', parameters: { merge_method: 'MERGE', grouping_strategy: 'ALLGREEN' } },
+]);
+
+function fakeGh({ rules = GUARDED_RULES } = {}) {
+  const calls = [];
+  let next = 40;
+  const runGh = (args) => {
+    calls.push(args);
+    if (isPullRequestLookup(args)) return pullRequestAnswer(args);
+    if (args[0] === 'api' && /\/rules\/branches\//.test(args[1])) {
+      return rules === null ? { ok: false, stdout: '', stderr: 'HTTP 404' } : { ok: true, stdout: rules, stderr: '' };
+    }
+    if (args[0] === 'api' && /\/protection/.test(args[1])) return { ok: false, stdout: '', stderr: 'HTTP 404: Branch not protected' };
+    if (args[0] === 'pr' && args[1] === 'list') return { ok: true, stdout: '[]', stderr: '' };
+    if (args[0] === 'pr' && args[1] === 'create') { next += 1; return { ok: true, stdout: `https://github.com/acme/repo/pull/${next}`, stderr: '' }; }
+    if (args[0] === 'pr' && args[1] === 'merge') return { ok: true, stdout: '', stderr: '' };
+    return { ok: false, stdout: '', stderr: 'unexpected gh call' };
+  };
+  return { calls, runGh };
+}
+
+const noTasks = () => { throw new Error('no job expected'); };
+const noFlags = () => { throw new Error('no flag expected'); };
+
+function cleanup(...dirs) {
+  for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true });
+}
+
+test('behind a required merge queue the local suite is never started: five branches are caught up and queued', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  try {
+    const names = ['feat/one', 'feat/two', 'feat/three', 'feat/four', 'feat/five'];
+    names.forEach((name, i) => branchWith(root, name, `f${i}.txt`, daysAgo(3 + i)));
+    const gh = fakeGh();
+    let suites = 0;
+    const recorded = [];
+    const started = Date.now();
+    const result = landStaleGreenBranches(root, {
+      mergePath: 'pull_request',
+      runVerifyFn: () => { suites += 1; throw new Error('the local suite must not start on a guarded repo'); },
+      runGh: gh.runGh,
+      recordQueued: (cwd, fields) => recorded.push(fields),
+      readQueued: () => null,
+      runCli: noFlags,
+      fileConflictTask: noTasks,
+    });
+    assert.equal(suites, 0, 'no local suite ran');
+    assert.deepEqual(result.queued.sort(), [...names].sort(), JSON.stringify(result.verdicts));
+    for (const v of result.verdicts) {
+      assert.equal(v.local_check, 'hosted', JSON.stringify(v));
+      assert.equal(v.verify, undefined, 'no local verify result');
+    }
+    assert.equal(result.local_check.local, false);
+    assert.deepEqual(result.local_check.checks, ['test']);
+    assert.equal(gh.calls.filter((c) => c[0] === 'api' && !isPullRequestLookup(c)).length, 1, 'the guard is read once per run');
+    // One read for all five, then one more each just before its push.
+    assert.equal(gh.calls.filter(isPullRequestLookup).length, 1 + 5, 'the pull requests of all five branches are read in one call, then once each before the push');
+    assert.equal(gh.calls.filter(isPullRequestLookup)[0].filter((a) => /^h\d+=/.test(a)).length, 5, 'the first read asks for all five');
+    const create = gh.calls.find((c) => c[1] === 'create');
+    assert.match(create[create.indexOf('--body') + 1], /hosted checks/);
+    assert.doesNotMatch(create[create.indexOf('--body') + 1], /checked with/);
+    assert.equal(recorded.length, 5);
+    assert.equal(git(bare, ['rev-parse', 'master']), git(root, ['rev-parse', 'master']), 'master on origin never pushed');
+    assert.ok(Date.now() - started < 60 * 1000, 'five candidates take well under a minute');
+  } finally {
+    cleanup(root, bare);
+  }
+});
+
+test('the owner can force the local check on behind a merge queue, or off on a repo with no required checks', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  try {
+    fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: { '': {} } }));
+    commitAll(root, 'empty lock', daysAgo(9));
+    git(root, ['push', '-q', 'origin', 'master']);
+    branchWith(root, 'feat/one', 'one.txt');
+    const red = () => ({ status: 1, failing: ['a break'], failing_all: ['a break'], command: 'npm test', duration_ms: 1, timed_out: false, tail: '' });
+    let suites = 0;
+    const base = { mergePath: 'pull_request', recordQueued: () => {}, readQueued: () => null, openFlags: false, fileConflictTask: noTasks, stateFile: '' };
+    // Forced on behind the merge queue: the local suite runs.
+    const on = landStaleGreenBranches(root, { ...base, localCheck: true, runGh: fakeGh().runGh, runVerifyFn: () => { suites += 1; return red(); } });
+    assert.equal(suites >= 1, true, JSON.stringify(on.verdicts[0]));
+    assert.equal(on.verdicts[0].local_check, 'local');
+    // No required checks and no override: the local check stays as today.
+    suites = 0;
+    const open = landStaleGreenBranches(root, { ...base, runGh: fakeGh({ rules: '[]' }).runGh, runVerifyFn: () => { suites += 1; return red(); } });
+    assert.equal(open.verdicts[0].local_check, 'local', JSON.stringify(open.verdicts[0]));
+    assert.equal(open.local_check.local, true);
+    assert.equal(suites >= 1, true);
+    suites = 0;
+    // Rules that cannot be read keep the local check too.
+    const unknown = landStaleGreenBranches(root, { ...base, dryRun: true, runGh: fakeGh({ rules: null }).runGh });
+    assert.equal(unknown.verdicts[0].local_check, 'local');
+    // Forced off: queued for whatever the hosted side runs.
+    const off = landStaleGreenBranches(root, { ...base, localCheck: false, runGh: fakeGh({ rules: '[]' }).runGh, runVerifyFn: () => { suites += 1; return red(); } });
+    assert.equal(off.verdicts[0].action, 'queued', JSON.stringify(off.verdicts[0]));
+    assert.equal(suites, 0);
+  } finally {
+    cleanup(root, bare);
+  }
+});
+
+test('a dry run on a guarded repo names each healthy branch as would-queue with no local check', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  try {
+    branchWith(root, 'feat/one', 'one.txt');
+    const result = landStaleGreenBranches(root, { mergePath: 'pull_request', dryRun: true, runGh: fakeGh().runGh, readQueued: () => null, runVerifyFn: noFlags });
+    assert.equal(result.verdicts[0].would, 'queue', JSON.stringify(result.verdicts[0]));
+    assert.equal(result.verdicts[0].local_check, 'hosted');
+  } finally {
+    cleanup(root, bare);
+  }
+});
+
+test('a local check that runs out of time is could-not-tell: never red, no flag, one try per run, tried again later', () => {
+  const root = makeRepo();
+  try {
+    // No remote, so the local check is the only gate. An empty lockfile
+    // means nothing to install.
+    fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: { '': {} } }));
+    commitAll(root, 'empty lock', daysAgo(9));
+    branchWith(root, 'feat/one', 'one.txt', daysAgo(5));
+    branchWith(root, 'feat/two', 'two.txt', daysAgo(4));
+    const stateFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-state-')), 'state.json');
+    let suites = 0;
+    const slow = () => { suites += 1; return { status: null, timed_out: true, failing: ['half a test'], failing_all: ['half a test'], command: 'npm test', duration_ms: 1200000, tail: '' }; };
+    const opts = { push: false, runVerifyFn: slow, runCli: noFlags, fileConflictTask: noTasks, stateFile };
+    const first = landStaleGreenBranches(root, opts);
+    assert.equal(suites, 1, 'one timed-out try per run');
+    assert.deepEqual(first.red, []);
+    const by = Object.fromEntries(first.verdicts.map((v) => [v.branch, v]));
+    assert.equal(by['feat/one'].action, 'unknown', JSON.stringify(by['feat/one']));
+    assert.equal(by['feat/one'].reason, 'verify_timed_out');
+    assert.equal(by['feat/two'].action, 'unknown');
+    assert.equal(by['feat/two'].reason, 'machine_busy');
+    assert.match(summaryLine(first), /could not tell/);
+    // The next run tries again instead of waiting for a new commit.
+    const second = landStaleGreenBranches(root, opts);
+    assert.equal(suites, 2);
+    assert.notEqual(second.verdicts[0].reason, 'waiting_for_change', JSON.stringify(second.verdicts[0]));
+    fs.rmSync(path.dirname(stateFile), { recursive: true, force: true });
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('an earlier verify_timed_out red is treated as not tried', () => {
+  const root = makeRepo();
+  try {
+    fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: { '': {} } }));
+    commitAll(root, 'empty lock', daysAgo(9));
+    const head = branchWith(root, 'feat/hygiene-restore-cli', 'one.txt');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-state-'));
+    const stateFile = path.join(dir, 'state.json');
+    // The shape the 11:18Z run left behind.
+    fs.writeFileSync(stateFile, JSON.stringify({ schema: 'atris.land_green.v1', branches: {
+      'feat/hygiene-restore-cli': { head, base: git(root, ['rev-parse', 'master']), verify: 'npm test', action: 'red', reason: 'verify_timed_out', misses: 1, at: '2026-11-15T11:19:13.898Z' },
+    } }));
+    let suites = 0;
+    const result = landStaleGreenBranches(root, {
+      push: false, runCli: () => ({ status: 0, stdout: '' }), fileConflictTask: noTasks, stateFile,
+      runVerifyFn: () => { suites += 1; return { status: 0, failing: [], command: 'npm test', duration_ms: 1, timed_out: false, tail: '' }; },
+    });
+    assert.equal(suites, 1, JSON.stringify(result.verdicts));
+    assert.notEqual(result.verdicts[0].reason, 'waiting_for_change');
+    fs.rmSync(dir, { recursive: true, force: true });
+  } finally {
+    cleanup(root);
+  }
+});
+
+// What the next run reads back from GitHub for a pull request the lander queued.
+function queueEntry(fields = {}) {
+  return { branch: 'feat/one', base: 'master', number: 41, pushed: 'a'.repeat(40), source: 'land-green', task_ids: [], requeues: 0, reran: false, queued_at: new Date().toISOString(), ...fields };
+}
+
+function ghFor({ view, checks }) {
+  const calls = [];
+  const runGh = (args) => {
+    calls.push(args);
+    if (args[0] === 'pr' && args[1] === 'view') return { ok: true, stdout: JSON.stringify(view), stderr: '' };
+    // gh exits nonzero when a check failed; the list is still on stdout.
+    if (args[0] === 'pr' && args[1] === 'checks') return { ok: false, stdout: JSON.stringify(checks), stderr: '' };
+    return { ok: false, stdout: '', stderr: 'unexpected gh call' };
+  };
+  return { calls, runGh };
+}
+
+test('a queued pull request that merged is done and its lander memory is cleared', () => {
+  const memory = { 'feat/one': { head: 'x', reason: 'verify_timed_out' } };
+  const gh = ghFor({ view: { state: 'MERGED', headRefOid: 'a'.repeat(40), mergedAt: new Date().toISOString() }, checks: [] });
+  const out = followQueuedLandings('/nowhere', {
+    runGh: gh.runGh, readEntries: () => ({ 'feat/one': queueEntry() }), markEntry: noTasks, fileChecksTask: noTasks, memory, runCli: noFlags,
+  });
+  assert.equal(out.results[0].state, 'merged');
+  assert.equal(memory['feat/one'], undefined);
+});
+
+test('failed hosted checks go back to a builder as a job naming the checks, once, never to the owner', () => {
+  const failing = [
+    { name: 'unit (6/8)', bucket: 'fail' },
+    { name: 'unit (2/8)', bucket: 'fail' },
+    { name: 'unit (1/8)', bucket: 'pass' },
+    { name: 'test', bucket: 'fail' },
+  ];
+  const view = { state: 'OPEN', headRefOid: 'a'.repeat(40) };
+  // Not retried yet: the merge-line sweep runs the failed checks once first.
+  const fresh = followQueuedLandings('/nowhere', {
+    runGh: ghFor({ view, checks: failing }).runGh, readEntries: () => ({ 'feat/one': queueEntry() }),
+    markEntry: noTasks, fileChecksTask: noTasks, memory: {}, runCli: noFlags,
+  });
+  assert.equal(fresh.results[0].state, 'waiting_for_retry', JSON.stringify(fresh.results[0]));
+  // Retried once and still failing: a builder gets it.
+  const jobs = [];
+  const marks = [];
+  const entry = queueEntry({ reran: 'a'.repeat(40) });
+  const out = followQueuedLandings('/nowhere', {
+    runGh: ghFor({ view, checks: failing }).runGh, readEntries: () => ({ 'feat/one': entry }),
+    markEntry: (root, fields) => marks.push(fields),
+    fileChecksTask: (root, job) => { jobs.push(job); return { id: 'JOB-1', inserted: true }; },
+    memory: {}, runCli: noFlags,
+  });
+  assert.equal(out.results[0].state, 'handed_back', JSON.stringify(out.results[0]));
+  assert.equal(jobs.length, 1);
+  assert.deepEqual(jobs[0].checks, ['unit (6/8)', 'unit (2/8)', 'test']);
+  assert.equal(jobs[0].number, 41);
+  assert.equal(jobs[0].branch, 'feat/one');
+  assert.equal(marks[0].checks_handed_back, 'a'.repeat(40));
+  assert.equal(marks[0].checks_task, 'JOB-1');
+  // The next run sees the mark and files nothing new.
+  const again = followQueuedLandings('/nowhere', {
+    runGh: ghFor({ view, checks: failing }).runGh, readEntries: () => ({ 'feat/one': { ...entry, ...marks[0] } }),
+    markEntry: noTasks, fileChecksTask: noTasks, memory: {}, runCli: noFlags,
+  });
+  assert.equal(again.results[0].state, 'handed_back_earlier');
+});
+
+test('the follow-up reads only the lander\'s own entries and a dry run changes nothing', () => {
+  const gh = ghFor({ view: { state: 'OPEN', headRefOid: 'a'.repeat(40) }, checks: [{ name: 'test', bucket: 'fail' }] });
+  const out = followQueuedLandings('/nowhere', {
+    runGh: gh.runGh, dryRun: true,
+    readEntries: () => ({ 'feat/one': queueEntry({ reran: 'a'.repeat(40) }), 'member/x': queueEntry({ branch: 'member/x', source: 'member-autoland' }) }),
+    markEntry: noTasks, fileChecksTask: noTasks, memory: {}, runCli: noFlags,
+  });
+  assert.equal(out.results.length, 1);
+  assert.equal(out.results[0].state, 'would_hand_back');
+});
+
+test('a guarded run reads the queued pull requests before it lands anything', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  try {
+    branchWith(root, 'feat/one', 'one.txt');
+    const file = path.join(root, '.atris', 'state', 'autoland-queue.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ schema: 'atris.autoland_queue.v1', entries: { 'feat/old': queueEntry({ branch: 'feat/old', number: 9 }) } }));
+    const gh = fakeGh();
+    const runGh = (args, ...rest) => {
+      if (args[0] === 'pr' && args[1] === 'view') return { ok: true, stdout: JSON.stringify({ state: 'MERGED', headRefOid: 'a'.repeat(40), mergedAt: new Date().toISOString() }), stderr: '' };
+      return gh.runGh(args, ...rest);
+    };
+    const result = landStaleGreenBranches(root, { mergePath: 'pull_request', runGh, recordQueued: () => {}, readQueued: () => null, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags });
+    assert.deepEqual(result.followed.map((r) => [r.branch, r.state]), [['feat/old', 'merged']]);
+    assert.deepEqual(result.queued, ['feat/one']);
+  } finally {
+    cleanup(root, bare);
+  }
+});
+
+// Reviewer finding 1. With the local check as the gate, a branch whose suite
+// always runs out of time sat first in line forever: every run spent its one
+// try on it and every branch behind it read "machine busy". The try is now
+// remembered as a count only. Those branches go last next run, and after a
+// few on the same commits a builder gets a job. Still never red, never a flag.
+test('a branch whose local check always runs out of time cannot block the branches behind it', () => {
+  const root = makeRepo();
+  try {
+    fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: { '': {} } }));
+    commitAll(root, 'empty lock', daysAgo(9));
+    const hangs = branchWith(root, 'feat/hangs', 'hangs.txt', daysAgo(5));
+    branchWith(root, 'feat/healthy', 'healthy.txt', daysAgo(4));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-state-'));
+    const stateFile = path.join(dir, 'state.json');
+    const suites = [];
+    const runVerifyFn = (command, cwd) => {
+      const slow = fs.existsSync(path.join(cwd, 'hangs.txt'));
+      suites.push(slow ? 'feat/hangs' : 'other');
+      return slow
+        ? { status: null, timed_out: true, failing: [], failing_all: [], command: 'npm test', duration_ms: 1200000, tail: '' }
+        : { status: 0, timed_out: false, failing: [], command: 'npm test', duration_ms: 1, tail: '' };
+    };
+    const jobs = [];
+    // This test is about the order, so the per-run suite cap (its own test
+    // below) is raised out of the way.
+    const opts = {
+      push: false, runVerifyFn, runCli: noFlags, fileConflictTask: noTasks, stateFile, localSuites: 5,
+      fileSlowCheckTask: (cwd, job) => { jobs.push(job); return { id: 'JOB-7', inserted: true }; },
+    };
+    const runs = [1, 2, 3, 4].map(() => landStaleGreenBranches(root, opts));
+    const landed = runs.flatMap((r) => r.landed);
+    assert.deepEqual(landed, ['feat/healthy'], JSON.stringify(runs.map((r) => r.verdicts)));
+    assert.ok(runs[1].landed.includes('feat/healthy'), 'the healthy branch lands by the second run');
+    for (const r of runs) {
+      assert.deepEqual(r.red, [], 'never red');
+      assert.ok(suites.length <= 8);
+    }
+    // Three timed-out tries on the same commits, then a builder has it.
+    assert.equal(jobs.length, 1, JSON.stringify(runs.map((r) => r.verdicts)));
+    assert.equal(jobs[0].branch, 'feat/hangs');
+    assert.equal(jobs[0].head, hangs);
+    assert.equal(jobs[0].tries, 3);
+    const third = runs[2].verdicts.find((v) => v.branch === 'feat/hangs');
+    assert.equal(third.action, 'unknown');
+    assert.equal(third.hand_back.task_id, 'JOB-7');
+    // The fourth run starts no suite on it: it waits for a new commit.
+    const fourth = runs[3].verdicts.find((v) => v.branch === 'feat/hangs');
+    assert.equal(fourth.action, 'skipped', JSON.stringify(fourth));
+    assert.equal(fourth.reason, 'waiting_for_change');
+    assert.equal(suites.filter((s) => s === 'feat/hangs').length, 3);
+    const memory = JSON.parse(fs.readFileSync(stateFile, 'utf8')).branches;
+    assert.equal(memory['feat/hangs'].action, 'unknown', JSON.stringify(memory));
+    assert.equal(memory['feat/hangs'].untold, 3);
+    fs.rmSync(dir, { recursive: true, force: true });
+  } finally {
+    cleanup(root);
+  }
+});
+
+// Reviewer finding 3. The protected-lane and clash screens read the local
+// branch, but on the pull request path the catch-up starts from origin's
+// copy. Commits only on origin's copy went to the queue unscreened.
+test('commits that sit only on origin\'s copy of a branch are screened for protected lanes before queueing', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-clone-'));
+  try {
+    branchWith(root, 'feat/one', 'one.txt');
+    git(root, ['push', '-q', 'origin', 'feat/one']);
+    git(other, ['clone', '-q', bare, '.']);
+    git(other, ['checkout', '-q', 'feat/one']);
+    fs.mkdirSync(path.join(other, 'auth'), { recursive: true });
+    fs.writeFileSync(path.join(other, 'auth', 'login.js'), 'module.exports = 1;\n');
+    commitAll(other, 'touch the login lane', daysAgo(3));
+    git(other, ['push', '-q', 'origin', 'feat/one']);
+    const gh = fakeGh();
+    const result = landStaleGreenBranches(root, {
+      mergePath: 'pull_request', runGh: gh.runGh, recordQueued: () => {}, readQueued: () => null,
+      runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+    });
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.action, 'skipped', JSON.stringify(v));
+    assert.equal(v.reason, 'protected_surface');
+    assert.equal(gh.calls.filter((c) => c[0] === 'pr' && c[1] === 'merge').length, 0, 'nothing queued');
+  } finally {
+    cleanup(root, bare, other);
+  }
+});
+
+test('a builder\'s push to origin\'s copy after a hand-back is caught up and queued again, not left as in the merge queue', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-clone-'));
+  try {
+    branchWith(root, 'feat/one', 'one.txt');
+    git(root, ['push', '-q', 'origin', 'feat/one']);
+    const queuedSha = git(root, ['rev-parse', 'feat/one']);
+    git(other, ['clone', '-q', bare, '.']);
+    git(other, ['checkout', '-q', 'feat/one']);
+    fs.writeFileSync(path.join(other, 'fix.txt'), 'fix\n');
+    commitAll(other, 'make the checks pass', daysAgo(3));
+    git(other, ['push', '-q', 'origin', 'feat/one']);
+    const gh = fakeGh();
+    const result = landStaleGreenBranches(root, {
+      mergePath: 'pull_request', runGh: gh.runGh, recordQueued: () => {},
+      readQueued: () => ({ number: 41, pushed: queuedSha }),
+      runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+    });
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.action, 'queued', JSON.stringify(v));
+  } finally {
+    cleanup(root, bare, other);
+  }
+});
+
+test('handing back failed hosted checks switches auto-merge off so a later push waits for the lander', () => {
+  const failing = [{ name: 'test', bucket: 'fail' }];
+  const gh = ghFor({ view: { state: 'OPEN', headRefOid: 'a'.repeat(40) }, checks: failing });
+  const out = followQueuedLandings('/nowhere', {
+    runGh: gh.runGh, readEntries: () => ({ 'feat/one': queueEntry({ reran: 'a'.repeat(40) }) }),
+    markEntry: () => {}, fileChecksTask: () => ({ id: 'JOB-1', inserted: true }), memory: {}, runCli: noFlags,
+  });
+  assert.equal(out.results[0].state, 'handed_back');
+  const disable = gh.calls.find((c) => c[0] === 'pr' && c[1] === 'merge');
+  assert.ok(disable, JSON.stringify(gh.calls));
+  assert.deepEqual(disable.slice(0, 4), ['pr', 'merge', '41', '--disable-auto']);
+  // After the builder pushes, the follow-up says the lander takes it from here.
+  const changed = followQueuedLandings('/nowhere', {
+    runGh: ghFor({ view: { state: 'OPEN', headRefOid: 'b'.repeat(40) }, checks: [] }).runGh,
+    readEntries: () => ({ 'feat/one': queueEntry({ reran: 'a'.repeat(40), checks_handed_back: 'a'.repeat(40), checks_task: 'JOB-1' }) }),
+    markEntry: noTasks, fileChecksTask: noTasks, memory: {}, runCli: noFlags,
+  });
+  assert.equal(changed.results[0].state, 'changed');
+  assert.match(changed.results[0].line, /lander/);
+});
+
+// Reviewer finding 2. "atris land --auto" never read green_landing_local_check
+// and dropped an explicit --verify on a guarded repo.
+function cliFixture(policy) {
+  const root = makeRepo();
+  const holder = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-gh-'));
+  const bare = path.join(holder, 'github.com', 'acme', 'repo.git');
+  fs.mkdirSync(bare, { recursive: true });
+  git(bare, ['init', '-q', '--bare', '-b', 'master']);
+  git(root, ['remote', 'add', 'origin', bare]);
+  git(root, ['push', '-q', 'origin', 'master']);
+  git(root, ['fetch', '-q', 'origin']);
+  branchWith(root, 'feat/one', 'one.txt');
+  if (policy) {
+    fs.mkdirSync(path.join(root, '.atris', 'policy'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.atris', 'policy', 'autoland.json'), JSON.stringify(policy));
+  }
+  const bin = path.join(holder, 'bin');
+  fs.mkdirSync(bin);
+  const log = path.join(holder, 'gh-calls.log');
+  const rules = path.join(holder, 'rules.json');
+  fs.writeFileSync(rules, GUARDED_RULES);
+  fs.writeFileSync(path.join(bin, 'gh'), [
+    '#!/bin/sh',
+    `echo "$*" >> "${log}"`,
+    'case "$1 $2" in',
+    `  "api repos/{owner}/{repo}/rules/branches/"*) cat "${rules}" ;;`,
+    '  "pr list"*) echo "[]" ;;',
+    `  "api graphql"*) echo '${emptyAnswerJson()}' ;;`,
+    '  *) echo "unexpected" >&2; exit 1 ;;',
+    'esac',
+    '',
+  ].join('\n'));
+  fs.chmodSync(path.join(bin, 'gh'), 0o755);
+  return { root, holder, bin, log };
+}
+
+function runLandAuto(fx, extra = [], cwd = fx.root) {
+  const home = path.join(fx.holder, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const run = spawnSync(process.execPath, [cli, 'land', '--auto', '--dry-run', '--json', ...extra], {
+    cwd, encoding: 'utf8', timeout: 60000,
+    env: { ...process.env, HOME: home, PATH: `${fx.bin}${path.delimiter}${process.env.PATH}`, ATRIS_NO_BOOT: '1' },
+  });
+  const text = String(run.stdout || '');
+  const start = text.indexOf('{');
+  assert.ok(start >= 0, `no json: ${text} ${run.stderr}`);
+  return JSON.parse(text.slice(start));
+}
+
+test('atris land --auto honours the owner\'s green_landing_local_check switch on a guarded repo', () => {
+  const fx = cliFixture({ enabled: true, green_landing_local_check: true });
+  try {
+    const result = runLandAuto(fx);
+    assert.equal(result.local_check.local, true, JSON.stringify(result.local_check));
+    assert.equal(result.local_check.mode, 'on');
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.local_check, 'local', JSON.stringify(v));
+  } finally {
+    cleanup(fx.root, fx.holder);
+  }
+});
+
+test('atris land --auto with an explicit --verify runs that check locally even on a guarded repo', () => {
+  const fx = cliFixture(null);
+  try {
+    const result = runLandAuto(fx, ['--verify', 'node -e 0']);
+    assert.equal(result.local_check.local, true, JSON.stringify(result.local_check));
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.local_check, 'local', JSON.stringify(v));
+  } finally {
+    cleanup(fx.root, fx.holder);
+  }
+});
+
+test('atris land --auto with no switch still lets the hosted checks decide on a guarded repo', () => {
+  const fx = cliFixture(null);
+  try {
+    const result = runLandAuto(fx);
+    assert.equal(result.local_check.local, false, JSON.stringify(result.local_check));
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.local_check, 'hosted', JSON.stringify(v));
+  } finally {
+    cleanup(fx.root, fx.holder);
+  }
+});
+
+// Review on 2026-11-15, open defect 2. "atris land --auto" read the owner's
+// switch from the folder it ran in. Run from a work copy, that folder has no
+// policy, so the switch was never seen.
+test('atris land --auto run from a work copy reads the owner\'s switch from the main checkout', () => {
+  const fx = cliFixture({ enabled: true, green_landing_local_check: true });
+  const copy = path.join(fx.holder, 'copy');
+  try {
+    git(fx.root, ['worktree', 'add', '-q', '-b', 'feat/copy', copy, 'master']);
+    assert.equal(fs.existsSync(path.join(copy, '.atris', 'policy', 'autoland.json')), false, 'the copy has no policy of its own');
+    const result = runLandAuto(fx, [], copy);
+    assert.equal(result.local_check.mode, 'on', JSON.stringify(result.local_check));
+    assert.equal(result.local_check.local, true);
+  } finally {
+    cleanup(fx.root, fx.holder);
+  }
+});
+
+// Review on 2026-11-15, open defect 1, the lander's side. The mark a hand-back
+// leaves on the queue entry is cleared only when the lander itself screened
+// the builder's new commit and queued it again.
+test('the lander clears the hand-back mark only when it screens the new commit and queues it again', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-clone-'));
+  try {
+    branchWith(root, 'feat/one', 'one.txt');
+    git(root, ['push', '-q', 'origin', 'feat/one']);
+    const handedBack = git(root, ['rev-parse', 'feat/one']);
+    const file = path.join(root, '.atris', 'state', 'autoland-queue.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ schema: 'atris.autoland_queue.v1', entries: {
+      'feat/one': queueEntry({ pushed: handedBack, reran: handedBack, checks_handed_back: handedBack, checks_task: 'JOB-1' }),
+    } }));
+    git(other, ['clone', '-q', bare, '.']);
+    git(other, ['checkout', '-q', 'feat/one']);
+    fs.writeFileSync(path.join(other, 'fix.txt'), 'fix\n');
+    const fixed = commitAll(other, 'make the checks pass', daysAgo(3));
+    git(other, ['push', '-q', 'origin', 'feat/one']);
+    const gh = ghWithPr({ head: () => fixed, checks: [{ name: 'test', bucket: 'pass' }] });
+    const result = landStaleGreenBranches(root, {
+      mergePath: 'pull_request', runGh: gh.runGh, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+    });
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.action, 'queued', JSON.stringify(v));
+    const entry = JSON.parse(fs.readFileSync(file, 'utf8')).entries['feat/one'];
+    assert.equal(entry.pushed, v.sha);
+    assert.equal(entry.checks_handed_back, undefined, JSON.stringify(entry));
+    assert.equal(entry.checks_task, undefined);
+  } finally {
+    cleanup(root, bare, other);
+  }
+});
+
+// The incident on 2026-11-15: once the fixed lander went live, the hourly runs
+// of five projects on one machine each started whole local suites at the same
+// time. The load went from about 150 to 573 and every suite ran out of time.
+// The local check path now starts at most one suite per run, one at a time
+// across the machine, and none when the machine is already busy. None of
+// these marks anything red or opens a flag.
+const GREEN = { status: 0, timed_out: false, failing: [], failing_all: [], command: 'npm test', duration_ms: 1, tail: '' };
+
+function localRepo(names) {
+  const root = makeRepo();
+  fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: { '': {} } }));
+  commitAll(root, 'empty lock', daysAgo(9));
+  names.forEach((name, i) => branchWith(root, name, `f${i}.txt`, daysAgo(3 + i)));
+  return root;
+}
+
+function machineDir() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-machine-'));
+  return { dir, lockFile: path.join(dir, 'locks', 'local-suite.lock') };
+}
+
+// A busy machine is waited for, bounded. These tests run the wait on a fake
+// clock whose sleep only moves the clock, so nothing sleeps for real.
+function fakeClock() {
+  let now = Date.now();
+  return { clock: () => now, sleep: (ms) => { now += ms; } };
+}
+
+const quiet = (lockFile) => ({ lockFile, loadAvg: () => [0.5, 0.5, 0.5], cpuCount: () => 8, ...fakeClock() });
+
+function holdLock(lockFile, ageMs) {
+  fs.mkdirSync(path.dirname(lockFile), { recursive: true });
+  fs.writeFileSync(lockFile, JSON.stringify({ pid: 999999, host: os.hostname(), token: 'other', repo: 'another-project', at: new Date(Date.now() - ageMs).toISOString() }));
+}
+
+test('another project\'s local suite holds the machine: this run reports machine_busy and starts nothing', () => {
+  const root = localRepo(['feat/one', 'feat/two']);
+  const m = machineDir();
+  try {
+    holdLock(m.lockFile, 60 * 1000);
+    let suites = 0;
+    const result = landStaleGreenBranches(root, {
+      push: false, stateFile: null, runCli: noFlags, fileConflictTask: noTasks, fileSlowCheckTask: noTasks,
+      runVerifyFn: () => { suites += 1; return GREEN; },
+      machine: quiet(m.lockFile), localSuites: 5,
+    });
+    assert.equal(suites, 0, JSON.stringify(result.verdicts));
+    for (const v of result.verdicts) {
+      assert.equal(v.action, 'unknown', JSON.stringify(v));
+      assert.equal(v.reason, 'machine_busy');
+    }
+    assert.deepEqual(result.red, []);
+    assert.equal(JSON.parse(fs.readFileSync(m.lockFile, 'utf8')).token, 'other', 'the other project\'s lock is left alone');
+  } finally {
+    cleanup(root, m.dir);
+  }
+});
+
+test('a machine lock older than the suite time limit is abandoned: it is taken over and released after the suite', () => {
+  const root = localRepo(['feat/one']);
+  const m = machineDir();
+  try {
+    holdLock(m.lockFile, 25 * 60 * 1000);
+    let heldDuringSuite = null;
+    const result = landStaleGreenBranches(root, {
+      push: false, stateFile: null, runCli: noFlags, fileConflictTask: noTasks,
+      runVerifyFn: () => { heldDuringSuite = JSON.parse(fs.readFileSync(m.lockFile, 'utf8')); return GREEN; },
+      verifyTimeoutMs: 20 * 60 * 1000, machine: quiet(m.lockFile),
+    });
+    assert.deepEqual(result.landed, ['feat/one'], JSON.stringify(result.verdicts));
+    assert.ok(heldDuringSuite && heldDuringSuite.token !== 'other', 'this run held the lock while its suite ran');
+    assert.equal(heldDuringSuite.pid, process.pid);
+    assert.equal(fs.existsSync(m.lockFile), false, 'released after the suite');
+  } finally {
+    cleanup(root, m.dir);
+  }
+});
+
+test('the machine lock lives under the user\'s .atris folder by default', () => {
+  const root = localRepo(['feat/one']);
+  const m = machineDir();
+  // HOME and the test state folder both point at a throwaway folder, so the
+  // lock lands there whether or not this run is fenced as a test.
+  const saved = { ATRIS_TEST_STATE_DIR: process.env.ATRIS_TEST_STATE_DIR, HOME: process.env.HOME };
+  process.env.ATRIS_TEST_STATE_DIR = m.dir;
+  process.env.HOME = m.dir;
+  try {
+    const lockFile = path.join(m.dir, '.atris', 'locks', 'land-green-local-suite.lock');
+    holdLock(lockFile, 60 * 1000);
+    let suites = 0;
+    const result = landStaleGreenBranches(root, {
+      push: false, stateFile: null, runCli: noFlags, fileConflictTask: noTasks,
+      runVerifyFn: () => { suites += 1; return GREEN; },
+      machine: { loadAvg: () => [0.5], cpuCount: () => 8, ...fakeClock() },
+    });
+    assert.equal(suites, 0);
+    assert.equal(result.verdicts[0].reason, 'machine_busy', JSON.stringify(result.verdicts[0]));
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    cleanup(root, m.dir);
+  }
+});
+
+test('at most one local suite per run by default; the owner\'s green_landing_local_suites raises it', () => {
+  const names = ['feat/one', 'feat/two', 'feat/three'];
+  const root = localRepo(names);
+  const m = machineDir();
+  try {
+    let suites = 0;
+    const opts = {
+      push: false, stateFile: null, runCli: noFlags, fileConflictTask: noTasks,
+      runVerifyFn: () => { suites += 1; return GREEN; }, machine: quiet(m.lockFile),
+    };
+    const first = landStaleGreenBranches(root, opts);
+    assert.equal(suites, 1, JSON.stringify(first.verdicts));
+    assert.equal(first.landed.length, 1);
+    assert.deepEqual(first.red, []);
+    const waiting = first.verdicts.filter((v) => v.reason === 'local_check_limit');
+    assert.equal(waiting.length, 2, JSON.stringify(first.verdicts));
+    for (const v of waiting) assert.equal(v.action, 'skipped');
+    assert.match(summaryLine(first), /2 more waiting for the next tick/);
+    suites = 0;
+    const raised = landStaleGreenBranches(root, { ...opts, localSuites: 3 });
+    assert.equal(suites, 2, JSON.stringify(raised.verdicts));
+    assert.equal(raised.landed.length, 2);
+  } finally {
+    cleanup(root, m.dir);
+  }
+});
+
+test('no local suite starts when the one-minute load is above twice the cores', () => {
+  const root = localRepo(['feat/one']);
+  const m = machineDir();
+  try {
+    let suites = 0;
+    const base = {
+      push: false, stateFile: null, runCli: noFlags, fileConflictTask: noTasks,
+      runVerifyFn: () => { suites += 1; return GREEN; },
+    };
+    const busy = landStaleGreenBranches(root, { ...base, machine: { lockFile: m.lockFile, loadAvg: () => [17, 5, 5], cpuCount: () => 8, ...fakeClock() } });
+    assert.equal(suites, 0);
+    assert.equal(busy.verdicts[0].action, 'unknown', JSON.stringify(busy.verdicts[0]));
+    assert.equal(busy.verdicts[0].reason, 'machine_busy');
+    assert.match(busy.verdicts[0].detail, /load/);
+    assert.deepEqual(busy.red, []);
+    assert.equal(fs.existsSync(m.lockFile), false, 'no lock taken');
+    const fine = landStaleGreenBranches(root, { ...base, machine: { lockFile: m.lockFile, loadAvg: () => [16, 5, 5], cpuCount: () => 8, ...fakeClock() } });
+    assert.equal(suites, 1);
+    assert.deepEqual(fine.landed, ['feat/one']);
+  } finally {
+    cleanup(root, m.dir);
+  }
+});
+
+test('the machine guards leave the hosted path alone: a guarded repo still queues with a busy machine', () => {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  const m = machineDir();
+  try {
+    branchWith(root, 'feat/one', 'one.txt');
+    holdLock(m.lockFile, 60 * 1000);
+    const gh = fakeGh();
+    const result = landStaleGreenBranches(root, {
+      mergePath: 'pull_request', runGh: gh.runGh, recordQueued: () => {}, readQueued: () => null,
+      runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+      machine: { lockFile: m.lockFile, loadAvg: () => [500], cpuCount: () => 8, sleep: () => { throw new Error('the hosted path never waits'); } },
+    });
+    assert.deepEqual(result.queued, ['feat/one'], JSON.stringify(result.verdicts));
+  } finally {
+    cleanup(root, bare, m.dir);
+  }
+});
+
+test('atris land --auto respects the machine lock another project holds: machine_busy, nothing started, nothing red', () => {
+  const root = localRepo(['feat/one']);
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-machine-cli-'));
+  try {
+    // The owner turned waiting off, so this run gives up at once.
+    fs.mkdirSync(path.join(root, '.atris', 'policy'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.atris', 'policy', 'autoland.json'), JSON.stringify({ green_landing_wait_minutes: 0 }));
+    holdLock(path.join(state, '.atris', 'locks', 'land-green-local-suite.lock'), 60 * 1000);
+    const marker = path.join(state, 'suite-ran');
+    const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+    const run = spawnSync(process.execPath, [cli, 'land', '--auto', '--json', '--no-remote', '--verify', `node -e "require('fs').writeFileSync(${JSON.stringify(marker)}, '1')"`], {
+      cwd: root, encoding: 'utf8', timeout: 60000,
+      env: { ...process.env, HOME: state, ATRIS_TEST_STATE_DIR: state, ATRIS_NO_BOOT: '1' },
+    });
+    const text = String(run.stdout || '');
+    const result = JSON.parse(text.slice(text.indexOf('{')));
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.action, 'unknown', JSON.stringify(v));
+    assert.equal(v.reason, 'machine_busy');
+    assert.match(v.detail, /another local check holds the machine \(another-project\)/);
+    assert.equal(fs.existsSync(marker), false, 'no suite started');
+    assert.deepEqual(result.red, []);
+  } finally {
+    cleanup(root, state);
+  }
+});
+
+// Reviewer finding, second pass. A marked (handed-back) entry read as "in the
+// merge queue" to the lander and as "handed back" to the queue sweep: each
+// side waited for the other and nothing merged. The lander now screens every
+// marked entry whose checks do not fail right now, and queues it again.
+function handedBackRepo() {
+  const root = makeRepo();
+  const bare = withOrigin(root);
+  branchWith(root, 'feat/one', 'one.txt');
+  git(root, ['push', '-q', 'origin', 'feat/one']);
+  const s1 = git(root, ['rev-parse', 'feat/one']);
+  const file = path.join(root, '.atris', 'state', 'autoland-queue.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ schema: 'atris.autoland_queue.v1', entries: {
+    'feat/one': queueEntry({ pushed: s1, reran: s1, checks_handed_back: s1, checks_task: 'JOB-1' }),
+  } }));
+  return { root, bare, s1, file };
+}
+
+function ghWithPr({ head, checks }) {
+  const gh = fakeGh();
+  const base = gh.runGh;
+  gh.runGh = (args) => {
+    if (args[0] === 'pr' && args[1] === 'view') { gh.calls.push(args); return { ok: true, stdout: JSON.stringify({ state: 'OPEN', headRefOid: head(), mergedAt: null }), stderr: '' }; }
+    if (args[0] === 'pr' && args[1] === 'checks') { gh.calls.push(args); return { ok: !checks.some((c) => c.bucket === 'fail'), stdout: JSON.stringify(checks), stderr: '' }; }
+    return base(args);
+  };
+  return gh;
+}
+
+const queueCalls = (gh) => gh.calls.filter((c) => c[0] === 'pr' && c[1] === 'merge' && c.includes('--auto'));
+
+test('a handed-back pull request whose failed check passed on a rerun, with no push, is screened and queued again', () => {
+  const fx = handedBackRepo();
+  try {
+    const gh = ghWithPr({ head: () => fx.s1, checks: [{ name: 'test', bucket: 'pass' }] });
+    const result = landStaleGreenBranches(fx.root, {
+      mergePath: 'pull_request', runGh: gh.runGh, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+    });
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.action, 'queued', JSON.stringify(v));
+    assert.equal(queueCalls(gh).length, 1, JSON.stringify(gh.calls));
+    const entry = JSON.parse(fs.readFileSync(fx.file, 'utf8')).entries['feat/one'];
+    assert.equal(entry.checks_handed_back, undefined, JSON.stringify(entry));
+    const follow = result.followed.find((r) => r.branch === 'feat/one');
+    assert.doesNotMatch(follow.line, /waiting in the merge queue/);
+  } finally {
+    cleanup(fx.root, fx.bare);
+  }
+});
+
+test('a handed-back pull request whose fix was recorded by worktree ship is screened and queued again, not left in limbo', () => {
+  const fx = handedBackRepo();
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-clone-'));
+  try {
+    git(other, ['clone', '-q', fx.bare, '.']);
+    git(other, ['checkout', '-q', 'feat/one']);
+    fs.writeFileSync(path.join(other, 'fix.txt'), 'fix\n');
+    const s2 = commitAll(other, 'make the checks pass', daysAgo(3));
+    git(other, ['push', '-q', 'origin', 'feat/one']);
+    // worktree ship --merge records the pull request with no options.
+    require('../lib/member-autoland').recordQueuedPullRequest(fx.root, { branch: 'feat/one', base: 'master', number: 41, pushed: s2 });
+    assert.equal(JSON.parse(fs.readFileSync(fx.file, 'utf8')).entries['feat/one'].checks_handed_back, fx.s1, 'ship keeps the mark');
+    const gh = ghWithPr({ head: () => s2, checks: [{ name: 'test', bucket: 'pass' }] });
+    const result = landStaleGreenBranches(fx.root, {
+      mergePath: 'pull_request', runGh: gh.runGh, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+    });
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.action, 'queued', JSON.stringify(v));
+    const entry = JSON.parse(fs.readFileSync(fx.file, 'utf8')).entries['feat/one'];
+    assert.equal(entry.checks_handed_back, undefined, JSON.stringify(entry));
+    assert.ok(git(fx.root, ['merge-base', '--is-ancestor', s2, entry.pushed]) === '', 'the screened commit holds the fix');
+  } finally {
+    cleanup(fx.root, fx.bare, other);
+  }
+});
+
+test('a handed-back pull request that still fails on the same commit waits for its builder: not queued again, mark kept', () => {
+  const fx = handedBackRepo();
+  try {
+    const gh = ghWithPr({ head: () => fx.s1, checks: [{ name: 'test', bucket: 'fail' }] });
+    const result = landStaleGreenBranches(fx.root, {
+      mergePath: 'pull_request', runGh: gh.runGh, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+      fileChecksTask: noTasks,
+    });
+    const v = result.verdicts.find((x) => x.branch === 'feat/one');
+    assert.equal(v.action, 'skipped', JSON.stringify(v));
+    assert.equal(v.reason, 'handed_back');
+    assert.equal(queueCalls(gh).length, 0, JSON.stringify(gh.calls));
+    assert.equal(JSON.parse(fs.readFileSync(fx.file, 'utf8')).entries['feat/one'].checks_handed_back, fx.s1);
+  } finally {
+    cleanup(fx.root, fx.bare);
+  }
+});
+
+// Reviewer finding, second pass. With one local suite per run, an old failing
+// branch went first every time master moved and took the only suite, so the
+// healthy branch behind it was never checked.
+test('an old failing branch cannot take the only local suite from a healthy branch run after run', () => {
+  const root = makeRepo();
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-order-'));
+  try {
+    fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: { '': {} } }));
+    commitAll(root, 'empty lock', daysAgo(9));
+    branchWith(root, 'feat/old-red', 'bad.txt', daysAgo(6));
+    branchWith(root, 'feat/healthy', 'good.txt', daysAgo(4));
+    const verify = (command, cwd) => (fs.existsSync(path.join(cwd, 'bad.txt'))
+      ? { status: 1, timed_out: false, failing: ['bad test'], failing_all: ['bad test'], command: 'npm test', duration_ms: 1, tail: '' }
+      : GREEN);
+    const opts = {
+      push: false, stateFile: path.join(state, 'land-green.json'), runCli: () => ({ status: 0, stdout: '' }),
+      fileConflictTask: noTasks, fileSlowCheckTask: noTasks, runVerifyFn: verify,
+    };
+    const landed = [];
+    for (let run = 0; run < 3 && !landed.length; run += 1) {
+      const result = landStaleGreenBranches(root, opts);
+      landed.push(...result.landed);
+      fs.writeFileSync(path.join(root, `master-${run}.txt`), `${run}\n`);
+      commitAll(root, `master moves ${run}`, daysAgo(2));
+    }
+    assert.deepEqual(landed, ['feat/healthy']);
+  } finally {
+    cleanup(root, state);
+  }
+});
+
+// Reviewer finding, third pass. The hold was the exception: a handed-back
+// entry was queued again unless this run read failing checks. When GitHub
+// could not be read, or the failed check was running again, the lander queued
+// the same failing commit, switched auto-merge back on and cleared the mark.
+// A builder's later push could then merge on green with no protected-lane
+// screen. Now a handed-back entry is queued again only on checks read passing
+// on the exact commit it would queue.
+function assertHeld(fx, gh, result) {
+  const v = result.verdicts.find((x) => x.branch === 'feat/one');
+  assert.equal(v.action, 'skipped', JSON.stringify(v));
+  assert.equal(v.reason, 'handed_back');
+  assert.equal(queueCalls(gh).length, 0, JSON.stringify(gh.calls));
+  const entry = JSON.parse(fs.readFileSync(fx.file, 'utf8')).entries['feat/one'];
+  assert.equal(entry.checks_handed_back, fx.s1, JSON.stringify(entry));
+  assert.equal(entry.checks_task, 'JOB-1');
+}
+
+test('a handed-back pull request GitHub cannot be read for is held: not queued again, mark kept, auto-merge left off', () => {
+  const fx = handedBackRepo();
+  try {
+    const gh = fakeGh();
+    const result = landStaleGreenBranches(fx.root, {
+      mergePath: 'pull_request', runGh: gh.runGh, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+      fileChecksTask: noTasks,
+    });
+    assertHeld(fx, gh, result);
+  } finally {
+    cleanup(fx.root, fx.bare);
+  }
+});
+
+test('a handed-back pull request whose failed check is running again is held until it is read passing', () => {
+  const fx = handedBackRepo();
+  try {
+    const gh = ghWithPr({ head: () => fx.s1, checks: [{ name: 'test', bucket: 'pending' }] });
+    const result = landStaleGreenBranches(fx.root, {
+      mergePath: 'pull_request', runGh: gh.runGh, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+      fileChecksTask: noTasks,
+    });
+    assertHeld(fx, gh, result);
+  } finally {
+    cleanup(fx.root, fx.bare);
+  }
+});
+
+test('a builder\'s push after a hand-back is held while its hosted checks are still running', () => {
+  const fx = handedBackRepo();
+  const other = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-hosted-clone-'));
+  try {
+    git(other, ['clone', '-q', fx.bare, '.']);
+    git(other, ['checkout', '-q', 'feat/one']);
+    fs.writeFileSync(path.join(other, 'fix.txt'), 'fix\n');
+    const s2 = commitAll(other, 'make the checks pass', daysAgo(3));
+    git(other, ['push', '-q', 'origin', 'feat/one']);
+    const gh = ghWithPr({ head: () => s2, checks: [{ name: 'test', bucket: 'pending' }] });
+    const result = landStaleGreenBranches(fx.root, {
+      mergePath: 'pull_request', runGh: gh.runGh, runCli: noFlags, fileConflictTask: noTasks, runVerifyFn: noFlags, stateFile: null,
+      fileChecksTask: noTasks,
+    });
+    assertHeld(fx, gh, result);
+  } finally {
+    cleanup(fx.root, fx.bare, other);
+  }
+});
+
+// Reviewer finding, third pass. "Tried before" came from the remembered
+// verdict alone. A branch that failed once and was then fixed sorted with the
+// failed ones, so an older red branch took the only local suite every run.
+test('a branch fixed after a failure goes ahead of an older red branch for the only local suite', () => {
+  const root = makeRepo();
+  const state = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-order-'));
+  try {
+    fs.writeFileSync(path.join(root, 'package-lock.json'), JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: { '': {} } }));
+    commitAll(root, 'empty lock', daysAgo(9));
+    branchWith(root, 'feat/old-red', 'bad.txt', daysAgo(6));
+    branchWith(root, 'feat/fixed', 'bad-fixed.txt', daysAgo(5));
+    const verify = (command, cwd) => (fs.readdirSync(cwd).some((f) => /^bad/.test(f))
+      ? { status: 1, timed_out: false, failing: ['bad test'], failing_all: ['bad test'], command: 'npm test', duration_ms: 1, tail: '' }
+      : GREEN);
+    const opts = {
+      push: false, stateFile: path.join(state, 'land-green.json'), runCli: () => ({ status: 0, stdout: '' }),
+      fileConflictTask: noTasks, fileSlowCheckTask: noTasks, runVerifyFn: verify,
+    };
+    const moveMaster = (n) => {
+      fs.writeFileSync(path.join(root, `master-${n}.txt`), `${n}\n`);
+      commitAll(root, `master moves ${n}`, daysAgo(2));
+    };
+    // Both fail once: the older one on the first run, the other on the second.
+    for (let run = 0; run < 2; run += 1) {
+      assert.deepEqual(landStaleGreenBranches(root, opts).landed, []);
+      moveMaster(run);
+    }
+    git(root, ['checkout', '-q', 'feat/fixed']);
+    git(root, ['rm', '-q', 'bad-fixed.txt']);
+    fs.writeFileSync(path.join(root, 'fixed.txt'), 'fixed\n');
+    commitAll(root, 'fix the failing test', daysAgo(3));
+    git(root, ['checkout', '-q', 'master']);
+    const result = landStaleGreenBranches(root, opts);
+    assert.deepEqual(result.landed, ['feat/fixed'], JSON.stringify(result.verdicts));
+  } finally {
+    cleanup(root, state);
+  }
+});

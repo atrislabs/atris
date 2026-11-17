@@ -7,6 +7,7 @@ const { spawnSync } = require('child_process');
 const { localDay } = require('../lib/local-day');
 
 const autoland = require('../lib/autoland');
+const toolPath = require('../lib/tool-path');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { sweepEngineAskReceipts, sweepFleetReceipts } = require('../lib/engine-receipt-sweep');
@@ -497,12 +498,13 @@ function showStatus(root, args, deps = {}) {
   const blocked = results.filter((r) => r.action !== 'would_accept');
   const tasks = readProjection(root);
   const waiting = autoland.waitingOnHuman(tasks);
-  // Ask the crontab, not the policy file. The cached flag is written once at
-  // `autoland on` time, so it reports "unknown" for a cron that has been
-  // running hourly for weeks, and would keep reporting "running" for one
-  // someone deleted. A loop that cannot confirm its own liveness from
-  // evidence cannot be trusted to say it is healthy.
-  const heartbeatInstalled = autoland.heartbeatLiveness(root, policy);
+  // Ask the scheduler, not the policy file: on a Mac the LaunchAgent and
+  // launchctl, otherwise the crontab. A flag cached at `autoland on` time
+  // reports "unknown" for a job that has run hourly for weeks, and keeps
+  // reporting "running" for one someone deleted. A loop that cannot confirm
+  // its own liveness from evidence cannot be trusted to say it is healthy.
+  const schedule = autoland.schedulerState(root, deps.scheduler);
+  const heartbeatInstalled = schedule.installed;
   const heartbeatLive = autoland.heartbeatIsLive(root);
 
   if (json) {
@@ -530,7 +532,7 @@ function showStatus(root, args, deps = {}) {
   console.log(`  policy: ${policyText}`);
   if (enabled && includeProtected) console.log('  bar: protected work (money, deploys, security, customer, outward) also lands itself; sends and payments still need you.');
   else if (enabled && acceptAll) console.log('  bar: everything lands except the protected lanes (money, deploys, security, customer, outward)');
-  console.log(`  heartbeat: ${autoland.heartbeatStatusText(root, policy)}`);
+  console.log(`  heartbeat: ${autoland.heartbeatStatusText(root, schedule)}`);
   if (policy && policy.imessage_to) console.log(`  daily message: ${policy.imessage_to} at ${policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR}:00`);
   const reapTrouble = autoland.readState(root).last_reap_error;
   if (reapTrouble) console.log(`  cleanup trouble: landing sweep failed on ${reapTrouble.date} (${reapTrouble.error}) - run: atris land --reap`);
@@ -622,14 +624,56 @@ function showStatus(root, args, deps = {}) {
   return 0;
 }
 
-function turnOn(root, args) {
+// The policy file as written, without the inferred default a missing file
+// reads as.
+function savedPolicy(root) {
+  try {
+    const saved = JSON.parse(fs.readFileSync(autoland.policyPath(root), 'utf8'));
+    return saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {};
+  } catch {
+    return {};
+  }
+}
+
+function heartbeatLines(installed) {
+  if (installed.fallback) {
+    const cron = installed.ok
+      ? (installed.kept_cron_line ? 'kept the cron line already there' : 'set up the cron line instead')
+      : 'could not set up the cron line either; run atris autoland tick yourself';
+    return [`  heartbeat: could not set up the job inside your Mac login (${installed.launchd_error || 'no answer'}); ${cron}. cron cannot use the GitHub sign-in, so run atris autoland on again once that is fixed.`];
+  }
+  if (installed.kind === 'cron') {
+    return [`  heartbeat: ${installed.ok ? 'installed, runs hourly' : 'could not install cron; run atris autoland tick yourself'}`];
+  }
+  if (!installed.ok) {
+    return [`  heartbeat: could not set up the hourly job on this Mac (${installed.error || 'no answer'}); run atris autoland tick yourself`];
+  }
+  const lines = [];
+  if (installed.repaired) lines.push(`  heartbeat: the hourly job ran a program that is gone (${installed.repaired}); rewrote it with the current one and kept its timing.`);
+  else if (installed.path_repaired) lines.push('  heartbeat: kept the hourly job already set up on this Mac, gave it a PATH that finds gh and reloaded it; its timing and command are unchanged.');
+  else if (installed.path_repair_waiting) lines.push(`  heartbeat: kept the hourly job already set up on this Mac; its PATH cannot find gh and ${installed.path_repair_waiting}.`);
+  else if (installed.kept_existing) lines.push('  heartbeat: kept the hourly job already set up on this Mac exactly as it is, since its timing and command may be tuned by hand.');
+  else lines.push('  heartbeat: installed as an hourly job inside your Mac login, so scheduled runs can use your GitHub sign-in.');
+  if (installed.shared_name) lines.push(`  another project already uses the job name ${installed.shared_name}, so this one got its own: ${installed.label}.`);
+  if (installed.removed_cron_lines) lines.push('  removed the old cron line for this project, so the pass runs once an hour, not twice.');
+  if (installed.cron_error) lines.push(`  could not check the crontab for an old line (${installed.cron_error}); look with crontab -l.`);
+  return lines;
+}
+
+function turnOn(root, args, deps = {}) {
   const owner = flag(args, '--as', os.userInfo().username);
   const to = flag(args, '--to', '');
   const digestHour = Number(flag(args, '--digest-hour', autoland.DEFAULT_DIGEST_HOUR));
   const alarmHours = Number(flag(args, '--alarm-hours', autoland.DEFAULT_ALARM_HOURS));
   const acceptAll = args.includes('--all');
-  const previous = autoland.readPolicy(root);
+  // Every key this command does not set stays as the owner left it: the
+  // green landing pause switch, the verify command, the hold labels, the
+  // janitor and the rest.
+  // `default` is what a missing file reads as and `disabled_at` belongs to
+  // off; neither survives turning it on.
+  const { default: _inferred, disabled_at: _disabledAt, ...previous } = savedPolicy(root);
   const policy = autoland.writePolicy(root, {
+    ...previous,
     enabled: true,
     enabled_by: owner,
     enabled_at: new Date().toISOString(),
@@ -641,10 +685,10 @@ function turnOn(root, args) {
     accept_protected: args.includes('--include-protected'),
     daily_experiment: previous.daily_experiment !== false,
   });
-  const cronOk = autoland.installCron(root);
+  const installed = autoland.installSchedule(root, deps.scheduler);
   autoland.writePolicy(root, {
     ...policy,
-    heartbeat_installed: cronOk,
+    heartbeat_installed: installed.ok,
     heartbeat_checked_at: new Date().toISOString(),
   });
   console.log('');
@@ -654,7 +698,7 @@ function turnOn(root, args) {
   else console.log(`  certified, verified, reversible work now lands itself, accepted as ${owner}.`);
   if (policy.accept_protected) console.log('  protected work (money, deploys, security, customer, outward) also lands itself; sends and payments still need you.');
   else console.log('  protected lanes (money, deploys, security, customer, outward) still wait for you.');
-  console.log(`  heartbeat: ${cronOk ? 'installed, runs hourly' : 'could not install cron; run atris autoland tick yourself'}`);
+  for (const line of heartbeatLines(installed)) console.log(line);
   if (policy.imessage_to) {
     console.log(`  daily message to ${policy.imessage_to} at ${policy.digest_hour}:00; anything waiting on you past ${policy.alarm_hours}h pings you.`);
   } else {
@@ -665,22 +709,23 @@ function turnOn(root, args) {
   return 0;
 }
 
-function turnOff(root) {
-  const policy = autoland.readPolicy(root) || {};
+function turnOff(root, deps = {}) {
+  const { default: _inferred, ...policy } = savedPolicy(root);
   const disabledPolicy = autoland.writePolicy(root, {
     ...policy,
     enabled: false,
     disabled_at: new Date().toISOString(),
   });
-  const cronOk = autoland.uninstallCron(root);
+  const removed = autoland.uninstallSchedule(root, deps.scheduler);
   autoland.writePolicy(root, {
     ...disabledPolicy,
-    heartbeat_installed: cronOk ? false : null,
+    heartbeat_installed: removed.ok ? false : null,
     heartbeat_checked_at: new Date().toISOString(),
   });
   console.log('');
   console.log('autoland is off. everything waits for your accept again.');
-  console.log(`  heartbeat ${cronOk ? 'removed' : 'removal failed; check crontab -l'}.`);
+  if (removed.kind === 'cron') console.log(`  heartbeat ${removed.ok ? 'removed' : 'removal failed; check crontab -l'}.`);
+  else console.log(`  heartbeat ${removed.ok ? 'removed from this Mac' : `removal failed: ${removed.error || 'no answer'}`}.`);
   console.log('');
   return 0;
 }
@@ -700,6 +745,7 @@ function runDigest(root, args, { forceSend = false } = {}) {
     accepted,
     waiting,
     protectedWaiting: protectedReviewWaiting(root, policy, waiting),
+    checkedProtected: state.checked_protected?.rows || [],
     waitingWishes,
     landed: landSummarySafe(root),
     project: projectName(root),
@@ -730,6 +776,16 @@ function runDigest(root, args, { forceSend = false } = {}) {
     return sent.ok ? 0 : 1;
   }
   return 0;
+}
+
+// held-pull-requests says this when gh will not start or a shim exits 127.
+const GH_MISSING = /\bgh is not installed\b/;
+
+// gh only matters where pull requests live on GitHub.
+function tickMissingTools(root, env = process.env) {
+  const remote = spawnSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8', env, timeout: 10000 });
+  const needs = remote.status === 0 && /github\.com[:/]/i.test(String(remote.stdout || '')) ? ['gh'] : [];
+  return toolPath.missingTools(needs, env);
 }
 
 async function runTick(root, args) {
@@ -766,8 +822,20 @@ async function runTick(root, args) {
     else console.log('autoland tick: another tick is still running; skipped.');
     return 0;
   }
+  // A tool the tick needs and cannot find fails the run out loud: one line
+  // and a non-zero exit, never a quiet "0 landed".
+  const missing = tickMissingTools(root);
+  if (missing.length) {
+    receipt.tools_missing = missing;
+    console.error(toolPath.missingToolLine(missing));
+  }
   try {
-    return await runTickBody(root, { json, policy, receipt, timer });
+    const code = await runTickBody(root, { json, policy, receipt, timer });
+    if (!missing.includes('gh') && GH_MISSING.test(String(receipt.merged_close?.github_outage || ''))) {
+      receipt.tools_missing = [...missing, 'gh'];
+      console.error(toolPath.missingToolLine(['gh']));
+    }
+    return receipt.tools_missing?.length ? 1 : code;
   } finally {
     // Only removes the lock while it is still this tick's.
     if (lock) lock.release();
@@ -779,6 +847,8 @@ async function runTick(root, args) {
 // changes, no fetch.
 function runTickPreview(root, { json, receipt, timer }) {
   receipt.dry_run = true;
+  runCheckReroute(root, receipt, { dryRun: true });
+  runCheckedMergedDone(root, receipt, { dryRun: true });
   runMergedWorkClose(root, receipt, { dryRun: true });
   // The second check's next turn, in the order it would take the jobs.
   try {
@@ -797,13 +867,22 @@ function runTickPreview(root, { json, receipt, timer }) {
     console.log(JSON.stringify(receipt));
     return 0;
   }
+  const checked = receipt.checked_merged || {};
+  const wouldDone = checked.would_done || [];
+  console.log(`autoland tick (dry run): would mark ${wouldDone.length} checked merged job${wouldDone.length === 1 ? '' : 's'} done`);
+  for (const row of wouldDone) console.log(`  done ${row.ref}: checked twice and on ${checked.base}; undo: ${row.undo}`);
+  for (const row of checked.protected || []) console.log(`  yours ${row.ref}: checked twice, ${row.undone ? 'waits because' : `${row.merged ? 'merged' : 'not merged yet'}, waits because`} ${row.why}`);
+  if (receipt.checked_merged_error) console.log(`  could not check checked merged work: ${receipt.checked_merged_error}`);
+  const reroute = receipt.check_reroute || {};
+  for (const row of reroute.rerouted || []) console.log(`  rewrite ${row.ref}'s check: ${row.from} -> ${row.to}`);
+  for (const row of reroute.sent_back || []) console.log(`  send ${row.ref} back to its builder: its check ${row.command} may not run alone`);
   const close = receipt.merged_close || {};
-  console.log(`autoland tick (dry run): would close ${(close.would_close || []).length} merged job${(close.would_close || []).length === 1 ? '' : 's'}, would send ${(close.would_send_back || []).length} clashing job${(close.would_send_back || []).length === 1 ? '' : 's'} back`);
+  console.log(`autoland tick (dry run): would close ${(close.would_close || []).length} merged job${(close.would_close || []).length === 1 ? '' : 's'}, would send ${(close.would_send_back || []).length} job${(close.would_send_back || []).length === 1 ? '' : 's'} back`);
   const prLine = (row) => (row.action === 'merged_earlier'
     ? `merged earlier, closed without counting it as a new landing: its own pull request #${row.number} merged over a day ago`
     : `its own pull request #${row.number} merged`);
   for (const row of close.would_close || []) console.log(`  close ${row.ref || row.id}: ${row.proof || prLine(row)}`);
-  for (const row of close.would_send_back || []) console.log(`  send back ${row.id}: pull request #${row.number} clashes`);
+  for (const row of close.would_send_back || []) console.log(`  send back ${row.ref || row.id}: ${row.reason || `pull request #${row.number} clashes`}`);
   for (const line of close.merge_line || []) console.log(`  ${line}`);
   if (receipt.merged_close_error) console.log(`  could not check merged work: ${receipt.merged_close_error}`);
   const check = receipt.second_check || { would_check: [], skipped: [] };
@@ -871,6 +950,8 @@ function stuckBacklogNote(receipt) {
   if (unrunnable > 0) {
     parts.push(`${unrunnable} blocked by a check this machine could not run`);
   }
+  const deferred = Number(receipt.accept_deferred || 0);
+  if (deferred > 0) parts.push(`${deferred} left for the next hour when time ran out`);
   return parts.length ? `, ${parts.join(', ')}` : '';
 }
 
@@ -986,8 +1067,9 @@ function engineAnswerValidationLine(receipt) {
 // 2026-10-22 this ran only inside the team wake loop, which last swept on
 // 2026-10-15, so four merged jobs waited a week. Two sources: the autoland
 // list (pull requests GitHub merged at the member's own commit, through the
-// team loop's shared five-minute pass) and git itself (lib/merged-review-close.js)
-// for jobs that left the list. dryRun reads and reports, and writes nothing.
+// team loop's shared five-minute pass), then git itself and each job's own
+// recorded pull request on GitHub (lib/merged-review-close.js) for jobs that
+// left the list or never were on it. dryRun reads and reports, and writes nothing.
 function runMergedWorkClose(root, receipt, { dryRun = false, now = Date.now() } = {}) {
   const out = dryRun
     ? { would_close: [], would_send_back: [], merge_line: [] }
@@ -1011,12 +1093,88 @@ function runMergedWorkClose(root, receipt, { dryRun = false, now = Date.now() } 
       .filter((t) => !closedList.some((c) => c.id === t.id));
     const scan = require('../lib/merged-review-close').closeMergedReviewJobs({ root, tasks, now, dryRun });
     for (const row of dryRun ? scan.matched : scan.closed) closedList.push(row);
+    for (const row of (dryRun ? scan.would_send_back : scan.sent_back) || []) sentList.push(row);
     out.checked = scan.checked;
+    out.pull_requests_asked = scan.pull_requests_asked || 0;
+    if (scan.github_outage) out.github_outage = scan.github_outage;
   } catch (err) {
     receipt.merged_close_error = String((err && err.message) || err).slice(0, 200);
   }
   receipt.merged_close = out;
   return out;
+}
+
+// Review rows for this workspace straight from the job database, with their
+// display refs, so a pass never reads a stale projection file.
+function reviewRowsFromDb(root) {
+  const taskDb = require('../lib/task-db');
+  const db = taskDb.open();
+  const workspace = taskDb.workspaceRoot(mainCheckoutRoot(root) || root);
+  const all = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot: workspace }));
+  return all.filter((t) => t && t.status === 'review');
+}
+
+// 2026-11-16: five web jobs passed both checks, were merged, and still sat
+// in review for a person's accept while the accept step re-ran every check
+// and ran out of time. Before that step, every hour, checked work already on
+// the main branch is marked done when its lane is quiet; protected lanes
+// (sign-in, money, security, release and the rest) go on the morning list.
+// Off by policy: checked_merged_done:false.
+function runCheckedMergedDone(root, receipt, { dryRun = false } = {}) {
+  try {
+    const { closeCheckedMergedJobs } = require('../lib/checked-merged-done');
+    const out = closeCheckedMergedJobs({ root, tasks: reviewRowsFromDb(root), dryRun });
+    receipt.checked_merged = {
+      base: out.base,
+      checked: out.checked,
+      ...(dryRun ? { would_done: out.would_done } : { done: out.done }),
+      protected: out.protected,
+      skipped: out.skipped,
+      ...(out.error ? { error: out.error } : {}),
+    };
+    if (!dryRun && out.done.length) {
+      try { require('./task').refreshKeptTaskList(root); } catch {}
+    }
+    return out;
+  } catch (err) {
+    receipt.checked_merged_error = String((err && err.message) || err).slice(0, 200);
+    return null;
+  }
+}
+
+// A job whose recorded check this machine may not run alone gets its check
+// rewritten to the allowed shape, so the second check runs it in this same
+// pass, or goes back to its builder with a note. Never waits a second hour.
+function runCheckReroute(root, receipt, { dryRun = false } = {}) {
+  try {
+    const { rerouteDisallowedChecks } = require('../lib/check-shape-reroute');
+    const workspace = mainCheckoutRoot(root) || root;
+    const out = rerouteDisallowedChecks({ root: workspace, tasks: reviewRowsFromDb(root), dryRun });
+    if (out.rerouted.length || out.sent_back.length || out.held.length) receipt.check_reroute = out;
+    if (!dryRun && out.sent_back.length) {
+      try { require('./task').refreshKeptTaskList(root); } catch {}
+    }
+    return out;
+  } catch (err) {
+    receipt.check_reroute_error = String((err && err.message) || err).slice(0, 200);
+    return null;
+  }
+}
+
+function checkedProtectedRows(rows = []) {
+  return (rows || []).map((r) => ({ ref: r.ref, title: r.title, lane: r.lane, why: r.why, merged: r.merged === true, ...(r.undone ? { undone: true } : {}) }));
+}
+
+function checkedMergedNote(receipt) {
+  const done = (receipt.checked_merged?.done || []).length;
+  const yours = (receipt.checked_merged?.protected || []).length;
+  const rerouted = (receipt.check_reroute?.rerouted || []).length;
+  const sentBack = (receipt.check_reroute?.sent_back || []).length;
+  return (done ? `, marked ${done} checked merged job${done === 1 ? '' : 's'} done` : '')
+    + (yours ? `, ${yours} checked protected job${yours === 1 ? '' : 's'} on your morning list` : '')
+    + (rerouted ? `, rewrote ${rerouted} check${rerouted === 1 ? '' : 's'} to the allowed shape` : '')
+    + (sentBack ? `, sent ${sentBack} job${sentBack === 1 ? '' : 's'} with a refused check back to the builder` : '')
+    + (receipt.checked_merged_error ? ', could not check which checked jobs are merged' : '');
 }
 
 function mainCheckoutRoot(root) {
@@ -1027,10 +1185,14 @@ function mainCheckoutRoot(root) {
 
 function mergedCloseNote(receipt) {
   const closed = (receipt.merged_close?.closed || []).length;
-  const sent = (receipt.merged_close?.sent_back || []).length;
+  const sentRows = receipt.merged_close?.sent_back || [];
+  const dropped = sentRows.filter((r) => r && r.how === 'pull_request').length;
+  const sent = sentRows.length - dropped;
   return (closed ? `, closed ${closed} merged job${closed === 1 ? '' : 's'}` : '')
     + (sent ? `, sent ${sent} clashing job${sent === 1 ? '' : 's'} back on the list` : '')
-    + (receipt.merged_close_error ? ', could not check which jobs already merged' : '');
+    + (dropped ? `, sent ${dropped} job${dropped === 1 ? '' : 's'} whose pull request closed unmerged back on the list` : '')
+    + (receipt.merged_close_error ? ', could not check which jobs already merged' : '')
+    + (receipt.merged_close?.github_outage ? ', github could not be reached for pull requests' : '');
 }
 
 // The digest goes out once per local day. A stamp written before the switch
@@ -1046,8 +1208,14 @@ function digestSentToday(state, now = new Date()) {
   return state.last_digest_date === utcDay(now) && state.last_digest_date !== utcDay(yesterday);
 }
 
-function acceptCommandArgs(policy) {
+// The accept step is told its own time limit, less room to write the job
+// list and print its answer, so it stops starting checks in time and the
+// rest wait for the next hour instead of the whole run being killed.
+const ACCEPT_REPORT_RESERVE_MS = 60 * 1000;
+
+function acceptCommandArgs(policy, timeoutMs = 0) {
   const args = ['task', 'auto-accept-certified', '--json', '--certify-first'];
+  if (timeoutMs > ACCEPT_REPORT_RESERVE_MS) args.push('--budget-ms', String(timeoutMs - ACCEPT_REPORT_RESERVE_MS));
   if (policy.accept_protected) args.push('--include-protected');
   if (policy.accept_all) args.push('--all');
   else if (policy.strict_verify === false) args.push('--no-strict-verify');
@@ -1125,6 +1293,25 @@ function slowStepLine(receipt, thresholdMs = SLOW_STEP_MS) {
 function greenVerdictRow(v) {
   const row = { branch: v.branch, action: v.action, reason: v.reason || null, detail: v.detail || null, failing: v.verify ? v.verify.failing : undefined };
   if (v.verify && Number.isFinite(v.verify.duration_ms)) row.duration_ms = v.verify.duration_ms;
+  // A failed check keeps its exit code and the line that says what broke,
+  // so a red or could-not-tell row is never just a word.
+  if (v.verify && v.verify.status !== 0 && v.verify.status !== undefined) {
+    row.exit_code = v.verify.status;
+    if (v.verify.error_line) row.error_line = v.verify.error_line;
+  }
+  if (v.pr) row.pr = v.pr;
+  if (v.url) row.url = v.url;
+  if (v.hand_back) row.hand_back = v.hand_back;
+  if (v.regenerated) row.regenerated = v.regenerated;
+  if (v.known_red) row.known_red = v.known_red;
+  // A green second run keeps the first red in the receipt.
+  if (v.verify && v.verify.rerun_of) row.rerun_of = v.verify.rerun_of;
+  if (v.local_check) row.local_check = v.local_check;
+  // How long the row waited for a busy machine, in words.
+  if (v.waited) {
+    row.waited = v.waited;
+    row.waited_ms = v.waited_ms;
+  }
   return row;
 }
 
@@ -1165,12 +1352,18 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // Refresh origin once, before anything is accepted: the landing proof reads
   // origin's target, and a stale ref would call landed work unlanded.
   timed('origin_refresh', () => refreshLandingRefs(root));
-  const cliArgs = acceptCommandArgs(policy);
+  // 0a. a refused check is rewritten or sent back before the second check
+  // runs, so a rewritten one is checked in this same pass.
+  if (policy.check_reroute !== false) timed('check_reroute', () => runCheckReroute(root, receipt));
+  // 0b. checked work already merged is done without re-running its checks.
+  if (policy.checked_merged_done !== false) timed('checked_merged_done', () => runCheckedMergedDone(root, receipt));
   const pendingReviewRows = readProjection(root)
     .filter((task) => task && task.status === 'review')
     .filter((task) => String(task.review?.approval_status || task.metadata?.approval_status || 'pending') === 'pending')
     .length;
-  const accept = timed('accept_certify', () => runOwnCli(root, cliArgs, acceptSweepTimeoutMs(pendingReviewRows)));
+  const acceptTimeoutMs = acceptSweepTimeoutMs(pendingReviewRows);
+  const cliArgs = acceptCommandArgs(policy, acceptTimeoutMs);
+  const accept = timed('accept_certify', () => runOwnCli(root, cliArgs, acceptTimeoutMs));
   let acceptResults = [];
   try {
     const parsed = JSON.parse(accept.stdout);
@@ -1229,8 +1422,16 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     const waiting = waitingReasonRows(results);
     if (waiting.length) receipt.waiting_reasons = waiting;
     receipt.undercounted = Boolean(parsed.undercounted);
+    // Left for the next hour because the time ran out, not refused.
+    const deferred = Number(parsed.deferred || 0) + Number(parsed.certification?.deferred || 0);
+    if (deferred) receipt.accept_deferred = deferred;
   } catch (err) {
     receipt.accept_error = describeAcceptKillCause(accept) || accept.stderr.slice(0, 200) || 'auto-accept output unreadable';
+  }
+
+  // Checked work marked done above is on the main branch: it landed.
+  for (const row of receipt.checked_merged?.done || []) {
+    if (!receipt.landed.includes(row.ref)) receipt.landed.push(row.ref);
   }
 
   // 2a. merged work closes its jobs and clashing work goes back on the list,
@@ -1263,6 +1464,11 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
 
   // 3. alarm on anything waiting on a human past the line
   const state = autoland.readState(root);
+  // The morning list: protected work that passed both checks, kept fresh
+  // every hour so the digest shows what waits on one tap today.
+  if (receipt.checked_merged && !receipt.checked_merged.error) {
+    state.checked_protected = { at: receipt.at, rows: checkedProtectedRows(receipt.checked_merged.protected) };
+  }
   const tasks = readProjection(root);
   const waiting = autoland.waitingOnHuman(tasks);
   const protectedWaiting = protectedReviewWaiting(root, policy, waiting);
@@ -1317,21 +1523,52 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     recordJanitorState(state, { stopped: stoppedMissions, held: heldMissions, worktrees: receipt.worktrees_reaped });
   });
 
-  // 3b2. green landing, every tick: one stale branch that merges clean and
-  // passes the full verify in a scratch checkout lands on base and is pushed.
-  // A red branch opens a close flag the same hour instead of waiting for the
-  // TTL reap to salvage it. Off by policy: green_landing:false.
+  // 3b2. green landing, every tick: up to five stale branches, one at a
+  // time, are caught up with base in a scratch checkout. On GitHub each goes
+  // through a pull request and the merge queue; base is never pushed. When
+  // the base requires hosted checks they are the gate and no local suite
+  // runs; otherwise the full verify runs in the scratch checkout and a red
+  // branch opens a close flag. A local check that runs out of time is could
+  // not tell, never red. Pull requests queued earlier are read back first:
+  // merged is done, failed hosted checks go back to a builder as a job. A
+  // clash outside the map goes back to a builder as a job. Off by policy:
+  // green_landing:false. green_landing_local_check: true or false overrides
+  // the base's rules. The local check starts one suite per run
+  // (green_landing_local_suites raises it), one at a time across the machine,
+  // and none when the load is above twice the cores. A busy machine is waited
+  // for, at most 15 minutes a run (green_landing_wait_minutes). A branch whose pull
+  // request was closed, is held for a person (green_landing_hold_labels names
+  // the label words) or cannot be read is left alone; one merged at its tip
+  // counts as landed. Scratch copies live under ~/.atris/land-green-scratch
+  // (green_landing_scratch_dir names another parent), and copies a killed run
+  // left are swept at the start of each run.
   if (policy.green_landing !== false) timed('green_landing', () => {
     try {
-      const { landStaleGreenBranches, summaryLine } = require('../lib/land-green');
+      const { landStaleGreenBranches, summaryLine, DEFAULT_LIMIT, localCheckSetting, holdLabelSetting, machineWaitSetting, scratchDirSetting } = require('../lib/land-green');
       const green = landStaleGreenBranches(root, {
         verifyCommand: policy.verify_command || undefined,
-        limit: Number(policy.green_landing_limit) > 0 ? Number(policy.green_landing_limit) : 1,
+        limit: Number(policy.green_landing_limit) > 0 ? Number(policy.green_landing_limit) : DEFAULT_LIMIT,
+        localCheck: localCheckSetting(policy),
+        localSuites: Number(policy.green_landing_local_suites) > 0 ? Number(policy.green_landing_local_suites) : undefined,
+        holdLabels: holdLabelSetting(policy),
+        waitMinutes: machineWaitSetting(policy),
+        scratchDir: scratchDirSetting(policy),
+        machine: true,
       });
       receipt.green_landing = {
         candidates: green.candidates.length,
+        merge_path: green.merge_path,
+        local_check: green.local_check,
+        local_suites: green.local_suites,
+        machine_wait: green.machine_wait,
+        scratch_sweep: green.scratch_sweep,
+        followed: (green.followed || []).map((r) => ({ branch: r.branch, number: r.number, state: r.state, checks: r.checks, hand_back: r.hand_back })),
+        merged_by_pull_request: green.merged_by_pull_request,
         landed: green.landed,
+        queued: green.queued,
+        handed_back: green.handed_back,
         red: green.red,
+        could_not_tell: green.could_not_tell,
         verdicts: green.verdicts.map(greenVerdictRow),
         summary: summaryLine(green),
       };
@@ -1449,6 +1686,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
       accepted: autoland.acceptedInLastDay(readAcceptedTaskHistory(root, tasks)),
       waiting,
       protectedWaiting,
+      checkedProtected: state.checked_protected?.rows || [],
       waitingWishes,
       landed: landSummarySafe(root),
       project: projectName(root),
@@ -1530,6 +1768,19 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     }
     state.last_mission_cleanup_date = today;
   });
+
+  // 7. once a day, prune old run records: the newest 200 and the last 14 days
+  // stay, and so does every record a job names, the newest of each kind and
+  // every file git tracks. Off by policy: runs_prune:false.
+  if (policy.runs_prune !== false && state.last_runs_prune_date !== today) timed('runs_prune', () => {
+    try {
+      const { autoPruneRuns } = require('../lib/runs-prune');
+      receipt.runs_prune = autoPruneRuns(root, { apply: true });
+    } catch (err) {
+      receipt.runs_prune_error = String((err && err.message) || err).slice(0, 200);
+    }
+    state.last_runs_prune_date = today;
+  });
   autoland.writeState(root, state);
 
   // Stamped last. The total covers every step and the state write.
@@ -1554,7 +1805,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     // Always print the standing backlog, and name work that cleared every
     // gate and still did not land. That is the shape of a stuck loop.
     const stuckNote = stuckBacklogNote(receipt);
-    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}${acceptedNotLandedNote(receipt)}${mergedCloseNote(receipt)}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${sshAgentSweepNote(receipt)}${lostRunSweepNote(receipt)}${tickTimingNote(receipt)}${receiptNote}`;
+    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}${acceptedNotLandedNote(receipt)}${checkedMergedNote(receipt)}${mergedCloseNote(receipt)}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${sshAgentSweepNote(receipt)}${lostRunSweepNote(receipt)}${tickTimingNote(receipt)}${receiptNote}`;
     const validationLine = engineAnswerValidationLine(receipt);
     if (validationLine) console.log(validationLine);
     console.log(gateForHuman(summary).text);
@@ -1607,6 +1858,11 @@ function autolandCommand(args = []) {
   const [sub, ...rest] = args;
   if (wantsHelp(args)) return showHelp();
   if (!sub || sub.startsWith('--')) return showStatus(repoRoot(), args);
+  // The hourly tick starts under cron's PATH, where the first git may not
+  // start at all; move a working one first before any git runs.
+  // gh and npm live in the package folders cron and launchd leave off PATH.
+  if (sub === 'tick') toolPath.ensureToolPath();
+  if (sub === 'tick') require('../lib/git-spawn').ensureWorkingGit();
   const root = repoRoot();
   if (sub === 'on') return turnOn(root, rest);
   if (sub === 'off') return turnOff(root);
@@ -1643,6 +1899,8 @@ module.exports = {
   runSshAgentSweep,
   sshAgentSweepNote,
   showStatus,
+  turnOn,
+  turnOff,
   runLostRunSweep,
   lostRunSweepNote,
   sweepLanding,

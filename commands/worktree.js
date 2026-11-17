@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { hasFlag, readFlag } = require('../lib/arg-parser');
+const { checkSkippedHere } = require('../lib/task-proof');
 const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 const { installKeep, removeKeep } = require('../lib/campaign-keep');
 const { isConductorUntracked } = require('../lib/conductor-artifacts');
@@ -78,11 +79,14 @@ const {
   worktreeHasActiveProcess,
 } = worktreeCore;
 
-function printStatus() {
+function printStatus(args) {
   const root = repoRoot();
   const worktrees = listWorktrees(root);
   const primary = worktrees[0]?.path;
-  for (const wt of worktrees) {
+  const name = readFlag(args, '--agent') || readFlag(args, '--member');
+  const matches = name ? worktrees.filter((wt) => path.basename(wt.path).startsWith(name) || wt.branch.startsWith(name)) : worktrees;
+  if (name && matches.length === 0) console.log(`no copies for ${name}`);
+  for (const wt of matches) {
     const counts = statusCounts(wt.path);
     const tags = [];
     if (wt.path === primary) tags.push('primary');
@@ -223,6 +227,17 @@ function recordPendingShip(root, { branch, targetRef, number }) {
   }
 }
 
+// The atris check receipt for the code in this copy right now, if one exists
+// and still matches it (lib/check-receipt.js).
+function shipCheckReceipt(root) {
+  const { codeIdentity, findReceiptForTree, matchReceipt } = require('../lib/check-receipt');
+  const found = findReceiptForTree(root, codeIdentity(root).tree);
+  if (!found) return { verdict: 'none', line: 'no --verify and no atris check receipt for this code' };
+  const match = matchReceipt(root, found.receipt);
+  if (!match.ok) return { verdict: 'none', line: `atris check receipt does not match: ${match.why}` };
+  return { verdict: found.receipt.verdict, line: `atris check receipt ${found.receipt.verdict} (${path.relative(root, found.file)})` };
+}
+
 function shipWorktree(args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || args[0] === 'help') {
     shipHelp();
@@ -324,7 +339,18 @@ function shipWorktree(args) {
   if (verify) {
     const beforeVerify = dryRun ? [] : statusSnapshot(root);
     console.log(`verify: ${verify}`);
-    if (!dryRun) runCommand(verify, { cwd: root });
+    if (!dryRun) {
+      const verifyResult = runCommand(verify, { cwd: root, check: false });
+      // `atris check` exit 3 (or an app check that skipped itself): nothing was
+      // proven here. It needs the no-screen lane, and it is never a pass.
+      if (checkSkippedHere(verifyResult)) {
+        console.error('blocked: the check did not prove this change here; it needs the no-screen lane (never counted as passed)');
+        return 3;
+      }
+      if (verifyResult.status !== 0) {
+        throw new Error((verifyResult.stderr || verifyResult.stdout || `${verify} failed`).trim());
+      }
+    }
     const afterVerifyRows = dryRun ? [] : statusSnapshot(root);
     const verifyDelta = newStatusRows(beforeVerify, afterVerifyRows);
     const afterVerify = dryRun
@@ -342,6 +368,15 @@ function shipWorktree(args) {
       return 3;
     }
     if (!dryRun && !proofTreeMatches('head')) return 3;
+  } else if (!dryRun && fs.existsSync(path.join(root, 'atris', 'checks.json'))) {
+    // A project with a check map: an atris check receipt for exactly this code is the proof.
+    const receipt = shipCheckReceipt(root);
+    console.log(`verify: ${receipt.line}`);
+    // No receipt: ship goes on exactly as it does without one.
+    if ((receipt.verdict === 'partly' || receipt.verdict === 'failed') && merge) {
+      console.error(`blocked: ${receipt.verdict === 'partly' ? 'the receipt says some checks need the no-screen lane, so this does not merge from here' : 'the atris check receipt for this code records a failed check'}`);
+      return receipt.verdict === 'failed' ? 1 : 3;
+    }
   } else {
     console.log('verify: skipped (no --verify)');
   }
@@ -520,7 +555,11 @@ function doctorCommand(args) {
     console.error('Usage: atris worktree doctor [--workspace <dir>] [--repo <name>] [--older-than <hours>] [--json]');
     return 2;
   }
-  const report = doctor.doctorWorkspace({ workspace, olderThanHours: olderThan, repoFilter: readFlag(args, '--repo') || '' });
+  let currentRepo = '';
+  if (!readFlag(args, '--workspace')) {
+    try { currentRepo = findPrimaryRoot(repoRoot()); } catch {}
+  }
+  const report = doctor.doctorWorkspace({ workspace, repoRoot: currentRepo, olderThanHours: olderThan, repoFilter: readFlag(args, '--repo') || '' });
   if (hasFlag(args, '--json')) {
     console.log(JSON.stringify({ ok: !report.error, ...report }, null, 2));
     return report.error ? 1 : 0;
@@ -788,7 +827,7 @@ function help() {
   console.log('    --skip-nets     skip the repo hygiene tests that run before --verify; they run first by default');
   console.log('    --keep-copy     keep this build copy after it ships');
   console.log('    recommended verify: npm run test:fast && node --test <focused files>');
-  console.log('  atris worktree status');
+  console.log('  atris worktree status [--agent <name>|--member <name>]  find copies by folder or branch name prefix');
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree doctor [--older-than 24] [--repo <name>] [--json]  every copy: real size, age, merged, in use, what a prune would free');
   console.log('  atris worktree prune [--apply]  drop registrations of copies whose folder is gone');
@@ -810,7 +849,7 @@ function worktreeCommand(args = []) {
   if (sub === 'start') return startWorktree(rest);
   if (sub === 'ship') return shipWorktree(rest);
   if (sub === 'status') {
-    printStatus();
+    printStatus(rest);
     return 0;
   }
   if (sub === 'guard') return guard(rest);

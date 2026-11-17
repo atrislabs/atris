@@ -4,6 +4,31 @@ const { hostAction } = require('../lib/host');
 const { apiRequestJson } = require('../utils/api');
 const { loadCredentials, decodeJwtClaims } = require('../utils/auth');
 
+const SUBCOMMAND_USAGE = {
+  setup: 'usage: atris host setup [--room group|personal] [--slack-business <id>]',
+  join: 'usage: atris host join [--id <id>] [--name <name>] [--team <team>] [--manager <manager>] [--door <door>] [--started <date>]',
+  import: 'usage: atris host import <file>',
+  leave: 'usage: atris host leave <id>',
+  pause: 'usage: atris host pause <id>',
+  resume: 'usage: atris host resume <id>',
+  forget: 'usage: atris host forget <id>',
+  due: 'usage: atris host due',
+  ask: 'usage: atris host ask <id> --question "<text>"',
+  receive: 'usage: atris host receive --from <door> --text "<text>" [--event-id <id>] [--reply-to <id> | --reply-to-ref <ref>] [--decision yes|no]',
+  card: 'usage: atris host card <id> [--patch <file>] [--expected-revision <rev>]',
+  link: 'usage: atris host link <a> <b> [--source <source>] [--evidence "<text>"]',
+  propose: 'usage: atris host propose <a> <b> --reason "<text>" --activity "<text>" --text "<text>"',
+  people: 'usage: atris host people',
+  outbox: 'usage: atris host outbox',
+  deliver: 'usage: atris host deliver [--dry-run] [--limit <n>]',
+  sent: 'usage: atris host sent <message-id> [--ref <ref>]',
+  room: 'usage: atris host room',
+  view: 'usage: atris host view [--as <id> | --team <team>]',
+  schedule: 'usage: atris host schedule',
+  scheduled: 'usage: atris host scheduled <attempt-id> --when "<text>" --at "<ISO time>"',
+};
+const HOST_USAGE = 'usage: atris host setup|join|import|leave|pause|resume|forget|due|ask|receive|card|link|propose|people|outbox|deliver|sent|room|view|schedule|scheduled [options]';
+
 function parse(argv) {
   const options = {};
   const positionals = [];
@@ -12,6 +37,7 @@ function parse(argv) {
     const item = argv[i];
     if (item === '--json') { options.json = true; continue; }
     if (item === '--dry-run') { options.dryRun = true; continue; }
+    if (item === '--help' || item === '-h') { options.help = true; continue; }
     if (item.startsWith('--')) {
       const key = item.slice(2);
       if (!flags.has(key) || !argv[i + 1] || argv[i + 1].startsWith('--')) throw new Error(`invalid --${key} value`);
@@ -84,13 +110,19 @@ function hostCommand(argv = process.argv.slice(3), root = process.cwd(), deps = 
   let jsonOutput = argv.includes('--json');
   try {
     const [command, ...rest] = argv;
-    if (!command || command === '--help' || command === '-h') {
-      const usage = 'usage: atris host setup|join|import|leave|pause|resume|forget|due|ask|receive|card|link|propose|people|outbox|deliver|sent|room|view|schedule|scheduled [options]';
+    if (!command || command === '--help' || command === '-h' || command === 'help') {
+      const targetSub = command === 'help' && rest[0] && SUBCOMMAND_USAGE[rest[0]] ? rest[0] : null;
+      const usage = targetSub ? SUBCOMMAND_USAGE[targetSub] : HOST_USAGE;
       console.log(jsonOutput ? JSON.stringify({ usage }) : usage);
       return;
     }
     const { options, positionals } = parse(rest);
     jsonOutput = options.json;
+    if (options.help || rest.includes('--help') || rest.includes('-h') || rest.includes('help')) {
+      const usage = SUBCOMMAND_USAGE[command] || HOST_USAGE;
+      console.log(jsonOutput ? JSON.stringify({ usage }) : usage);
+      return;
+    }
     const args = { ...options };
     if (command === 'import') args.file = positionals[0];
     if (['leave', 'pause', 'resume', 'forget', 'ask', 'card', 'sent', 'scheduled'].includes(command)) args.id = positionals[0];

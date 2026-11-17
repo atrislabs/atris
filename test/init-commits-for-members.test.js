@@ -120,5 +120,5 @@ test('init outside a git repo still works and says nothing about git', (t) => {
   const init = atris(['init', '--yes']);
   assert.equal(init.status, 0, init.stderr || init.stdout);
   assert.ok(fs.existsSync(path.join(root, 'atris', 'team', 'executor', 'MEMBER.md')));
-  assert.doesNotMatch(init.stdout, /git/i);
+  assert.doesNotMatch(init.stdout.replace(/https:\/\/github\.com\/atrislabs\/atris/g, ''), /git/i);
 });

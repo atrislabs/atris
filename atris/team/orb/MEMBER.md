@@ -148,3 +148,7 @@ Beneath the number, the judgment it stands on:
 Killed from this session: nothing, but flagged that "customer care sweep"
 being skipped is identity economics, not neglect; if DoorDash/Pallet health
 ever reads yellow, it jumps the 3-cap as a hard brief item.
+
+## Code I own
+
+- `commands/task/landing/`: Landing a task: ready with proof, receipts, accept and accept-group, certify-verified, auto-accept and the sweep. Moved out of `commands/task.js` on 2026-11-16; read its README.md before changing it.

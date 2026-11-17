@@ -269,3 +269,17 @@ test('the scan for ship leaves out this process and the shell that started it', 
   const chain = core.processAncestors(5, (cmd, args) => ({ status: 0, stdout: { 5: '4\n', 4: '1\n', 1: '0\n' }[args[args.length - 1]] }));
   assert.deepEqual([...chain], ['5', '4', '1']);
 });
+
+test('a shipped copy holding only atris check receipts and its import cache is removed', (t) => {
+  const ws = workspace(t);
+  const app = makeRepo(ws, 'app', {});
+  const copy = addCopy(app, 'checked');
+  for (const dir of ['.atris/receipts', '.atris/cache']) {
+    fs.mkdirSync(path.join(copy, dir), { recursive: true });
+    fs.writeFileSync(path.join(copy, dir, '.gitignore'), '*\n');
+    fs.writeFileSync(path.join(copy, dir, 'check-abc.json'), '{}\n');
+  }
+  const result = core.finishShippedCopy({ root: copy, primary: app, branch: 'codex/checked', landedOn: 'origin/master', log: () => {}, schedule: () => ({}), otherPaths: () => [], env: {} });
+  assert.equal(result.removed, true, result.reason);
+  assert.equal(fs.existsSync(copy), false);
+});

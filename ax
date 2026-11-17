@@ -245,7 +245,8 @@ function formatUsage() {
     '  ax [--auto|--max|--pro|--fast|--rapid|--alpha|--mercury|--code-fast] [--local|--cloud] <message>',
     '  ax [--auto|--max|--pro|--fast|--rapid|--alpha|--mercury|--code-fast] [--local|--cloud] --print <message>',
     '  ax [--auto|--max|--pro|--fast|--rapid|--alpha|--mercury|--code-fast] [--local|--cloud] --chat',
-    '  ax [--max|--pro|--fast|--rapid|--alpha] --business <slug> [<message>|--chat]',
+    '  ax [--auto|--max|--pro|--fast|--rapid|--alpha|--mercury|--code-fast] [--local|--cloud] chat [<message>]',
+    '  ax [--max|--pro|--fast|--rapid|--alpha] --business <slug> [<message>|--chat|chat]',
     '  ax [--max|--pro|--fast|--rapid|--alpha|--mercury|--code-fast] --doctor',
     '  ax --approvals',
     '  ax --approve <approval-id>',
@@ -279,6 +280,7 @@ function formatUsage() {
     'Examples:',
     '  ax --pro find the config file and explain it',
     '  ax --fast what files are here',
+    '  ax chat',
     '  ax --rapid --chat',
     '  ax --alpha --chat',
     '  ax --max refactor this module and verify the tests',
@@ -4871,7 +4873,7 @@ async function runBenchmark(options = {}) {
 
 async function main() {
   const args = process.argv.slice(2);
-  if (args.includes('--help') || args.includes('-h')) {
+  if (args.includes('--help') || args.includes('-h') || (args.length === 1 && args[0] === 'help')) {
     console.log(formatUsage());
     return;
   }
@@ -5011,6 +5013,11 @@ async function main() {
   }
 
   const route = forceCloud ? 'cloud' : forceLocal ? 'local' : 'auto';
+  const firstPositionalIdx = args.findIndex(arg => !arg.startsWith('-'));
+  const hasChatSubcommand = firstPositionalIdx !== -1 && args[firstPositionalIdx] === 'chat';
+  if (hasChatSubcommand) {
+    args.splice(firstPositionalIdx, 1);
+  }
   const prompt = args
     .filter(arg => !['--auto', '--auto-approve', '--max', '--fast', '--rapid', '--alpha', '--mercury', '--diffuse', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--print', '--headless', '--local', '--cloud', '--help', '-h', '--effort'].includes(arg))
     .join(' ')

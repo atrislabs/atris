@@ -88,17 +88,22 @@ test('spaceship supervisor survives halts and classifies outcomes', () => {
     ].join('\n'));
     fs.chmodSync(stub, 0o755);
 
+    // Seven ticks by count, not by clock. A ten second budget fit seven ticks
+    // on a quiet machine and six on a busy CI runner (2026-11-15), so the third
+    // idle tick never ran and the idle alert never fired.
     const out = execFileSync('bash', [
       SCRIPT,
       '--repo', repo,
-      '--hours', '0.003',     // ~10s budget
-      '--interval', '1',
+      '--hours', '1',
+      '--max-ticks', '7',
+      '--interval', '0',
       '--tick-timeout', '20',
       '--idle-alert', '3',
       '--halt-alert', '2',
       '--tick-cmd', stub,
       '--no-email',
     ], { encoding: 'utf8', timeout: 60000 });
+    assert.match(out, /^RESULT shipped=1 halted=2 idle=4 ticks=7$/m, 'seven ticks: ship, idle, halt, halt, idle, idle, idle');
 
     // 1. it shipped the one real commit
     assert.match(out, /tick 1 SHIPPED/, 'should detect the committed tick as shipped');
@@ -120,6 +125,23 @@ test('spaceship supervisor survives halts and classifies outcomes', () => {
     // 5. a run-log was written for durable forensics
     const log = path.join(repo, 'atris', '.spaceship', 'run.log');
     assert.ok(fs.existsSync(log), 'run.log should exist');
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test('spaceship stops at the tick cap and refuses a cap that is not a whole number', () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'spaceship-cap-'));
+  try {
+    execFileSync('git', ['init', '-q'], { cwd: repo, stdio: 'pipe' });
+    const run = (cap) => spawnSync('bash', [SCRIPT, '--repo', repo, '--hours', '1', '--max-ticks', cap, '--interval', '0', '--tick-cmd', 'true', '--no-email'], { encoding: 'utf8', timeout: 60000 });
+    const capped = run('3');
+    assert.equal(capped.status, 0, capped.stderr);
+    assert.match(capped.stdout, /tick cap reached after 3 ticks/);
+    assert.match(capped.stdout, /^RESULT shipped=0 halted=0 idle=3 ticks=3$/m);
+    const bad = run('three');
+    assert.equal(bad.status, 2);
+    assert.equal(bad.stderr.trim(), '--max-ticks needs a whole number');
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }
@@ -169,8 +191,9 @@ test('spaceship counts a commit on another branch/worktree as shipped, not idle'
     const out = execFileSync('bash', [
       SCRIPT,
       '--repo', repo,
-      '--hours', '0.003',
-      '--interval', '1',
+      '--hours', '1',
+      '--max-ticks', '2',
+      '--interval', '0',
       '--tick-timeout', '20',
       '--idle-alert', '2',
       '--halt-alert', '2',

@@ -53,6 +53,7 @@ Each line says what the skill does and when to open it. A skill with a review po
 
 - Frontend rules that keep a screen from looking generated. Open [design](design/SKILL.md) when you build or review UI. Policy: `policies/atris-design.md`.
 - Backend rules that keep code simple. Open [backend](backend/SKILL.md) when you build an API or service. Policy: `policies/atris-backend.md`.
+- Break a giant source file into feature folders with named owners and prove nothing changed. Open [feature-folders](feature-folders/SKILL.md) when one file has grown too big to read or edit safely.
 - Essay process with gates. Open [writing](writing/SKILL.md) when you draft an essay or long post. Policy: `policies/writing.md`.
 - Find and fix generated-sounding writing. Open [copy-editor](copy-editor/SKILL.md) when you edit a draft before it ships.
 - Cut interface text that should not be on the screen. Open [clean-copy](clean-copy/SKILL.md) when you write or review labels, hints, empty states or button text.

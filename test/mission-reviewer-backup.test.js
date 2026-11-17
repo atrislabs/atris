@@ -32,8 +32,7 @@ test('the review backup steps in, never as the builder grading itself', () => {
     const lineup = (mission, named = '') => engineVerifierLineup(mission, root, named, { healthRoot: root })
       .map(({ engine, model }) => `${engine} ${model}`.trim());
 
-    // The builder runs the model the spend gate lets it run, so each builder
-    // model here carries the owner's yes for that exact model.
+    // The builder runs the model it names; the yes in the env changes nothing.
     const withYes = (yes, fn) => {
       const before = process.env.ATRIS_CLAUDE_SPEND_OK;
       process.env.ATRIS_CLAUDE_SPEND_OK = yes;
