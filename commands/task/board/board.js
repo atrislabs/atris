@@ -483,6 +483,7 @@ function cmdAdd(args) {
     return;
   }
   console.log(`${taskRef(task)}\t${title}`);
+  if (!metadata.verify) console.log(`this task has no check yet, so it cannot be marked ready without one; add one when ready: atris task ready ${taskRef(task)} --verify "<command>" --result "<result>"`);
 }
 
 function delegateHandoff(task, owner, via, tag) {
