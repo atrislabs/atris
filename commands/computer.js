@@ -1116,7 +1116,7 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
 
 function printComputerPrHelp(log = console.log) {
   const openaiThinker = require('../lib/computer-pr').defaultThinkerModel('openai', {});
-  log('Usage: atris computer pr <owner/repo> "<task>" [--business <slug>] [--worker claude|openai] [--model <id>] [--base <branch>] [--branch <name>] [--thinker <id>] [--think | --no-think] [--as <member>] [--no-feed]');
+  log('Usage: atris computer pr <owner/repo> "<task>" [--business <slug>] [--worker claude|openai] [--model <id>] [--base <branch>] [--branch <name>] [--thinker <id>] [--think | --no-think] [--as <member>] [--no-feed] [--require-subscription] [--max-turns <1-100>]');
   log('');
   log('The business computer does the task on a new branch and opens a pull request.');
   log('It prints the pull request link. It never merges.');
@@ -1128,6 +1128,8 @@ function printComputerPrHelp(log = console.log) {
   log('                   ATRIS_PR_THINKER says otherwise. The Claude lane has none unless you set one.');
   log('  --think          ask the thinker first, for bugs you already know are hard');
   log('  --no-think       never ask the thinker');
+  log('  --require-subscription  request linked-subscription-only execution; needs compatible server and runner');
+  log('  --max-turns <1-100>     cap each model round, not elapsed time; use --no-think for one round');
   log('  --as <member>    work as a team member. On a computer with /workspace/atris/team the member');
   log('                   must be there; it reads its MEMBER.md and newest 20 lessons, and one lesson');
   log('                   line is saved to its lessons.md after the run. Default there: executor.');
@@ -1325,6 +1327,15 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
     return fail('No business computer selected. Pass --business <slug>.');
   }
 
+  if (parsed.requireSubscription) {
+    const policy = await request(`/business/${ctx.businessId}/chat/execution-policy`, {
+      method: 'GET', token, timeoutMs: 15000, retries: 0,
+    });
+    if (!policy.ok || policy.data?.version !== 1 || policy.data?.require_subscription !== true) {
+      return fail('the server does not confirm subscription-only request support; no run was started.');
+    }
+  }
+
   const { repo, task, base } = parsed;
   parsedRepo = repo;
   const suffix = deps.branchSuffix ? deps.branchSuffix() : prLib.randomBranchSuffix();
@@ -1402,6 +1413,8 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
         workspace_id: ctx.workspaceId,
         session_id: sessionId,
         reset_context: true,
+        ...(parsed.requireSubscription ? { require_subscription: true } : {}),
+        ...(parsed.maxTurns != null ? { max_turns: parsed.maxTurns } : {}),
         worker,
         ...(model ? { model } : {}),
       },
@@ -1410,7 +1423,7 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
     };
     let started;
     for (let attempt = 1; attempt <= 15; attempt++) {
-      started = await request(`/business/${ctx.businessId}/chat`, startOptions);
+      started = await request(`/business/${ctx.businessId}/chat${parsed.requireSubscription ? '/subscription-only' : ''}`, startOptions);
       const busy = !started.ok && [409, 502].includes(started.status)
         && /\bbusy\b/i.test(JSON.stringify([started.error, started.errorMessage, started.data, started.text]));
       if (!busy || attempt === 15) break;
