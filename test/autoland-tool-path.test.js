@@ -28,6 +28,21 @@ function tempDir(t, prefix) {
   return dir;
 }
 
+// A short PATH like the one launchd gives, minus gh: Linux runners keep gh
+// in /usr/bin, so a bare /usr/bin:/bin would still find it there.
+function shortPathWithoutGh(t) {
+  const dir = tempDir(t, 'atris-short-path-');
+  for (const from of ['/usr/bin', '/bin']) {
+    let names = [];
+    try { names = fs.readdirSync(from); } catch { continue; }
+    for (const name of names) {
+      if (name === 'gh' || fs.existsSync(path.join(dir, name))) continue;
+      try { fs.symlinkSync(path.join(from, name), path.join(dir, name)); } catch {}
+    }
+  }
+  return dir;
+}
+
 function fakeTool(dir, name) {
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, name);
@@ -40,11 +55,13 @@ test('a tool off PATH is found in the named tool folders, and a missing one says
   const base = tempDir(t, 'atris-tool-path-');
   const tools = path.join(base, 'tools');
   const gh = fakeTool(tools, 'gh');
-  const short = { PATH: '/usr/bin:/bin', ATRIS_TOOL_PACKAGE_DIRS: '' };
+  const bare = path.join(base, 'bare');
+  fs.mkdirSync(bare);
+  const short = { PATH: bare, ATRIS_TOOL_PACKAGE_DIRS: '' };
   assert.equal(toolPath.findTool('gh', short), '', 'no gh on a short PATH with no package folders');
   assert.deepEqual(toolPath.missingTools(['gh'], short), ['gh']);
   const line = toolPath.missingToolLine(['gh'], short);
-  assert.match(line, /^autoland tick: gh not found \(looked in \/usr\/bin, \/bin/);
+  assert.ok(line.startsWith(`autoland tick: gh not found (looked in ${bare}, `), line);
   assert.match(line, /could not check or land/);
 
   assert.equal(toolPath.findTool('gh', { ...short, ATRIS_TOOL_PACKAGE_DIRS: tools }), gh);
@@ -175,13 +192,13 @@ function tickRepo(t, origin) {
   fs.writeFileSync(path.join(repo, '.atris', 'policy', 'autoland.json'), JSON.stringify({
     enabled: true, enabled_by: 'keshav', daily_experiment: false, janitor: false, green_landing: false, map_fold: false,
   }));
-  return { base, repo };
+  return { base, repo, shortPath: shortPathWithoutGh(t) };
 }
 
 function tick(fx, extraEnv = {}) {
   const env = {
     ...process.env,
-    PATH: '/usr/bin:/bin',
+    PATH: fx.shortPath,
     ATRIS_TOOL_PACKAGE_DIRS: '',
     ATRIS_TASKS_DB: path.join(fx.base, 'tasks.db'),
     ATRIS_SKIP_UPDATE_CHECK: '1',
