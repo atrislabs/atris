@@ -309,8 +309,13 @@ test('next speaks to the person and to the team; done keeps taste with the perso
   assert.equal(named.code, 0, named.errs);
   assert.match(named.out, /^Done: Name your newsletter\./);
   assert.match(named.out, /Next: Write three rough sentences/);
-  const again = await run(dir, ['done', 'name-it', '--by', 'me']);
-  assert.match(again.out, /That one is already done\./);
+  const file = path.join(dir, 'atris', 'storylines', 'quiet-lantern', 'script.json');
+  const before = fs.readFileSync(file, 'utf8');
+  const again = await run(dir, ['done', 'name-it', '--by', 'someone-else']);
+  assert.deepEqual({ code: again.code, out: again.out, errs: again.errs }, {
+    code: 1, out: '', errs: `This move was already finished by me at ${NOW.toISOString()}.`,
+  });
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
 
   await run(dir, ['done', 'first-lines', '--by', 'me', '--proof', 'atris/storylines/quiet-lantern/first-lines.md']);
   const teamNext = await run(dir, ['next']);
