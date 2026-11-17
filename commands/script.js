@@ -230,6 +230,7 @@ function renderPage(state) {
   state.chapters.forEach((item, index) => {
     const mark = item === chapter ? ' ← we are here' : item.state === 'done' ? ' ← done' : '';
     lines.push(`${index + 1}. **${item.title}**. Finish line: ${item.finish_line}${mark}`);
+    if (item.take) lines.push(`   Our take: ${item.take}`);
     if (item.proof) lines.push(`   Proof: ${item.proof}`);
   });
   lines.push('', '## Current mission', '');
@@ -278,6 +279,7 @@ function buildState(script, answers, code, root, now) {
       id: chapter.id,
       title: fill(chapter.title, vars),
       finish_line: fill(chapter.finish_line, vars),
+      take: chapter.take ? fill(chapter.take, vars) : null,
       state: index === 0 ? 'current' : 'locked',
       proof: null,
       done_at: null,
@@ -667,7 +669,7 @@ function statusCommand(ctx) {
       script: run.script,
       mission: run.mission,
       goal: { number: run.goal.number, date: run.goal.date, set: Boolean(run.goal.number && run.goal.date) },
-      chapter: chapter ? { n: run.chapters.indexOf(chapter) + 1, of: run.chapters.length, title: chapter.title, finish_line: chapter.finish_line } : null,
+      chapter: chapter ? { n: run.chapters.indexOf(chapter) + 1, of: run.chapters.length, title: chapter.title, finish_line: chapter.finish_line, take: chapter.take || null } : null,
       next: move ? { id: move.id, who: move.who, seat: move.seat, taste: move.taste, you: move.you, brief: move.brief } : null,
       waiting_on_you: waiting,
     }, null, 2));
@@ -683,6 +685,7 @@ function statusCommand(ctx) {
   if (chapter) {
     row('Chapter', `${run.chapters.indexOf(chapter) + 1} of ${run.chapters.length}, ${chapter.title}`);
     row('Finish line', chapter.finish_line);
+    if (chapter.take) row('Our take', chapter.take);
   } else {
     row('Chapter', `all ${run.chapters.length} done`);
   }
@@ -796,6 +799,7 @@ function doneCommand(ctx) {
   }
   const next = currentChapter(run);
   if (found.finish) ctx.log(`Now chapter ${run.chapters.indexOf(next) + 1}: ${next.title}. Finish line: ${next.finish_line}`);
+  if (found.finish && next.take) ctx.log(`Our take: ${next.take}`);
   ctx.log(`Next: ${move.you}`);
   ctx.log(`  ${doneCommandFor(move, run, listRuns(ctx.root).length > 1)}`);
   return 0;

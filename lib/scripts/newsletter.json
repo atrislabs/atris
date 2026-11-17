@@ -110,6 +110,7 @@
       "id": "voice",
       "title": "Find your voice",
       "finish_line": "You approved one sample that sounds like you.",
+      "take": "Write the way you talk. A voice you can keep up beats a polished one you cannot.",
       "moves": [
         {
           "id": "name-it",
@@ -152,6 +153,7 @@
       "id": "first-issue",
       "title": "First issue out",
       "finish_line": "Your first issue is live and you have the link.",
+      "take": "Send it before it feels ready. Three hundred honest words beat a perfect issue that never goes out.",
       "moves": [
         {
           "seat": "publisher",
@@ -192,6 +194,7 @@
       "id": "first-readers",
       "title": "First 10 readers who are not friends",
       "finish_line": "10 people you did not know before signed up.",
+      "take": "Go where your readers already talk. Ten strangers who chose you matter more than a hundred friends being kind.",
       "moves": [
         {
           "seat": "researcher",
@@ -230,6 +233,7 @@
       "id": "rhythm",
       "title": "A steady rhythm for four issues",
       "finish_line": "Four issues out on your rhythm, none skipped.",
+      "take": "A short issue on the day you promised beats a long one a week late.",
       "moves": [
         {
           "seat": "publisher",
@@ -260,6 +264,7 @@
       "id": "first-paid",
       "title": "First paid reader",
       "finish_line": "One reader paid you and the money is real.",
+      "take": "Ask once, plainly, with one price. A kind reply is not a payment.",
       "moves": [
         {
           "seat": "growth",
