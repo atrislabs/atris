@@ -398,3 +398,31 @@ test('an answers file can name choices by their id from the script file', async 
   assert.match(out, /4 {2}You will be proud when a stranger tells you it helped them\./);
   assert.equal(readRun(dir, 'quiet-lantern').answers.readers.picked, 'behind');
 });
+
+test('the service script ships, starts and shows its take on each chapter', async (t) => {
+  const dir = tempDir(t);
+  const listed = await run(dir, ['list']);
+  assert.match(listed.out, /service +Get your first paying client from nothing\./);
+  const answers = writeAnswers(dir, { skill: 'design', clients: 'local', pain: 'evenings', hours: 'ten', proud: 'stranger', number: '3 paying clients', date: 'March 1' });
+  const started = await run(dir, ['start', 'service', '--name', 'First Client', '--yes', '--answers', answers]);
+  assert.equal(started.code, 0);
+  assert.match(started.out, /You offer design work to small local businesses\./);
+  assert.match(started.out, /You take away the job that eats their evenings\./);
+  assert.doesNotMatch(started.out, /\{[a-z_]+\}/);
+  const status = await run(dir, ['status']);
+  assert.match(status.out, /Chapter +1 of 5, One offer/);
+  assert.match(status.out, /Our take +Pick the smallest job you could finish in a week\./);
+  const page = fs.readFileSync(path.join(dir, 'atris', 'storylines', 'first-client.md'), 'utf8');
+  assert.match(page, /Our take: Twenty people you studied/);
+  assert.doesNotMatch(page, /\{[a-z_]+\}/);
+});
+
+test('no line a client could read in a shipped script says AI, agent or automate, except to forbid it', () => {
+  const dirScripts = path.join(__dirname, '..', 'lib', 'scripts');
+  for (const name of fs.readdirSync(dirScripts)) {
+    const script = JSON.parse(fs.readFileSync(path.join(dirScripts, name), 'utf8'));
+    const shown = [script.pitch, script.mission, ...script.values.will, ...script.values.will_not, ...script.your_part,
+      ...script.chapters.flatMap((c) => [c.title, c.finish_line, c.take || '', ...c.moves.map((m) => m.you)])];
+    for (const line of shown) assert.doesNotMatch(line, /\b(AI|agents?|automat\w*)\b/i, `${name}: ${line}`);
+  }
+});
