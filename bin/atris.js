@@ -627,7 +627,7 @@ function showHelpAll() {
   console.log('  now        - Show atris/now.md, the current operating truth');
   console.log('  99         - focus, meditation, health, and optional sync');
   console.log('  goal       - goal, distance, and what moved today (alias: wtf)');
-  console.log('  script     - Start something from zero with a guide: list, start newsletter or service, status, next, done');
+  console.log('  script     - Start something from zero with a guide: list, start newsletter or service, status, next, done, card');
   console.log('  founder    - show weekly commit and completed-task improvement from receipts');
   console.log('  orb        - Pick next moves while engine jobs work in the background');
   console.log('  activate   - Load Atris context');
