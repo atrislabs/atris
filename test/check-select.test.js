@@ -368,6 +368,14 @@ test('replay: one row per recent first-parent commit with tier, tests, seconds a
   assert.equal(git(root, 'status', '--porcelain'), before, 'replay changes nothing in the checkout');
   const text = await check(root, ['replay', '--last', '3']);
   assert.match(text.out, /normal +2 commits \(67%\) {2}median/);
+  // Each row and the summary say where their times came from, so a replay on a
+  // fresh machine is not read as measured.
+  for (const row of data.rows) assert.equal(typeof row.times_from.measured, 'number');
+  const from = data.summary.times_from;
+  const total = from.measured + from.map + from.default + from.unknown;
+  assert.ok(total > 0);
+  assert.match(text.out, new RegExp(`times: ${from.measured} of ${total} check runs measured on this machine, ${from.map} from the map's seconds`));
+  if (!from.measured) assert.match(text.out, /none are measured, so read these as the map's numbers/);
 });
 
 test('one hop does not go through a hub many tests import, but does go through a shared test fixture', (t) => {
@@ -401,4 +409,27 @@ test('a broad file is matched by the names the change touches, not by its file n
   write(root, 'src/big.js', 'function renderSidebarPanel() {\n  return 1;\n}\n\nfunction otherThingHere() {\n  return 4;\n}\n');
   const other = planFor(root, ['src/big.js'], map);
   assert.deepEqual(other.uncovered, ['src/big.js']);
+});
+
+test('a feature part a split module loads by a string counts as imported by it, and the module is not a hub in front of it', (t) => {
+  const files = {
+    'backend/utils/feature_parts.py': 'def run(namespace, relpath):\n    pass\n',
+    'backend/services/scanner.py': 'X = 1\n__import__("utils.feature_parts", fromlist=["run"]).run(globals(), "scanner_features/core/core.py")\n',
+    'backend/services/scanner_features/core/core.py': 'def scan():\n    return 1\n',
+    // Not inside the module's own _features folder: never followed.
+    'backend/services/other_features/x.py': 'Y = 1\n',
+  };
+  for (let i = 0; i < 9; i += 1) files[`backend/tests/test_scan_${i}.py`] = 'from services import scanner\n\ndef test_it():\n    assert scanner.X\n';
+  const { root } = project(t, { files });
+  write(root, 'backend/services/scanner_features/core/core.py', 'def scan():\n    return 2\n');
+  const picked = planFor(root, ['backend/services/scanner_features/core/core.py']);
+  const sel = picked.selections['py-tests'];
+  assert.equal(sel.mode, 'tests', JSON.stringify(sel));
+  assert.equal(sel.tests.length, 9, 'all nine tests of the module run the part');
+  assert.match(sel.tests[0].reasons[0], /imports: backend\/services\/scanner_features\/core\/core\.py \(via backend\/services\/scanner\.py\)/);
+  assert.deepEqual(sel.hubs, []);
+  const graph = buildGraph(root, { writeCache: false });
+  assert.deepEqual(graph.importersOf('backend/services/scanner_features/core/core.py'), ['backend/services/scanner.py']);
+  assert.deepEqual(graph.importersOf('backend/services/other_features/x.py'), []);
+  assert.deepEqual(pySpecifiers('import os\n'), ['os'], 'a module without feature_parts gets no part edges');
 });

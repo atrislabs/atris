@@ -535,7 +535,13 @@ async function evaluate(root, map, options, log) {
     }
     const result = runByKey.get(entry.key);
     if (!result) return { ...base, status: 'not-run', note: 'an earlier stage failed, so it did not start', seconds: 0, exit_code: null };
-    return { ...base, ...resultRow(entry, result, map.skipLines), expected_seconds: entry.expected, stage: entry.stage || 1 };
+    const row = { ...base, ...resultRow(entry, result, map.skipLines), expected_seconds: entry.expected, stage: entry.stage || 1 };
+    // A fallback that runs only part of the tests is never proof: it passed
+    // here, but the whole suite still has to.
+    if (entry.partialFallback && row.status === 'passed') {
+      return { ...row, status: 'needs-lane', lane: 'full gate', partial_fallback: true, note: 'it passed, but this fallback runs only part of the tests; the map should name the release gate or a check marked "full": true' };
+    }
+    return row;
   });
   budget.recordDurations(root, picked.selected.map((entry, index) => ({ entry, row: rows[index] }))
     .filter(({ row }) => (row.status === 'passed' || row.status === 'failed') && !row.note && row.seconds > 0)
