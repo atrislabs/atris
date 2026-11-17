@@ -637,6 +637,7 @@ function showHelpAll() {
   console.log('  gm         - Play your team as a front office: ratings, stuck jobs, league, replay, phone, walk');
   console.log('  host       - The Host: gets to know people, makes two-yes introductions (atris member install host)');
   console.log('  nexus      - Your people from the shared store: today, card, list, search, count, note, stage, add, due, paid, wall, goal, city, bring-over, mail, reply, pull, local, push-notes (--json for agents)');
+  console.log('  newsletter - Your newsletter: readers add and list, issue new and preview, send --dry-run (a real send is a person\'s own action)');
   console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  doctor     - Node/task/auth/workspace readiness (--json for agents)');
@@ -2579,6 +2580,10 @@ if (command === 'guide') {
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'nexus') {
   Promise.resolve().then(() => require('../commands/nexus').nexusCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'newsletter') {
+  Promise.resolve().then(() => require('../commands/newsletter').newsletterCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'film') {
