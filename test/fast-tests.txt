@@ -176,6 +176,7 @@ test/roster-team-tables.test.js
 test/engine-launch-shapes.test.js
 test/link-command.test.js
 test/member-result.test.js
+test/member-runs.test.js
 test/pay.test.js
 test/trust.test.js
 test/idea-inbox.test.js

@@ -463,6 +463,36 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   return startArgs;
 }
 
+// Finish the member's unfinished runs (lib/member-runs.js). A finisher that
+// cannot read them starts nothing new, so the rule cannot be skipped by error.
+function memberFinishEarlierRuns(owner, cwd = process.cwd()) {
+  try {
+    return require('../lib/member-runs').finishMemberRuns({ cwd, member: owner });
+  } catch (error) {
+    const why = String((error && error.message) || error).split('\n')[0];
+    return { blocked: true, finished: [], left: 0, line: `${owner} could not check its earlier runs, so it starts nothing new: ${why}` };
+  }
+}
+
+// Record how a member run in its own copy ended: landed, dropped or
+// unfinished. Never throws: a run whose ending could not be recorded stays
+// unfinished, and the member's next wake finishes it.
+function settleMemberRun(name, mission, landing, { asJson = false, quiet = false } = {}) {
+  if (!mission || !mission.worktree || !mission.worktree.path) return null;
+  let end;
+  try {
+    end = require('../lib/member-runs').settleRunEnd({ mission, landing: landing || null });
+  } catch (error) {
+    end = { state: 'unfinished', why: `its ending could not be recorded (${String((error && error.message) || error).split('\n')[0]})` };
+  }
+  if (end && !asJson && !quiet) {
+    console.log(end.state === 'unfinished'
+      ? `run unfinished: ${end.why}; ${name} finishes it before its next step`
+      : `run ${end.state}: ${end.why}${end.copy_kept ? ` (copy kept: ${end.copy_kept})` : ''}`);
+  }
+  return end;
+}
+
 function insideGitRepo(startDir) {
   let dir = path.resolve(startDir || process.cwd());
   while (true) {
@@ -476,6 +506,10 @@ function insideGitRepo(startDir) {
 function startMemberRunMission(name, missionText, args = []) {
   const paths = requireMemberDir(name);
   const owner = paths.storageName || name;
+  // One run at a time: a member finishes its earlier runs (landed, dropped,
+  // or handed to the owner) before it starts a new one.
+  const earlier = memberFinishEarlierRuns(owner);
+  if (earlier.blocked) return { status: 1, payload: { ok: false, error: earlier.line }, stderr: earlier.line };
   const startArgs = buildMemberRunStartArgs(owner, missionText, args);
   return memberRunCli(startArgs, process.cwd());
 }
@@ -729,7 +763,7 @@ function reviewRefusalLine(refusal) {
   return line.trim().slice(0, 200);
 }
 
-function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
+function memberRunWith(name, args, { quiet = false, closeTaskIds = [], settleAtEnd = true } = {}) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('usage: atris member run <name> ["mission text"] [--verify "<cmd>"] [--minutes N|--hours N] [--json]');
     console.log('pick for me: atris member run "fix the flaky login test" (the best member takes it and runs it)');
@@ -801,6 +835,9 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
     }
   }
 
+  if (startedNewMission && mission.worktree?.path && !hasFlag(args, '--detach') && !hasFlag(args, '--dry-run')) {
+    try { require('../lib/member-runs').noteRunStart(mission); } catch {}
+  }
   if (startedNewMission && !asJson) {
     if (mission.worktree?.path) console.log(`worktree: ${mission.worktree.path}`);
     if (nodeModulesLinked) console.log(`linked node_modules from ${nodeModulesSource}`);
@@ -921,6 +958,12 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
       || runnerSwap?.to || readFlag(args, '--runner', '') || '';
     result.autoland = require('../lib/member-autoland').autolandMemberRun({ mission: finalMission, cwd, summary, workerEngine, closeTaskIds });
     if (!asJson && !quiet) console.log(result.autoland.line);
+  }
+  // Every run in its own copy ends landed, dropped or unfinished. member go
+  // records it after the job is handed in, which still reads the copy.
+  if (settleAtEnd && !noWorkStepExpected && !waitingOnNativeGoal) {
+    result.run_end = settleMemberRun(name, { ...finalMission, worktree: finalMission.worktree || mission.worktree },
+      result.autoland, { asJson, quiet });
   }
   if (checkFailed) {
     result.check_failed = true;
@@ -10168,7 +10211,18 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   }
   // A human or odd-typed member never takes a task: it would be claimed and
   // then stranded when the run refuses the member.
-  const pulled = pullTask && !prompt && !missionSummary.live_mission && !memberRefusalFor(targetMember, paths.memberFile)
+  const mayPull = pullTask && !prompt && !missionSummary.live_mission && !memberRefusalFor(targetMember, paths.memberFile);
+  // A member with an unfinished run finishes it before it takes a new job.
+  if (mayPull && !dryRun) {
+    const earlier = memberFinishEarlierRuns(owner, root);
+    if (earlier.blocked) {
+      const payload = { ok: true, action: 'member_go', mode: 'finishing', member: owner, reason: earlier.line, finished: earlier.finished };
+      printJsonOrText(payload, [earlier.line], asJson);
+      if (needsCheck) process.exitCode = require('../lib/member-up').IDLE_EXIT;
+      return payload;
+    }
+  }
+  const pulled = mayPull
     ? memberGoTask(owner, root, { claim: !dryRun, requireCheck: needsCheck })
     : null;
   if (needsCheck && !pulled) {
@@ -10303,15 +10357,19 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   let result = null;
   try {
     // The job rides to the merge line so it closes itself when its change merges.
-    result = await memberRunWith(owner, [effectivePrompt, '--ignite', ...runFlags], { quiet: asJson, closeTaskIds: [pulled.task.id] });
+    result = await memberRunWith(owner, [effectivePrompt, '--ignite', ...runFlags], { quiet: asJson, closeTaskIds: [pulled.task.id], settleAtEnd: false });
   } catch (error) {
     memberGoFinishTask(owner, pulled.task, null, error);
     throw error;
   }
   const task = memberGoFinishTask(owner, pulled.task, result);
+  if (result && result.waiting_on !== 'native_goal_start') {
+    const ranMission = result.mission ? { ...result.mission, worktree: result.mission.worktree || result.worktree } : null;
+    result.run_end = settleMemberRun(owner, ranMission, result.autoland, { asJson, quiet: asJson });
+  }
   const merged = { ...(result || {}), task };
   if (asJson) console.log(JSON.stringify(needsCheck
-    ? { task, work_step: { summary: result?.work_step?.summary || null }, error: result?.error || null }
+    ? { task, work_step: { summary: result?.work_step?.summary || null }, run_end: result?.run_end ? { state: result.run_end.state, why: result.run_end.why } : null, error: result?.error || null }
     : merged));
   else if (task.outcome === 'review') console.log(`Task "${task.title}" is ready for review.`);
   else if (task.outcome === 'done') console.log(`Task "${task.title}" merged and closed itself.`);
