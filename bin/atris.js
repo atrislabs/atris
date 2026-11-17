@@ -627,6 +627,7 @@ function showHelpAll() {
   console.log('  now        - Show atris/now.md, the current operating truth');
   console.log('  99         - focus, meditation, health, and optional sync');
   console.log('  goal       - goal, distance, and what moved today (alias: wtf)');
+  console.log('  script     - Start something from zero with a guide: list, start newsletter, status, next, done');
   console.log('  founder    - show weekly commit and completed-task improvement from receipts');
   console.log('  orb        - Pick next moves while engine jobs work in the background');
   console.log('  activate   - Load Atris context');
@@ -3139,6 +3140,11 @@ if (command === 'guide') {
   require('../commands/gm').gmCommand(...process.argv.slice(3))
     .then(() => exitAfterStdoutDrain(process.exitCode || 0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'script') {
+  // Script: a guided zero to one run (code name, a few questions, goal, team, first move).
+  Promise.resolve().then(() => require('../commands/script').scriptCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'game') {
   require('../commands/game').gameCommand(process.argv.slice(3))
     .then((status) => exitAfterStdoutDrain(status === 1 ? 1 : 0))
