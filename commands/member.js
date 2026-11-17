@@ -848,7 +848,7 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
   else if (ignite && memberRunHasRealCheck(mission.verifier) && !hasFlag(runArgs, '--no-referee')) runArgs.push('--referee-if-check-edited');
   const budgetSeconds = memberRunBudgetSeconds(args);
   if (!readFlag(runArgs, '--max-ticks', '')) {
-    runArgs.push('--max-ticks', budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
+    runArgs.push('--max-ticks', budgetSeconds ? String(require('./run-front').runTickBudget([], budgetSeconds)) : '1');
   }
   if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', String(budgetSeconds || memberRunDefaultWallSeconds(name, cwd)));
   const caller = callerRuntime(args);
