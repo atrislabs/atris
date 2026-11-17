@@ -754,8 +754,12 @@ function doneCommand(ctx) {
     ctx.err('See the next one with: atris script next');
     return 1;
   }
+  if (found.state === 'done') {
+    ctx.err(`This move was already finished by ${found.by || 'someone unknown'} at ${found.done_at || 'an unknown time'}.`);
+    return 1;
+  }
   if (found.state !== 'open') {
-    ctx.log(`That one is already ${found.state === 'done' ? 'done' : 'behind you'}.`);
+    ctx.log('That one is already behind you.');
     return 0;
   }
   if (foundChapter !== chapter) {
