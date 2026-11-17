@@ -742,6 +742,7 @@ function runDigest(root, args, { forceSend = false } = {}) {
     accepted,
     waiting,
     protectedWaiting: protectedReviewWaiting(root, policy, waiting),
+    checkedProtected: state.checked_protected?.rows || [],
     waitingWishes,
     landed: landSummarySafe(root),
     project: projectName(root),
@@ -821,6 +822,8 @@ async function runTick(root, args) {
 // changes, no fetch.
 function runTickPreview(root, { json, receipt, timer }) {
   receipt.dry_run = true;
+  runCheckReroute(root, receipt, { dryRun: true });
+  runCheckedMergedDone(root, receipt, { dryRun: true });
   runMergedWorkClose(root, receipt, { dryRun: true });
   // The second check's next turn, in the order it would take the jobs.
   try {
@@ -839,6 +842,15 @@ function runTickPreview(root, { json, receipt, timer }) {
     console.log(JSON.stringify(receipt));
     return 0;
   }
+  const checked = receipt.checked_merged || {};
+  const wouldDone = checked.would_done || [];
+  console.log(`autoland tick (dry run): would mark ${wouldDone.length} checked merged job${wouldDone.length === 1 ? '' : 's'} done`);
+  for (const row of wouldDone) console.log(`  done ${row.ref}: checked twice and on ${checked.base}; undo: ${row.undo}`);
+  for (const row of checked.protected || []) console.log(`  yours ${row.ref}: checked twice, ${row.undone ? 'waits because' : `${row.merged ? 'merged' : 'not merged yet'}, waits because`} ${row.why}`);
+  if (receipt.checked_merged_error) console.log(`  could not check checked merged work: ${receipt.checked_merged_error}`);
+  const reroute = receipt.check_reroute || {};
+  for (const row of reroute.rerouted || []) console.log(`  rewrite ${row.ref}'s check: ${row.from} -> ${row.to}`);
+  for (const row of reroute.sent_back || []) console.log(`  send ${row.ref} back to its builder: its check ${row.command} may not run alone`);
   const close = receipt.merged_close || {};
   console.log(`autoland tick (dry run): would close ${(close.would_close || []).length} merged job${(close.would_close || []).length === 1 ? '' : 's'}, would send ${(close.would_send_back || []).length} job${(close.would_send_back || []).length === 1 ? '' : 's'} back`);
   const prLine = (row) => (row.action === 'merged_earlier'
@@ -1067,6 +1079,79 @@ function runMergedWorkClose(root, receipt, { dryRun = false, now = Date.now() } 
   return out;
 }
 
+// Review rows for this workspace straight from the job database, with their
+// display refs, so a pass never reads a stale projection file.
+function reviewRowsFromDb(root) {
+  const taskDb = require('../lib/task-db');
+  const db = taskDb.open();
+  const workspace = taskDb.workspaceRoot(mainCheckoutRoot(root) || root);
+  const all = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot: workspace }));
+  return all.filter((t) => t && t.status === 'review');
+}
+
+// 2026-11-16: five web jobs passed both checks, were merged, and still sat
+// in review for a person's accept while the accept step re-ran every check
+// and ran out of time. Before that step, every hour, checked work already on
+// the main branch is marked done when its lane is quiet; protected lanes
+// (sign-in, money, security, release and the rest) go on the morning list.
+// Off by policy: checked_merged_done:false.
+function runCheckedMergedDone(root, receipt, { dryRun = false } = {}) {
+  try {
+    const { closeCheckedMergedJobs } = require('../lib/checked-merged-done');
+    const out = closeCheckedMergedJobs({ root, tasks: reviewRowsFromDb(root), dryRun });
+    receipt.checked_merged = {
+      base: out.base,
+      checked: out.checked,
+      ...(dryRun ? { would_done: out.would_done } : { done: out.done }),
+      protected: out.protected,
+      skipped: out.skipped,
+      ...(out.error ? { error: out.error } : {}),
+    };
+    if (!dryRun && out.done.length) {
+      try { require('./task').refreshKeptTaskList(root); } catch {}
+    }
+    return out;
+  } catch (err) {
+    receipt.checked_merged_error = String((err && err.message) || err).slice(0, 200);
+    return null;
+  }
+}
+
+// A job whose recorded check this machine may not run alone gets its check
+// rewritten to the allowed shape, so the second check runs it in this same
+// pass, or goes back to its builder with a note. Never waits a second hour.
+function runCheckReroute(root, receipt, { dryRun = false } = {}) {
+  try {
+    const { rerouteDisallowedChecks } = require('../lib/check-shape-reroute');
+    const workspace = mainCheckoutRoot(root) || root;
+    const out = rerouteDisallowedChecks({ root: workspace, tasks: reviewRowsFromDb(root), dryRun });
+    if (out.rerouted.length || out.sent_back.length || out.held.length) receipt.check_reroute = out;
+    if (!dryRun && out.sent_back.length) {
+      try { require('./task').refreshKeptTaskList(root); } catch {}
+    }
+    return out;
+  } catch (err) {
+    receipt.check_reroute_error = String((err && err.message) || err).slice(0, 200);
+    return null;
+  }
+}
+
+function checkedProtectedRows(rows = []) {
+  return (rows || []).map((r) => ({ ref: r.ref, title: r.title, lane: r.lane, why: r.why, merged: r.merged === true, ...(r.undone ? { undone: true } : {}) }));
+}
+
+function checkedMergedNote(receipt) {
+  const done = (receipt.checked_merged?.done || []).length;
+  const yours = (receipt.checked_merged?.protected || []).length;
+  const rerouted = (receipt.check_reroute?.rerouted || []).length;
+  const sentBack = (receipt.check_reroute?.sent_back || []).length;
+  return (done ? `, marked ${done} checked merged job${done === 1 ? '' : 's'} done` : '')
+    + (yours ? `, ${yours} checked protected job${yours === 1 ? '' : 's'} on your morning list` : '')
+    + (rerouted ? `, rewrote ${rerouted} check${rerouted === 1 ? '' : 's'} to the allowed shape` : '')
+    + (sentBack ? `, sent ${sentBack} job${sentBack === 1 ? '' : 's'} with a refused check back to the builder` : '')
+    + (receipt.checked_merged_error ? ', could not check which checked jobs are merged' : '');
+}
+
 function mainCheckoutRoot(root) {
   const result = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8' });
   if (result.status !== 0 || !result.stdout.trim()) return null;
@@ -1242,6 +1327,11 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // Refresh origin once, before anything is accepted: the landing proof reads
   // origin's target, and a stale ref would call landed work unlanded.
   timed('origin_refresh', () => refreshLandingRefs(root));
+  // 0a. a refused check is rewritten or sent back before the second check
+  // runs, so a rewritten one is checked in this same pass.
+  if (policy.check_reroute !== false) timed('check_reroute', () => runCheckReroute(root, receipt));
+  // 0b. checked work already merged is done without re-running its checks.
+  if (policy.checked_merged_done !== false) timed('checked_merged_done', () => runCheckedMergedDone(root, receipt));
   const pendingReviewRows = readProjection(root)
     .filter((task) => task && task.status === 'review')
     .filter((task) => String(task.review?.approval_status || task.metadata?.approval_status || 'pending') === 'pending')
@@ -1314,6 +1404,11 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     receipt.accept_error = describeAcceptKillCause(accept) || accept.stderr.slice(0, 200) || 'auto-accept output unreadable';
   }
 
+  // Checked work marked done above is on the main branch: it landed.
+  for (const row of receipt.checked_merged?.done || []) {
+    if (!receipt.landed.includes(row.ref)) receipt.landed.push(row.ref);
+  }
+
   // 2a. merged work closes its jobs and clashing work goes back on the list,
   // every hour, whether or not a team loop is running. After the accept step,
   // so work that can be checked and landed the normal way is landed first.
@@ -1344,6 +1439,11 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
 
   // 3. alarm on anything waiting on a human past the line
   const state = autoland.readState(root);
+  // The morning list: protected work that passed both checks, kept fresh
+  // every hour so the digest shows what waits on one tap today.
+  if (receipt.checked_merged && !receipt.checked_merged.error) {
+    state.checked_protected = { at: receipt.at, rows: checkedProtectedRows(receipt.checked_merged.protected) };
+  }
   const tasks = readProjection(root);
   const waiting = autoland.waitingOnHuman(tasks);
   const protectedWaiting = protectedReviewWaiting(root, policy, waiting);
@@ -1561,6 +1661,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
       accepted: autoland.acceptedInLastDay(readAcceptedTaskHistory(root, tasks)),
       waiting,
       protectedWaiting,
+      checkedProtected: state.checked_protected?.rows || [],
       waitingWishes,
       landed: landSummarySafe(root),
       project: projectName(root),
@@ -1666,7 +1767,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     // Always print the standing backlog, and name work that cleared every
     // gate and still did not land. That is the shape of a stuck loop.
     const stuckNote = stuckBacklogNote(receipt);
-    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}${acceptedNotLandedNote(receipt)}${mergedCloseNote(receipt)}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${sshAgentSweepNote(receipt)}${lostRunSweepNote(receipt)}${tickTimingNote(receipt)}${receiptNote}`;
+    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}${acceptedNotLandedNote(receipt)}${checkedMergedNote(receipt)}${mergedCloseNote(receipt)}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${sshAgentSweepNote(receipt)}${lostRunSweepNote(receipt)}${tickTimingNote(receipt)}${receiptNote}`;
     const validationLine = engineAnswerValidationLine(receipt);
     if (validationLine) console.log(validationLine);
     console.log(gateForHuman(summary).text);

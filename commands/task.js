@@ -655,6 +655,7 @@ module.exports = {
   landingProofVerify,
   stampAutoAcceptMetadata,
   acceptReviewTask,
+  reviewBlockerForTask,
   evaluateSweepAutoAccept,
   writeDefaultProjection,
 };
