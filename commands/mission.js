@@ -10503,10 +10503,18 @@ function completeMissionRunPhase(context) {
       next: missionRunCreatedNextLine(createdNext, continuationGoal, mission),
     };
     landingSummary.reason = missionHumanReasonText(mission, landingSummary.changed);
-    const finalRuntimeMission = runtimeView(mission);
     const effectiveBudgetContract = runBudgetContract || mission.budget_contract || null;
+    const finalDriverReason = ['complete', 'stopped', 'paused'].includes(String(mission.status || ''))
+      ? String(mission.status)
+      : (pauseReason || (ticks.length >= effectiveMaxTicks ? 'max-ticks-reached' : 'run-returned'));
+    const earlyStop = roundLimitEnding(finalDriverReason, effectiveBudgetContract?.requested_seconds,
+      (Date.now() - startedAt) / 1000, ticks.length);
+    if (earlyStop) landingSummary.next = 'This invocation ended at its round limit. Mission state is unchanged; review the receipt before explicitly resuming.';
+    const finalRuntimeMission = runtimeView(mission);
     const finalReceipt = writeReceipt(finalRuntimeMission, {
       kind: 'mission_run_summary',
+      run_exit_reason: finalDriverReason,
+      early_stop: earlyStop,
       frozen,
       pause_reason: pauseReason,
       ran_ticks: ranTicks,
@@ -10523,17 +10531,16 @@ function completeMissionRunPhase(context) {
     const atrisGoalState = refreshAtrisGoalController(cwd, { missionId: mission.id });
     const codexGoalState = refreshCodexGoalController(cwd);
 
-    const finalDriverReason = ['complete', 'stopped', 'paused'].includes(String(mission.status || ''))
-      ? String(mission.status)
-      : (pauseReason || (ticks.length >= effectiveMaxTicks ? 'max-ticks-reached' : 'run-returned'));
     detachedDriverLifecycle?.setExitReason(finalDriverReason);
-    const earlyStop = roundLimitEnding(finalDriverReason, effectiveBudgetContract?.requested_seconds,
-      (Date.now() - startedAt) / 1000, ticks.length);
     if (earlyStop) {
       try { appendEvent('mission_run_round_limit', mission, { rounds: earlyStop.rounds, minutes_left: earlyStop.minutes_left }, cwd); } catch {}
     }
     const summaryLines = missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason, continuationGoal, ticks, createdNext, blocker);
-    if (earlyStop) summaryLines.splice(1, 0, `  ${earlyStop.line}`);
+    if (earlyStop) {
+      summaryLines.splice(1, 0, `  ${earlyStop.line}`);
+      const nextLineIndex = summaryLines.findIndex(line => line.startsWith('  Next: '));
+      if (nextLineIndex >= 0) summaryLines[nextLineIndex] = `  Next: ${landingSummary.next}`;
+    }
 
     printJsonOrText(
       { ok: true, action: 'mission_run', mission, runner_override: runnerOverride ? finalRuntimeMission.run_runner_override : null, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, blocker, session_id: sessionId, summary_receipt: finalReceipt, budget_contract: effectiveBudgetContract, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, created_next: createdNext, early_stop: earlyStop },
@@ -12127,3 +12134,4 @@ module.exports = {
   acquireMissionLock,
   releaseMissionLock,
 };
+
