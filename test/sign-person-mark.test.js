@@ -1,6 +1,8 @@
 // Seen 2026-11-17: 112 of 112 saves read as agent changes, the owner's own hand edits among them,
 // because the Atris line goes on every save. A save typed in a terminal with no agent running
 // now also says "Atris-Made-By: person", and the counter reads it.
+// A member testing the first try found helpers the tool starts carry no helper sign, so the
+// programs that started the save are checked, not the signs alone.
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
@@ -28,23 +30,38 @@ function hook(root, env) {
   return fs.readFileSync(msg, 'utf8');
 }
 
-test('a terminal save with no agent running is marked as a person; an agent save is not', (t) => {
+// The hook's parent is this test process; a fake process list says who started it.
+function tree(root, starter) {
+  const file = path.join(root, 'ps.txt');
+  fs.writeFileSync(file, [
+    '50 1 /sbin/launchd',
+    '60 50 /System/Applications/Utilities/Terminal.app/Contents/MacOS/Terminal',
+    '70 60 -zsh',
+    ...(starter ? [`75 70 ${starter}`] : []),
+    `${process.pid} ${starter ? 75 : 70} git commit -m x`,
+  ].join('\n') + '\n');
+  return { ATRIS_SIGN_PS: `cat ${file}` };
+}
+
+test('a save started from a plain terminal is marked as a person; one started by a helper is not', (t) => {
   const root = repo(t);
   installSignHook(root);
-  const person = hook(root, { TERM_PROGRAM: 'Apple_Terminal' });
+  const person = hook(root, { TERM_PROGRAM: 'Apple_Terminal', ...tree(root) });
   assert.match(person, /^Co-authored-by: Atris /m, 'the Atris line always stays');
   assert.match(person, /^Atris-Made-By: person$/m);
   assert.equal(isAgentCommitBody(person), false);
 
-  // ATRIS_RUNNER_PROFILE: found 2026-11-17 by a member testing this before it landed; atris engine sets it.
-  for (const marker of ['CLAUDECODE', 'CODEX_SANDBOX', 'ATRIS_MISSION_DRIVER_DETACHED', 'ATRIS_RUNNER_PROFILE']) {
-    const agent = hook(root, { TERM_PROGRAM: 'Apple_Terminal', [marker]: '1' });
+  // Seen 2026-11-17: helpers the tool starts carry no helper sign, so the starters decide.
+  for (const starter of ['node /opt/homebrew/bin/atris member run krishna', '/opt/homebrew/bin/grok --always-approve -p go',
+    'codex exec -m gpt-6-sol go', '/Applications/Atris.app/Contents/MacOS/Atris', 'claude -p go']) {
+    const agent = hook(root, { TERM_PROGRAM: 'Apple_Terminal', ...tree(root, starter) });
     assert.match(agent, /^Co-authored-by: Atris /m);
-    assert.doesNotMatch(agent, /Atris-Made-By/, marker);
-    assert.equal(isAgentCommitBody(agent), true, marker);
+    assert.doesNotMatch(agent, /Atris-Made-By/, starter);
+    assert.equal(isAgentCommitBody(agent), true, starter);
   }
-  const scheduled = hook(root, {});
-  assert.doesNotMatch(scheduled, /Atris-Made-By/, 'no terminal, no claim it was a person');
+  const signed = hook(root, { TERM_PROGRAM: 'Apple_Terminal', CLAUDECODE: '1', ...tree(root) });
+  assert.doesNotMatch(signed, /Atris-Made-By/, 'a helper sign is enough on its own');
+  assert.doesNotMatch(hook(root, tree(root)), /Atris-Made-By/, 'no terminal, no claim it was a person');
 });
 
 test('an older install is upgraded in place, and a named agent still wins over the person mark', (t) => {
@@ -61,7 +78,7 @@ fi
   fs.chmodSync(hookPath, 0o755);
   assert.equal(installSignHook(root).upgraded, true);
   assert.match(fs.readFileSync(hookPath, 'utf8'), /echo mine/, 'the rest of the hook stays');
-  assert.match(hook(root, { TERM_PROGRAM: 'iTerm.app' }), /^Atris-Made-By: person$/m);
+  assert.match(hook(root, { TERM_PROGRAM: 'iTerm.app', ...tree(root) }), /^Atris-Made-By: person$/m);
   assert.equal(installSignHook(root).already, true);
   assert.equal(isAgentCommitBody('x\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nAtris-Made-By: person\n'), true);
   assert.equal(isAgentCommitBody('x\n\nCo-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>\n'), true, 'old saves keep reading as before');
