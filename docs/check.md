@@ -244,7 +244,8 @@ gate. Every receipt names the map it used: `map_blob` and `map_from`.
 5. `each` checks run once per file: a candidate that changed, or (with
    `names_changed`) one whose text names a changed file. A file that says
    `launches: app` in its first 20 lines goes to `no-screen`; one that says
-   `spends:` (anything but nothing) goes to `paid`.
+   `spends:` (anything but nothing) goes to `paid`. A `!glob` entry leaves
+   files out: `["a/*.sh", "!a/net.sh"]` never plans `a/net.sh`.
 
 High risk in every project, whatever the map says: `atris/checks.json`
 itself, lockfiles and `migrations/` folders. `importers_except` can quiet an
@@ -455,6 +456,11 @@ owner notice channel (`"owner_notice"`: `"feed"`, the default, or `"none"`).
 A suggested `big` list: sign-in, payment, data loss and migrations, plus the
 paths that keep the app from opening. This covers red checks only: live
 production errors are not wired to `atris check fix` today.
+
+The job runs with `ATRIS_RUNNER=atris check fix` and `ATRIS_FIX_RECEIPT`
+(the receipt file). Its task names the receipt. When it ends, the
+receipt gains `fix_job`: the exit code, the pull request link, the run id
+and the job record (each one only when `computer pr` printed it).
 
 v1: CodeOps fixes red. Next: the lane itself runs on the CodeOps computer,
 once it can return a receipt and run the app with no screen.

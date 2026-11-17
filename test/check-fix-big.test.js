@@ -134,3 +134,55 @@ test('owner_notice none posts nothing, and a plain failure is not big and gets n
   assert.match(dry.out, /^big: no \(normal risk, nothing in the map's big list\)$/m);
   assert.match(dry.out, /--base feature$/m);
 });
+
+test('fix names the receipt, tells computer pr who sent it, and writes the job back into the receipt', async (t) => {
+  const { root, calls, run } = await failedProject(t);
+  const bin = path.dirname(calls);
+  fs.writeFileSync(path.join(bin, 'fake-bin', 'atris'), `#!/bin/sh\nprintf '%s\\n' "$@" >> ${JSON.stringify(calls)}\nprintf 'RUNNER=%s\\nRECEIPT=%s\\n' "$ATRIS_RUNNER" "$ATRIS_FIX_RECEIPT" >> ${JSON.stringify(calls)}\necho EXECUTION_ID=exec-42\necho JOB_RECORD=/tmp/jobs/exec-42.json\necho PR_URL=https://github.com/acme/app/pull/7\n`);
+  const result = await run(['fix']);
+  assert.equal(result.code, 0, result.out);
+  const sent = fs.readFileSync(calls, 'utf8');
+  assert.match(sent, /^RUNNER=atris check fix$/m);
+  assert.match(sent, /^RECEIPT=.*check-[0-9a-f]{12}\.json$/m);
+  assert.match(sent, /^Receipt: check-[0-9a-f]{12}\.json, tree [0-9a-f]+\.$/m);
+  const dir = path.join(root, '.atris', 'receipts');
+  const receipt = JSON.parse(fs.readFileSync(path.join(dir, fs.readdirSync(dir).find((name) => name.startsWith('check-'))), 'utf8'));
+  assert.equal(receipt.fix_job.exit_code, 0);
+  assert.equal(receipt.fix_job.pr_url, 'https://github.com/acme/app/pull/7');
+  assert.equal(receipt.fix_job.execution_id, 'exec-42');
+  assert.equal(receipt.fix_job.job_record, '/tmp/jobs/exec-42.json');
+  assert.match(result.out, /fix job: exit 0, https:\/\/github\.com\/acme\/app\/pull\/7/);
+});
+
+test('fix sends no folder of this machine: the main checkout a work copy borrowed its python from and the home folder come out', async (t) => {
+  const { root, run } = await failedProject(t);
+  const main = path.dirname(root);
+  const real = fs.realpathSync(root);
+  const dir = path.join(root, '.atris', 'receipts');
+  const file = path.join(dir, fs.readdirSync(dir).find((name) => name.startsWith('check-')));
+  const receipt = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const row = receipt.checks.find((entry) => entry.status === 'failed');
+  // A work copy of root: root is its main checkout, as git names it.
+  const wt = path.join(main, 'wt');
+  git(root, 'worktree', 'add', '--quiet', '--detach', wt);
+  t.after(() => { try { git(root, 'worktree', 'remove', '--force', wt); } catch {} });
+  receipt.repo_root = wt;
+  row.run = `${real}/venv/bin/python -m pytest tests/test_x.py`;
+  row.output_tail = `${os.homedir()}/secret-folder/x.py failed`;
+  fs.writeFileSync(file, JSON.stringify(receipt));
+  const dry = await run(['fix', '--dry-run', '--receipt', file]);
+  assert.equal(dry.code, 0, dry.out);
+  assert.match(dry.out, /`venv\/bin\/python -m pytest tests\/test_x\.py`/);
+  assert.ok(!dry.out.includes(real), 'no main checkout path');
+  assert.ok(!dry.out.includes(os.homedir()), 'no home folder');
+  assert.match(dry.out, /~\/secret-folder\/x\.py failed/);
+});
+
+test('an each list leaves out its !glob entries', () => {
+  const { planChecks } = require('../lib/check-plan');
+  const map = validateMap({ checks: { verify: { each: ['a/*.sh', '!a/net.sh'], run: 'sh {file}' } } });
+  const picked = planChecks(map, ['a/net.sh', 'a/ok.sh'], { listFiles: () => ['a/net.sh', 'a/ok.sh'], readFile: () => '' });
+  const keys = picked.selected.map((entry) => entry.key);
+  assert.ok(keys.some((key) => key.includes('a/ok.sh')), keys.join(', '));
+  assert.ok(!keys.some((key) => key.includes('a/net.sh')), keys.join(', '));
+});
