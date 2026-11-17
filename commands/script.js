@@ -294,6 +294,8 @@ function buildState(script, answers, code, root, now) {
         brief: fill(move.brief, vars),
         proof_hint: move.proof_hint || null,
         state: 'open',
+        owner: null,
+        owned_at: null,
         proof: null,
         by: null,
         done_at: null,
@@ -394,7 +396,7 @@ async function askQuestion(question, prompt, log) {
 
 function parseArgs(args) {
   const out = { positional: [], flags: {} };
-  const valued = new Set(['name', 'answers', 'proof', 'by', 'run', 'number', 'date', 'since']);
+  const valued = new Set(['name', 'answers', 'proof', 'by', 'to', 'run', 'number', 'date', 'since']);
   for (let index = 0; index < args.length; index += 1) {
     const arg = String(args[index]);
     if (arg === '-h') { out.flags.help = true; continue; }
@@ -424,6 +426,8 @@ function helpLines() {
     '  atris script next [code-name]         the one next move',
     '  atris script card [code-name]         your daily card: what moved and the one call to make',
     '  atris script done <move> [--proof "what you checked"] [--by me]',
+    '  atris script claim <move> --by <seat or me>     take a move, so only one person holds it',
+    '  atris script give <move> --to <seat> --by <who holds it>   hand a move on in one step',
     '  atris script goal [code-name] --number "..." --date "..."',
     '',
     'start options:',
@@ -435,6 +439,7 @@ function helpLines() {
     '  --json                 the same card as data',
     '',
     'Moves that need your taste only count with --by me.',
+    'One person holds a move at a time. Pass it on with give, never by letting go.',
   ];
 }
 
@@ -668,6 +673,7 @@ function statusCommand(ctx) {
   const chapter = currentChapter(run);
   const move = nextMove(run);
   const waiting = waitingOnYou(run);
+  const holders = openHolders(run);
   if (ctx.flags.json) {
     ctx.log(JSON.stringify({
       code_name: run.code_name,
@@ -677,6 +683,8 @@ function statusCommand(ctx) {
       chapter: chapter ? { n: run.chapters.indexOf(chapter) + 1, of: run.chapters.length, title: chapter.title, finish_line: chapter.finish_line, take: chapter.take || null } : null,
       next: move ? { id: move.id, who: move.who, seat: move.seat, taste: move.taste, you: move.you, brief: move.brief } : null,
       waiting_on_you: waiting,
+      held: holders.held.map((item) => ({ id: item.id, owner: item.owner, owned_at: item.owned_at || null })),
+      nobody_owns: holders.free.map((item) => item.id),
     }, null, 2));
     return 0;
   }
@@ -707,6 +715,175 @@ function statusCommand(ctx) {
     for (const line of waiting) ctx.log(`  ${line}`);
     if (!run.goal.number || !run.goal.date) ctx.log(`  atris script goal ${run.code_name} --number "..." --date "..."`);
   }
+  const width = Math.max(0, ...[...holders.held, ...holders.free].map((item) => item.id.length)) + 3;
+  if (holders.held.length > 0) {
+    ctx.log('');
+    ctx.log('Who holds what');
+    for (const item of holders.held) ctx.log(`  ${item.id.padEnd(width)}${holderName(item.owner)}: ${firstSentence(item.you)}`);
+  }
+  if (holders.free.length > 0) {
+    ctx.log('');
+    ctx.log('Nobody owns these yet:');
+    for (const item of holders.free) ctx.log(`  ${item.id.padEnd(width)}${firstSentence(item.you)}`);
+    ctx.log(`  Take one: atris script claim <move> --by <seat or me>${runs.length > 1 ? ` --run ${run.code_name}` : ''}`);
+  }
+  return 0;
+}
+
+// ---------------------------------------------------------------- owners
+
+// One owner per open move. A move saved before owners existed has no owner
+// field at all, and reads the same as a move nobody holds yet.
+function ownerOf(move) {
+  return move && typeof move.owner === 'string' && move.owner ? move.owner : null;
+}
+
+function holderName(owner) {
+  return owner === 'me' ? 'you' : owner;
+}
+
+function seatNames(run) {
+  return (run.team || []).map((seat) => String(seat.name || '')).filter(Boolean);
+}
+
+// "me" or a seat on this run's team, or null when it is neither.
+function readSeat(run, value) {
+  const name = String(value || '').trim().toLowerCase();
+  if (!name) return null;
+  if (name === 'me') return 'me';
+  return seatNames(run).find((seat) => seat.toLowerCase() === name) || null;
+}
+
+function seatChoices(run) {
+  return [...seatNames(run), 'me'].join(', ').replace(/, me$/, ' or me');
+}
+
+// Every open move someone holds, in any chapter, and the open moves in the
+// current chapter that nobody holds yet.
+function openHolders(run) {
+  const held = [];
+  for (const chapter of run.chapters) {
+    for (const move of chapter.moves) if (move.state === 'open' && ownerOf(move)) held.push({ ...move, owner: ownerOf(move) });
+  }
+  const chapter = currentChapter(run);
+  const free = chapter ? chapter.moves.filter((move) => move.state === 'open' && !ownerOf(move)) : [];
+  return { held, free };
+}
+
+function findMove(run, moveId) {
+  for (const chapter of run.chapters) {
+    const move = chapter.moves.find((candidate) => candidate.id === moveId);
+    if (move) return move;
+  }
+  return null;
+}
+
+// The shared first half of claim and give: the run, the move and a move that
+// can still change hands. Returns null after saying why when it cannot.
+function movePicked(ctx, verb) {
+  const moveId = ctx.positional[1];
+  if (!moveId) {
+    ctx.err('Which move? See them with: atris script status');
+    return null;
+  }
+  const { run, code } = pickRun(ctx, ctx.flags.run || ctx.positional[2], (name) => `atris script ${verb} ${moveId} --run ${name}`);
+  if (!run) {
+    ctx.exit = code || 1;
+    return null;
+  }
+  const move = findMove(run, moveId);
+  if (!move) {
+    ctx.err(`There is no move called ${moveId} in ${run.title}.`);
+    ctx.err('See them with: atris script status');
+    return null;
+  }
+  if (move.state === 'done') {
+    ctx.err(`This move was already finished by ${move.by || 'someone unknown'} at ${move.done_at || 'an unknown time'}.`);
+    return null;
+  }
+  if (move.state !== 'open') {
+    ctx.err('That move was skipped when its chapter closed, so nobody can hold it now.');
+    return null;
+  }
+  return { run, move };
+}
+
+function claimCommand(ctx) {
+  const picked = movePicked(ctx, 'claim');
+  if (!picked) return ctx.exit || 1;
+  const { run, move } = picked;
+  if (!ctx.flags.by || typeof ctx.flags.by !== 'string') {
+    ctx.err(`Say who takes it: atris script claim ${move.id} --by <seat or me>`);
+    return 1;
+  }
+  const who = readSeat(run, ctx.flags.by);
+  if (!who) {
+    ctx.err(`${ctx.flags.by} is not a seat on this team. Pick one of: ${seatChoices(run)}.`);
+    return 1;
+  }
+  const holder = ownerOf(move);
+  if (holder === who) {
+    ctx.log(`${who === 'me' ? 'You already hold' : `${who} already holds`} this move. Nothing changed.`);
+    return 0;
+  }
+  if (holder) {
+    ctx.err(`This move is held by ${holderName(holder)}, who took it at ${move.owned_at || 'an unknown time'}.`);
+    ctx.err(`Only the holder can pass it on: atris script give ${move.id} --to ${who} --by ${holder}`);
+    return 1;
+  }
+  if (move.taste && who !== 'me') {
+    ctx.err('This one is yours to call, so only you can hold it.');
+    ctx.err(`Take it with: atris script claim ${move.id} --by me`);
+    return 1;
+  }
+  const now = ctx.now();
+  move.owner = who;
+  move.owned_at = now.toISOString();
+  saveRun(ctx.root, run, now);
+  ctx.log(`Taken: ${firstSentence(move.you)}`);
+  ctx.log(`Held by ${holderName(who)} from now on. Nobody else can take it.`);
+  return 0;
+}
+
+function giveCommand(ctx) {
+  const picked = movePicked(ctx, 'give');
+  if (!picked) return ctx.exit || 1;
+  const { run, move } = picked;
+  if (!ctx.flags.to || typeof ctx.flags.to !== 'string' || !ctx.flags.by || typeof ctx.flags.by !== 'string') {
+    ctx.err(`Say who gets it and who holds it now: atris script give ${move.id} --to <seat> --by <who holds it>`);
+    return 1;
+  }
+  const to = readSeat(run, ctx.flags.to);
+  if (!to) {
+    ctx.err(`${ctx.flags.to} is not a seat on this team. Pick one of: ${seatChoices(run)}.`);
+    return 1;
+  }
+  const holder = ownerOf(move);
+  const by = readSeat(run, ctx.flags.by) || String(ctx.flags.by).trim();
+  if (!holder) {
+    ctx.err('Nobody holds this move yet, so there is nothing to give.');
+    ctx.err(`Take it first: atris script claim ${move.id} --by ${to}`);
+    return 1;
+  }
+  if (by !== holder) {
+    ctx.err(`${by} does not hold this move. ${holder === 'me' ? 'You hold' : `${holder} holds`} it, since ${move.owned_at || 'an unknown time'}.`);
+    ctx.err('Only the holder can give it.');
+    return 1;
+  }
+  if (to === holder) {
+    ctx.log(`${to === 'me' ? 'You already hold' : `${to} already holds`} this move. Nothing changed.`);
+    return 0;
+  }
+  if (move.taste && to !== 'me') {
+    ctx.err('This one is yours to call, so only you can hold it.');
+    return 1;
+  }
+  const now = ctx.now();
+  move.owner = to;
+  move.owned_at = now.toISOString();
+  saveRun(ctx.root, run, now);
+  ctx.log(`Given: ${firstSentence(move.you)}`);
+  ctx.log(`${to === 'me' ? 'You hold' : `${to} holds`} it now. It was ${holder === 'me' ? 'yours' : `${holder}'s`}.`);
   return 0;
 }
 
@@ -1085,6 +1262,8 @@ async function scriptCommand(args = [], deps = {}) {
     if (sub === 'status') return statusCommand(ctx);
     if (sub === 'next') return nextCommand(ctx);
     if (sub === 'done') return doneCommand(ctx);
+    if (sub === 'claim') return claimCommand(ctx);
+    if (sub === 'give') return giveCommand(ctx);
     if (sub === 'card') return await cardCommand(ctx);
     if (sub === 'goal') return await goalCommand(ctx);
     ctx.err(`atris script has no ${sub}. See: atris script --help`);
