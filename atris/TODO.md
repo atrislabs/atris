@@ -23,8 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
-- **[FFC-1]** Feed: any member can answer on any card, read all comments, longer comments, members answer people's comments when they think · unassigned
-  **Done looks like:** People can now pull any awake team member into the talk on any card and read the whole talk, which saves time because answers land where everyone reads them.
+- **[CAS-1]** A check that skipped itself because it opens the app is never proof · claude
+  **Done looks like:** The lander now reads a check that skipped itself because it opens the app as not checked here, so that work waits for the no-screen lane instead of landing unc…
 
 ## Blocked
 
