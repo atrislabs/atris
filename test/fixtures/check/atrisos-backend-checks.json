@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "note": "Which checks a change needs, picked by plain rules (atris check --explain shows why). A change on a high risk path runs every check that guards it plus the whole release gate. A file no rule knows runs the default set.",
+  "checks": {
+    "fast-gate": {
+      "run": "bash backend/scripts/test_fast.sh",
+      "where": "here",
+      "always": true,
+      "risk": "sign-in",
+      "seconds": 120,
+      "timeout_seconds": 900
+    },
+    "land-tests": {
+      "run": "bash backend/scripts/test_land.sh",
+      "where": "here",
+      "when": ["backend/**/*.py", "backend/scripts/**"],
+      "seconds": 60,
+      "timeout_seconds": 600
+    },
+    "import-preflight": {
+      "run": "python3 atris/skills/deploy-preflight/scripts/check_imports.py",
+      "where": "here",
+      "when": ["backend/main.py", "backend/routers/**", "atris/skills/deploy-preflight/**"],
+      "risk": "release",
+      "seconds": 2
+    }
+  },
+  "risk": {
+    "low": ["**/*.md", "docs/**", "atris/**/*.md", "atris/logs/**"],
+    "high": {
+      "sign-in": ["backend/routers/auth*", "backend/routers/*_auth*", "backend/routers/sdk_auth.py", "backend/routers/oauth_*", "backend/auth.py", "backend/services/*auth*"],
+      "access": ["backend/routers/business/members.py", "backend/routers/business/memberships.py", "backend/routers/members_router.py", "backend/routers/agent/member.py", "backend/routers/auth_scopes_router.py", "backend/services/*member*", "backend/services/*access*"],
+      "money": ["backend/routers/*billing*", "backend/routers/*credit*", "backend/routers/*wallet*", "backend/routers/*pay*", "backend/routers/stripe*", "backend/routers/integrations/stripe*", "backend/services/*billing*", "backend/services/*credit*", "backend/services/*wallet*", "backend/services/*stripe*", "backend/services/*pay*"],
+      "security": ["backend/routers/*api_key*", "backend/routers/vault*", "backend/services/*secret*", "backend/services/*vault*", "backend/services/*api_key*", "backend/services/*security*"],
+      "release": ["render.yaml", "**/Dockerfile", "backend/requirements*.txt", "requirements*.txt", ".github/workflows/**", "backend/main.py", "backend/scripts/test_fast.sh", "backend/scripts/test_land.sh", "backend/scripts/land_select.py", "backend/scripts/pick_python.sh"]
+    }
+  },
+  "gates": {
+    "release": ["fast-gate", "import-preflight"]
+  },
+  "default": ["fast-gate", "land-tests"]
+}

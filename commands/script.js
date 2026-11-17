@@ -394,7 +394,7 @@ async function askQuestion(question, prompt, log) {
 
 function parseArgs(args) {
   const out = { positional: [], flags: {} };
-  const valued = new Set(['name', 'answers', 'proof', 'by', 'run', 'number', 'date']);
+  const valued = new Set(['name', 'answers', 'proof', 'by', 'run', 'number', 'date', 'since']);
   for (let index = 0; index < args.length; index += 1) {
     const arg = String(args[index]);
     if (arg === '-h') { out.flags.help = true; continue; }
@@ -422,12 +422,17 @@ function helpLines() {
     '  atris script start <script>           begin, with a few questions about you',
     '  atris script status [code-name]       where you are and what waits on you',
     '  atris script next [code-name]         the one next move',
+    '  atris script card [code-name]         your daily card: what moved and the one call to make',
     '  atris script done <move> [--proof "what you checked"] [--by me]',
     '  atris script goal [code-name] --number "..." --date "..."',
     '',
     'start options:',
     '  --name <two words>     choose your own code name',
     '  --yes --answers <file> run with no questions (a json file of answers)',
+    '',
+    'card options:',
+    '  --since <time>         show what moved since this time, like 2026-11-16T08:00',
+    '  --json                 the same card as data',
     '',
     'Moves that need your taste only count with --by me.',
   ];
@@ -749,8 +754,12 @@ function doneCommand(ctx) {
     ctx.err('See the next one with: atris script next');
     return 1;
   }
+  if (found.state === 'done') {
+    ctx.err(`This move was already finished by ${found.by || 'someone unknown'} at ${found.done_at || 'an unknown time'}.`);
+    return 1;
+  }
   if (found.state !== 'open') {
-    ctx.log(`That one is already ${found.state === 'done' ? 'done' : 'behind you'}.`);
+    ctx.log('That one is already behind you.');
     return 0;
   }
   if (foundChapter !== chapter) {
@@ -827,6 +836,223 @@ async function goalCommand(ctx) {
   return 0;
 }
 
+// ---------------------------------------------------------------- daily card
+
+// Real numbers only. Each source answers {count, note} or null, and null always
+// prints "not tracked yet". Nothing here has a real feed yet, so every default
+// is null. A real source is plugged in later through deps.sources.
+const DEFAULT_SOURCES = {
+  outbound: () => null,
+  inbound: () => null,
+  product: () => null,
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function timeOf(value) {
+  const at = new Date(value).getTime();
+  return Number.isFinite(at) ? at : null;
+}
+
+// Calendar days, so a run started on Monday night reads Day 2 on Tuesday morning.
+function dayNumber(state, now) {
+  const parts = (day) => /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ''));
+  const started = state.started_at && timeOf(state.started_at) !== null ? localDay(new Date(state.started_at)) : null;
+  const start = parts(state.started_day) || parts(started);
+  if (!start) return null;
+  const today = parts(localDay(now));
+  const days = Math.round((Date.UTC(+today[1], +today[2] - 1, +today[3]) - Date.UTC(+start[1], +start[2] - 1, +start[3])) / DAY_MS);
+  return Math.max(0, days) + 1;
+}
+
+function seatLabel(state, who) {
+  const name = String(who || '').trim();
+  if (!name || /^(me|you)$/i.test(name)) return 'You';
+  const seat = (state.team || []).find((item) => item.name === name);
+  return seat && seat.role ? seat.role : titleOf(name);
+}
+
+function cardsOf(state) {
+  return (Array.isArray(state.cards) ? state.cards : []).filter((card) => card && timeOf(card.at) !== null);
+}
+
+// What moved: moves marked done after the cut-off. With no --since the cut-off
+// is the last card, and a move already shown on a card never shows twice. A
+// move done with no saved time cannot be placed, so it counts as before the
+// first card.
+function movedSince(state, cutoff, skipIds) {
+  const moved = [];
+  for (const chapter of state.chapters) {
+    for (const move of chapter.moves) {
+      if (move.state !== 'done' || skipIds.has(move.id)) continue;
+      const at = timeOf(move.done_at);
+      if (at === null || at < cutoff.at) continue;
+      moved.push({ move, at });
+    }
+  }
+  return moved.sort((a, b) => a.at - b.at).map((item) => item.move);
+}
+
+async function readSource(source) {
+  let value = null;
+  try {
+    value = typeof source === 'function' ? await source() : null;
+  } catch {
+    return null;
+  }
+  if (!value || typeof value.count !== 'number' || !Number.isFinite(value.count) || value.count < 0) return null;
+  return { count: value.count, note: typeof value.note === 'string' && value.note.trim() ? value.note.trim() : null };
+}
+
+function sourceLine(label, reading) {
+  if (!reading) return `${label}: not tracked yet`;
+  return `${label}: ${reading.count}${reading.note ? ` (${reading.note})` : ''}`;
+}
+
+function strikesOf(state) {
+  const found = [];
+  for (const chapter of state.chapters) {
+    for (const move of chapter.moves) {
+      const count = Math.floor(Number(move.strikes));
+      if (Number.isFinite(count) && count > 0) found.push({ id: move.id, text: ownWords(firstSentence(move.you)), count });
+    }
+  }
+  return found;
+}
+
+async function cardCommand(ctx) {
+  const { run, runs, code } = pickRun(ctx, ctx.positional[1]);
+  if (!run) return code;
+  const now = ctx.now();
+
+  // Where "since" starts.
+  let cutoff;
+  let skipIds = new Set();
+  if (ctx.flags.since !== undefined) {
+    const at = typeof ctx.flags.since === 'string' && ctx.flags.since ? timeOf(ctx.flags.since) : null;
+    if (at === null) {
+      ctx.err('I could not read that time. Try one like: --since 2026-11-16T08:00');
+      return 1;
+    }
+    cutoff = { at, reason: 'since_flag' };
+  } else {
+    const cards = cardsOf(run);
+    if (cards.length > 0) {
+      cutoff = { at: Math.max(...cards.map((card) => timeOf(card.at))), reason: 'last_card' };
+      skipIds = new Set(cards.flatMap((card) => (Array.isArray(card.moved) ? card.moved : [])));
+    } else {
+      cutoff = { at: now.getTime() - DAY_MS, reason: 'last_24_hours' };
+    }
+  }
+
+  const moved = movedSince(run, cutoff, skipIds).map((move) => ({
+    id: move.id,
+    by: seatLabel(run, move.by || move.seat || 'you'),
+    text: ownWords(firstSentence(move.you)),
+    proof: move.proof ? String(move.proof) : null,
+  }));
+  const readings = {
+    outbound: await readSource(ctx.sources.outbound),
+    inbound: await readSource(ctx.sources.inbound),
+    product: await readSource(ctx.sources.product),
+  };
+
+  const chapter = currentChapter(run);
+  const chapterN = chapter ? run.chapters.indexOf(chapter) + 1 : null;
+  const move = nextMove(run);
+  const day = dayNumber(run, now);
+  const multiple = runs.length > 1;
+  let call;
+  if (!move) {
+    call = { kind: 'none', move: null, take: null, done_command: null };
+  } else if (move.who === 'you' || move.taste) {
+    call = {
+      kind: 'you',
+      move: { id: move.id, text: move.you, minutes: move.minutes || null },
+      take: chapter.take || null,
+      done_command: doneCommandFor(move, run, multiple),
+    };
+  } else {
+    call = {
+      kind: 'team',
+      move: { id: move.id, text: move.you, seat: move.seat },
+      seat: seatLabel(run, move.seat),
+      take: null,
+      done_command: null,
+    };
+  }
+  const strikes = strikesOf(run);
+
+  // The card is a record: the next one starts where this one ends.
+  run.cards = Array.isArray(run.cards) ? run.cards : [];
+  run.cards.push({ at: now.toISOString(), chapter: chapter ? chapter.id : null, moved: moved.map((item) => item.id) });
+  saveRun(ctx.root, run, now);
+
+  if (ctx.flags.json) {
+    ctx.log(JSON.stringify({
+      code_name: run.code_name,
+      title: run.title,
+      script: run.script,
+      script_title: run.script_title,
+      day,
+      chapter: chapter ? { n: chapterN, of: run.chapters.length, id: chapter.id, title: chapter.title } : null,
+      since: { at: new Date(cutoff.at).toISOString(), reason: cutoff.reason },
+      moved,
+      outbound: readings.outbound,
+      inbound: readings.inbound,
+      product: readings.product,
+      call,
+      strikes,
+      finish_line: chapter ? chapter.finish_line : null,
+    }, null, 2));
+    return 0;
+  }
+
+  ctx.log(run.title);
+  ctx.log(run.script_title);
+  const where = chapter ? `Chapter ${chapterN} of ${run.chapters.length}: ${chapter.title}` : `All ${run.chapters.length} chapters are done`;
+  ctx.log(day === null ? where : `Day ${day}. ${where}`);
+  ctx.log('');
+  ctx.log('Moved');
+  if (moved.length === 0) {
+    ctx.log('Nothing moved since the last card.');
+  } else {
+    for (const item of moved) {
+      ctx.log(`  ${item.by}: ${item.text}`);
+      if (item.proof) ctx.log(`    Proof: ${item.proof}`);
+    }
+  }
+  ctx.log('');
+  ctx.log(sourceLine('Outbound', readings.outbound));
+  ctx.log(sourceLine('Inbound', readings.inbound));
+  ctx.log(sourceLine('Product', readings.product));
+  ctx.log('');
+  if (call.kind === 'you') {
+    ctx.log(`Your call${call.move.minutes ? `, about ${call.move.minutes} minutes` : ''}`);
+    ctx.log(`  ${call.move.text}`);
+    if (call.take) ctx.log(`  Our take: ${call.take}`);
+    ctx.log(`  ${call.done_command}`);
+  } else if (call.kind === 'team') {
+    ctx.log('Your call');
+    ctx.log(`  No call needed. ${call.seat} is on: ${call.move.text}`);
+  } else {
+    ctx.log('Your call');
+    ctx.log('  No call needed. Every chapter is done.');
+  }
+  ctx.log('');
+  if (strikes.length === 0) {
+    ctx.log('Strikes: none');
+  } else {
+    ctx.log('Strikes');
+    for (const item of strikes) ctx.log(`  ${item.text}: ${item.count}`);
+  }
+  if (chapter) {
+    ctx.log('');
+    ctx.log(`Finish line: ${chapter.finish_line}`);
+  }
+  return 0;
+}
+
 // ---------------------------------------------------------------- entry
 
 async function scriptCommand(args = [], deps = {}) {
@@ -846,6 +1072,7 @@ async function scriptCommand(args = [], deps = {}) {
     scriptsDir: deps.scriptsDir || SCRIPTS_DIR,
     setGoal: deps.setGoal || defaultSetGoal,
     createMember: deps.createMember || defaultCreateMember,
+    sources: { ...DEFAULT_SOURCES, ...(deps.sources || {}) },
   };
   try {
     const sub = parsed.positional[0];
@@ -858,6 +1085,7 @@ async function scriptCommand(args = [], deps = {}) {
     if (sub === 'status') return statusCommand(ctx);
     if (sub === 'next') return nextCommand(ctx);
     if (sub === 'done') return doneCommand(ctx);
+    if (sub === 'card') return await cardCommand(ctx);
     if (sub === 'goal') return await goalCommand(ctx);
     ctx.err(`atris script has no ${sub}. See: atris script --help`);
     return 1;

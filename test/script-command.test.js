@@ -54,7 +54,8 @@ async function run(dir, args, extra = {}) {
     err: (line) => errs.push(String(line)),
     prompt: extra.prompt === undefined ? null : extra.prompt,
     random: extra.random || (() => 0),
-    now: () => NOW,
+    now: extra.now || (() => NOW),
+    sources: extra.sources,
     scriptsDir: extra.scriptsDir,
     setGoal: extra.real ? undefined : team.setGoal,
     createMember: extra.real ? undefined : team.createMember,
@@ -308,8 +309,13 @@ test('next speaks to the person and to the team; done keeps taste with the perso
   assert.equal(named.code, 0, named.errs);
   assert.match(named.out, /^Done: Name your newsletter\./);
   assert.match(named.out, /Next: Write three rough sentences/);
-  const again = await run(dir, ['done', 'name-it', '--by', 'me']);
-  assert.match(again.out, /That one is already done\./);
+  const file = path.join(dir, 'atris', 'storylines', 'quiet-lantern', 'script.json');
+  const before = fs.readFileSync(file, 'utf8');
+  const again = await run(dir, ['done', 'name-it', '--by', 'someone-else']);
+  assert.deepEqual({ code: again.code, out: again.out, errs: again.errs }, {
+    code: 1, out: '', errs: `This move was already finished by me at ${NOW.toISOString()}.`,
+  });
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
 
   await run(dir, ['done', 'first-lines', '--by', 'me', '--proof', 'atris/storylines/quiet-lantern/first-lines.md']);
   const teamNext = await run(dir, ['next']);
@@ -365,7 +371,7 @@ test('help names every move', async (t) => {
   const dir = tempDir(t);
   const { code, out } = await run(dir, ['--help']);
   assert.equal(code, 0);
-  for (const word of ['list', 'start', 'status', 'next', 'done', 'goal', '--by me', '--yes --answers']) {
+  for (const word of ['list', 'start', 'status', 'next', 'done', 'goal', 'card', '--since', '--by me', '--yes --answers']) {
     assert.ok(out.includes(word), `help mentions ${word}`);
   }
 });
@@ -424,5 +430,237 @@ test('no line a client could read in a shipped script says AI, agent or automate
     const shown = [script.pitch, script.mission, ...script.values.will, ...script.values.will_not, ...script.your_part,
       ...script.chapters.flatMap((c) => [c.title, c.finish_line, c.take || '', ...c.moves.map((m) => m.you)])];
     for (const line of shown) assert.doesNotMatch(line, /\b(AI|agents?|automat\w*)\b/i, `${name}: ${line}`);
+  }
+});
+
+// ---------------------------------------------------------------- daily card
+
+const BANNED_WORDS = /\b(AI|agents?|automat\w*)\b/i;
+
+function at(hours) {
+  return () => new Date(NOW.getTime() + hours * 60 * 60 * 1000);
+}
+
+function writeRun(dir, code, change) {
+  const file = path.join(dir, 'atris', 'storylines', code, 'script.json');
+  const state = JSON.parse(fs.readFileSync(file, 'utf8'));
+  change(state);
+  fs.writeFileSync(file, JSON.stringify(state));
+}
+
+async function started(t, name = 'blue fox') {
+  const dir = tempDir(t);
+  const result = await run(dir, ['start', 'newsletter', '--name', name, '--yes', '--answers', writeAnswers(dir)]);
+  assert.equal(result.code, 0, result.errs);
+  return dir;
+}
+
+test('card right after start shows Day 1, chapter 1 and the first call', async (t) => {
+  const dir = await started(t);
+  const card = await run(dir, ['card']);
+  assert.equal(card.code, 0, card.errs);
+  const lines = card.out.split('\n');
+  assert.deepEqual(lines.slice(0, 3), ['Blue Fox', 'Start a newsletter', 'Day 1. Chapter 1 of 5: Find your voice']);
+  assert.match(card.out, /\nMoved\nNothing moved since the last card\.\n/);
+  assert.match(card.out, /\nYour call, about 5 minutes\n {2}Name your newsletter\. Say three names out loud/);
+  assert.match(card.out, /\n {2}Our take: .+\n/);
+  assert.match(card.out, /\n {2}atris script done name-it --by me --proof "the name you picked"\n/);
+  assert.match(card.out, /\nStrikes: none\n/);
+  assert.match(card.out, /\nFinish line: You approved one sample that sounds like you\.$/);
+  assert.deepEqual(card.team.calls, { goals: [], members: [] }, 'card sets no goal and makes no member');
+});
+
+test('card lists what moved with who did it and the proof, and the next card starts clean', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  await run(dir, ['done', 'first-lines', '--by', 'me']);
+  await run(dir, ['done', 'voice-sample'], { now: at(1) });
+
+  const first = await run(dir, ['card'], { now: at(2) });
+  assert.match(first.out, /\nMoved\n {2}You: Name your newsletter\n {4}Proof: Night Notes\n {2}You: Write three rough sentences about one thing you wish you knew a year ago\n {2}Editor: Your editor turns your three sentences into a short sample in your voice\n/);
+  assert.doesNotMatch(first.out, /Nothing moved/);
+  assert.deepEqual(readRun(dir, 'blue-fox').cards, [{ at: at(2)().toISOString(), chapter: 'voice', moved: ['name-it', 'first-lines', 'voice-sample'] }]);
+
+  const second = await run(dir, ['card'], { now: at(3) });
+  assert.match(second.out, /\nMoved\nNothing moved since the last card\.\n/);
+  assert.equal(readRun(dir, 'blue-fox').cards.length, 2);
+
+  // The next move now belongs to the person again, and one more done shows up alone.
+  await run(dir, ['done', 'approve-voice', '--by', 'me', '--proof', 'sample v1'], { now: at(4) });
+  const third = await run(dir, ['card'], { now: at(5) });
+  assert.match(third.out, /\nMoved\n {2}You: Read the sample\n {4}Proof: sample v1\n/);
+  assert.doesNotMatch(third.out, /Night Notes/);
+  assert.match(third.out, /Chapter 2 of 5: First issue out/);
+});
+
+test('with no card yet only the last 24 hours count, and --since sets its own start', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+
+  const late = await run(dir, ['card'], { now: at(25) });
+  assert.match(late.out, /\nMoved\nNothing moved since the last card\.\n/);
+  assert.match(late.out, /Day 2\. Chapter 1 of 5/);
+
+  const since = await run(dir, ['card', '--since', new Date(NOW.getTime() - 1000).toISOString()], { now: at(26) });
+  assert.match(since.out, /\nMoved\n {2}You: Name your newsletter\n {4}Proof: Night Notes\n/);
+
+  const bad = await run(dir, ['card', '--since', 'last tuesday-ish']);
+  assert.equal(bad.code, 1);
+  assert.match(bad.errs, /I could not read that time\./);
+  const empty = await run(dir, ['card', '--since']);
+  assert.equal(empty.code, 1);
+  assert.equal(readRun(dir, 'blue-fox').cards.length, 2, 'a refused card is not recorded');
+});
+
+test('outbound, inbound and product say not tracked yet, and a real source shows its number', async (t) => {
+  const dir = await started(t);
+  const bare = await run(dir, ['card']);
+  assert.match(bare.out, /^Outbound: not tracked yet$/m);
+  assert.match(bare.out, /^Inbound: not tracked yet$/m);
+  assert.match(bare.out, /^Product: not tracked yet$/m);
+
+  const fed = await run(dir, ['card'], {
+    sources: {
+      outbound: () => ({ count: 3 }),
+      inbound: async () => ({ count: 0, note: 'two replies waiting' }),
+      product: () => { throw new Error('feed is down'); },
+    },
+  });
+  assert.equal(fed.code, 0, fed.errs);
+  assert.match(fed.out, /^Outbound: 3$/m);
+  assert.match(fed.out, /^Inbound: 0 \(two replies waiting\)$/m);
+  assert.match(fed.out, /^Product: not tracked yet$/m, 'a source that fails never becomes a number');
+
+  const junk = await run(dir, ['card'], { sources: { outbound: () => ({ count: 'many' }), inbound: () => ({ count: -1 }), product: () => ({}) } });
+  assert.match(junk.out, /^Outbound: not tracked yet$/m);
+  assert.match(junk.out, /^Inbound: not tracked yet$/m);
+  assert.match(junk.out, /^Product: not tracked yet$/m);
+});
+
+test('card --json carries the same content and still records the card', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  const card = await run(dir, ['card', '--json'], { now: at(1), sources: { outbound: () => ({ count: 3, note: 'this week' }) } });
+  assert.equal(card.code, 0, card.errs);
+  const json = JSON.parse(card.out);
+  assert.deepEqual(Object.keys(json), ['code_name', 'title', 'script', 'script_title', 'day', 'chapter', 'since', 'moved',
+    'outbound', 'inbound', 'product', 'call', 'strikes', 'finish_line']);
+  assert.equal(json.code_name, 'blue-fox');
+  assert.equal(json.day, 1);
+  assert.deepEqual(json.chapter, { n: 1, of: 5, id: 'voice', title: 'Find your voice' });
+  assert.equal(json.since.reason, 'last_24_hours');
+  assert.deepEqual(json.moved, [{ id: 'name-it', by: 'You', text: 'Name your newsletter', proof: 'Night Notes' }]);
+  assert.deepEqual(json.outbound, { count: 3, note: 'this week' });
+  assert.equal(json.inbound, null);
+  assert.equal(json.product, null);
+  assert.equal(json.call.kind, 'you');
+  assert.equal(json.call.move.id, 'first-lines');
+  assert.ok(json.call.take);
+  assert.match(json.call.done_command, /^atris script done first-lines --by me/);
+  assert.deepEqual(json.strikes, []);
+  assert.equal(json.finish_line, 'You approved one sample that sounds like you.');
+  assert.deepEqual(readRun(dir, 'blue-fox').cards.map((card) => card.moved), [['name-it']]);
+
+  const again = JSON.parse((await run(dir, ['card', '--json'], { now: at(2) })).out);
+  assert.deepEqual(again.moved, []);
+  assert.equal(again.since.reason, 'last_card');
+});
+
+test('when the next move is a teammate\'s, the card says no call is needed', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  await run(dir, ['done', 'first-lines', '--by', 'me']);
+  const card = await run(dir, ['card']);
+  assert.match(card.out, /\nYour call\n {2}No call needed\. Editor is on: Your editor turns your three sentences into a short sample in your voice\.\n/);
+  assert.doesNotMatch(card.out, /Our take|atris script done/);
+  const json = JSON.parse((await run(dir, ['card', '--json'])).out);
+  assert.equal(json.call.kind, 'team');
+  assert.equal(json.call.seat, 'Editor');
+});
+
+test('strikes on a move are read and shown, and zero strikes say none', async (t) => {
+  const dir = await started(t);
+  writeRun(dir, 'blue-fox', (state) => {
+    state.chapters[0].moves[0].strikes = 2;
+    state.chapters[0].moves[1].strikes = 0;
+    state.chapters[0].moves[2].strikes = 'lots';
+  });
+  const card = await run(dir, ['card']);
+  assert.match(card.out, /\nStrikes\n {2}Name your newsletter: 2\n/);
+  assert.doesNotMatch(card.out, /Strikes: none|Write three rough sentences: /);
+  assert.deepEqual(JSON.parse((await run(dir, ['card', '--json'])).out).strikes, [{ id: 'name-it', text: 'Name your newsletter', count: 2 }]);
+});
+
+test('an old run with no cards and no done times does not crash, and counts those moves as earlier', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  writeRun(dir, 'blue-fox', (state) => {
+    delete state.cards;
+    delete state.started_day;
+    for (const chapter of state.chapters) for (const move of chapter.moves) { delete move.done_at; delete move.by; delete move.strikes; }
+  });
+  const card = await run(dir, ['card']);
+  assert.equal(card.code, 0, card.errs);
+  assert.match(card.out, /\nDay 1\. Chapter 1 of 5: Find your voice\n/);
+  assert.match(card.out, /\nMoved\nNothing moved since the last card\.\n/);
+  assert.equal(readRun(dir, 'blue-fox').cards.length, 1);
+
+  // A damaged cards list is set aside instead of crashing.
+  writeRun(dir, 'blue-fox', (state) => { state.cards = 'oops'; });
+  const damaged = await run(dir, ['card']);
+  assert.equal(damaged.code, 0, damaged.errs);
+  writeRun(dir, 'blue-fox', (state) => { state.cards = [null, { at: 'never', moved: 3 }, { moved: [] }]; });
+  assert.equal((await run(dir, ['card'])).code, 0);
+});
+
+test('card with no runs, several runs and an unknown run behaves like status', async (t) => {
+  const dir = tempDir(t);
+  const none = await run(dir, ['card']);
+  assert.equal(none.code, 0);
+  assert.match(none.out, /No runs here yet\./);
+  const answers = writeAnswers(dir);
+  await run(dir, ['start', 'newsletter', '--name', 'blue fox', '--yes', '--answers', answers]);
+  await run(dir, ['start', 'newsletter', '--name', 'red owl', '--yes', '--answers', answers]);
+  const several = await run(dir, ['card']);
+  assert.match(several.out, /Pick one: atris script card blue-fox/);
+  assert.equal(fs.existsSync(path.join(dir, 'atris', 'storylines', 'blue-fox', 'script.json')), true);
+  assert.equal(readRun(dir, 'blue-fox').cards, undefined, 'no card is recorded until a run is picked');
+  const picked = await run(dir, ['card', 'red-owl']);
+  assert.match(picked.out, /^Red Owl\n/);
+  assert.match(picked.out, /atris script done name-it --run red-owl --by me/);
+  const missing = await run(dir, ['card', 'green-cat']);
+  assert.equal(missing.code, 1);
+  assert.match(missing.errs, /There is no run called green-cat here\./);
+});
+
+test('a finished run gets a card that says every chapter is done', async (t) => {
+  const dir = await started(t);
+  writeRun(dir, 'blue-fox', (state) => {
+    for (const chapter of state.chapters) {
+      chapter.state = 'done';
+      for (const move of chapter.moves) move.state = 'done';
+    }
+  });
+  const card = await run(dir, ['card']);
+  assert.equal(card.code, 0, card.errs);
+  assert.match(card.out, /\nDay 1\. All 5 chapters are done\n/);
+  assert.match(card.out, /No call needed\. Every chapter is done\./);
+  assert.doesNotMatch(card.out, /Finish line/);
+});
+
+test('no card line says AI, agent or automate, or uses a dash or a comma before and', async (t) => {
+  const dir = await started(t);
+  const shown = [];
+  const sources = { outbound: () => ({ count: 3 }), inbound: () => null, product: () => null };
+  for (const step of [[], ['--json']]) shown.push((await run(dir, ['card', ...step], { sources })).out);
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  shown.push((await run(dir, ['card'], { now: at(1) })).out);
+  await run(dir, ['done', 'first-lines', '--by', 'me']);
+  shown.push((await run(dir, ['card'], { now: at(2) })).out);
+  shown.push((await run(dir, ['card', '--since', 'nonsense'])).errs);
+  shown.push((await run(dir, ['--help'])).out);
+  for (const line of shown.join('\n').split('\n')) {
+    assert.doesNotMatch(line, BANNED_WORDS, line);
+    assert.doesNotMatch(line, /[—–]|, and\b/, line);
   }
 });
