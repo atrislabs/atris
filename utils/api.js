@@ -76,7 +76,7 @@ function httpRequest(urlString, options) {
 
     const req = transport.request(requestOptions, (res) => {
       // Follow redirects (301, 302, 307, 308)
-      if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
+      if (!options.noRedirects && [301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
         res.resume();
         let redirectUrl;
         try {
@@ -177,6 +177,7 @@ async function apiRequestJson(pathname, options = {}) {
         headers,
         body: bodyPayload,
         timeoutMs: options.timeoutMs,
+        noRedirects: options.noRedirects,
       });
 
       const text = result.body.toString('utf8');
