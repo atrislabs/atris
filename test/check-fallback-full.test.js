@@ -98,7 +98,7 @@ test('--lint-map flags a map whose fallback is a partial list, and passes a whol
   const partial = lintMap({ checks: { tests: selector('node scripts/test-a.mjs scripts/test-b.mjs'), full: { run: 'node ok.js' } }, gates: { release: ['full'] } });
   assert.equal(partial.errors.length, 0);
   assert.match(partial.warnings.join('\n'), /check "tests" falls back to the command "node scripts\/test-a\.mjs scripts\/test-b\.mjs": that runs only part of the tests/);
-  const whole = lintMap({ checks: { tests: selector('full'), full: { run: 'node ok.js' } }, gates: { release: ['full'] } });
+  const whole = lintMap({ checks: { tests: selector('full'), full: { run: 'node ok.js', seconds: 60 } }, gates: { release: ['full'] } });
   assert.deepEqual(whole.warnings, []);
   const map = validateMap({ checks: { tests: selector('lane'), lane: { run: 'node ok.js', where: 'no-screen' } } });
   assert.equal(fallbackIsFull(map, 'lane'), true, 'a lane check is whole: it never passes here anyway');

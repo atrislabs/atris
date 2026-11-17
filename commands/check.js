@@ -381,10 +381,10 @@ function explainLines(picked, change, options, person, proof, lines = []) {
   lines.push(tierLine(picked));
   if (picked.importers.length) lines.push(`importers counted: ${picked.importers.length} file(s) import a changed file`);
   lines.push(`machine: ${person ? "a person's machine" : 'no person at the screen'}, lane ${options.lane}`);
-  const stages = new Set(picked.selected.map((entry) => entry.stage || 1));
+  const stages = new Set(picked.selected.map((entry) => entry.stage ?? 1));
   for (const stage of [...stages].sort()) {
-    if (stages.size > 1) lines.push(stage === 1 ? 'first, for fast feedback:' : 'then, only if those pass:');
-    for (const entry of picked.selected.filter((item) => (item.stage || 1) === stage)) {
+    if (stages.size > 1) lines.push(stage === 0 ? 'first, the quick checks:' : stage === 1 ? 'then the tests this change needs, only if everything before passed:' : 'last, the full gate, only if everything before passed:');
+    for (const entry of picked.selected.filter((item) => (item.stage ?? 1) === stage)) {
       const place = placement(entry, options);
       const label = place.run ? 'run here' : `needs ${place.lane}`;
       const time = entry.expected ? `  ~${entry.expected}s${entry.expectedFrom === 'measured' ? '' : ` (${entry.expectedFrom})`}` : '  ~?s';
@@ -434,7 +434,7 @@ async function checkProof(root, map, change, picked, options, context) {
   if (flags.length) return { ...row, status: 'failed', why: flags.join('; ') };
   const coverageDir = proofs.runsNode(found.command) ? fs.mkdtempSync(path.join(os.tmpdir(), 'atris-check-cov-')) : null;
   try {
-    const env = cageEnv({ where: 'here' }, { ...context, extraEnv: coverageDir ? { NODE_V8_COVERAGE: coverageDir } : {} });
+    const env = cageEnv({ where: 'here' }, { ...context, extraEnv: { ...(context.extraEnv || {}), ...(coverageDir ? { NODE_V8_COVERAGE: coverageDir } : {}) } });
     const run = await runCaged(found.command, root, env, options.timeout || PROOF_TIMEOUT_SECONDS);
     row.seconds = seconds(run.ms);
     row.exit_code = run.code;
@@ -505,16 +505,27 @@ async function evaluate(root, map, options, log) {
   proofs.sweepStaleDeepCopies(root);
   const identity = receipts.codeIdentity(root);
   const startedAt = new Date().toISOString();
-  const context = { person };
+  // Every check is told which change it checks: ATRIS_CHECK_BASE (the merge
+  // base the plan was made against; empty for --files) and ATRIS_CHECK_FILES
+  // (a temp file listing the changed files, one per line, removed after).
+  const filesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-check-files-'));
+  const dropFiles = () => { try { fs.rmSync(filesDir, { recursive: true, force: true }); } catch {} };
+  process.once('exit', dropFiles);
+  const filesList = path.join(filesDir, 'changed-files.txt');
+  fs.writeFileSync(filesList, change.files.length ? `${change.files.join('\n')}\n` : '');
+  const context = { person, extraEnv: { ATRIS_CHECK_BASE: change.mergeBase || '', ATRIS_CHECK_FILES: filesList } };
   const done = options.alreadyPassed || new Set();
   const toRun = picked.selected.filter((entry) => placement(entry, options).run && !done.has(entry.key));
   const clockStart = Date.now();
-  // Stages run in order: on high risk the selected tests and quick checks
-  // first, then the release gate, which does not start if the first stage failed.
+  // Cheapest first (lib/check-plan.js): the key scan, then the quick checks,
+  // then the tests the change needs, then the full gate. The first failure
+  // stops the rest; each later check reads "not run because <check> failed",
+  // which is never a pass.
   const runByKey = new Map();
-  let stopped = false;
-  for (const stage of [...new Set(toRun.map((entry) => entry.stage || 1))].sort()) {
-    const list = toRun.filter((entry) => (entry.stage || 1) === stage);
+  const secrets = await secretCheck(root, map, change, context);
+  let stopped = secrets.status === 'failed' ? 'the key scan' : '';
+  for (const stage of [...new Set(toRun.map((entry) => entry.stage ?? 1))].sort()) {
+    const list = toRun.filter((entry) => (entry.stage ?? 1) === stage);
     if (stopped) { for (const entry of list) runByKey.set(entry.key, null); continue; }
     const runs = await inPool(list, options.parallel || map.parallel, async (entry) => {
       const port = entry.port ? await freePort() : null;
@@ -522,11 +533,12 @@ async function evaluate(root, map, options, log) {
       return runCaged(entry.run, cwd, cageEnv(entry, { ...context, port }), timeoutFor(entry, options));
     });
     list.forEach((entry, index) => runByKey.set(entry.key, runs[index]));
-    if (list.some((entry, index) => resultRow(entry, runs[index], map.skipLines).status === 'failed')) stopped = true;
+    const red = list.find((entry, index) => resultRow(entry, runs[index], map.skipLines).status === 'failed');
+    if (red) stopped = red.key;
   }
   const rows = picked.selected.map((entry) => {
     const place = placement(entry, options);
-    const base = { name: entry.key, run: entry.run, where: entry.where, why: entry.reasons, expected_seconds: entry.expected, stage: entry.stage || 1, ...(entry.tests && !entry.file ? { tests: entry.tests } : {}) };
+    const base = { name: entry.key, run: entry.run, where: entry.where, why: entry.reasons, expected_seconds: entry.expected, stage: entry.stage ?? 1, ...(entry.tests && !entry.file ? { tests: entry.tests } : {}) };
     if (place.run && done.has(entry.key)) {
       return { ...base, status: 'passed', note: 'passed in the receipt for this same code', seconds: 0, exit_code: 0 };
     }
@@ -534,8 +546,8 @@ async function evaluate(root, map, options, log) {
       return { ...base, status: 'needs-lane', lane: place.lane, seconds: 0, exit_code: null };
     }
     const result = runByKey.get(entry.key);
-    if (!result) return { ...base, status: 'not-run', note: 'an earlier stage failed, so it did not start', seconds: 0, exit_code: null };
-    const row = { ...base, ...resultRow(entry, result, map.skipLines), expected_seconds: entry.expected, stage: entry.stage || 1 };
+    if (!result) return { ...base, status: 'not-run', note: `not run because ${stopped} failed`, seconds: 0, exit_code: null };
+    const row = { ...base, ...resultRow(entry, result, map.skipLines), expected_seconds: entry.expected, stage: entry.stage ?? 1 };
     // A fallback that runs only part of the tests is never proof: it passed
     // here, but the whole suite still has to.
     if (entry.partialFallback && row.status === 'passed') {
@@ -550,8 +562,12 @@ async function evaluate(root, map, options, log) {
     const check = map.checks[name];
     rows.push({ name, run: check.run, where: check.where, why: [check.each ? 'no changed file it runs for' : 'no changed file matches'], status: 'skipped-by-rule', seconds: 0, exit_code: null });
   }
-  const proof = options.gate ? { status: 'exempt', why: 'a whole gate run proves the gate, not one change' } : await checkProof(root, map, change, picked, options, context);
-  const secrets = await secretCheck(root, map, change, context);
+  let proof;
+  if (options.gate) proof = { status: 'exempt', why: 'a whole gate run proves the gate, not one change' };
+  else if (stopped) proof = { status: 'not-run', why: `not run because ${stopped} failed` };
+  else proof = await checkProof(root, map, change, picked, options, context);
+  dropFiles();
+  process.removeListener('exit', dropFiles);
   const actualSeconds = seconds(Date.now() - clockStart);
   const over = budget.overBudget(picked.target, actualSeconds, rows);
   // Code changed while the checks ran: this receipt cannot vouch for either state.
@@ -615,6 +631,7 @@ function summaryLines(receipt, file, root) {
   }
   const proof = receipt.proof;
   if (proof.status === 'exempt') lines.push(`  proof           ${proof.why}`);
+  else if (proof.status === 'not-run') lines.push(`  not run         the proof, ${proof.why}`);
   else if (!proof.command) lines.push(`  FAIL            ${proof.why}. ${proof.hint || ''}`.trimEnd());
   else lines.push(`  ${(proof.status === 'passed' ? 'proof' : proof.status === 'failed' ? 'FAIL proof' : `needs ${proof.lane}`).padEnd(15)} ${proof.command}${proof.changed_line_coverage ? `, changed lines run: ${proof.changed_line_coverage}` : ''}${proof.status !== 'passed' ? `, ${proof.why}` : ''}`);
   lines.push(`  ${(receipt.secret_scan.status === 'passed' ? 'keys' : 'FAIL keys').padEnd(15)} ${receipt.secret_scan.status === 'passed' ? 'no key-shaped strings added' : receipt.secret_scan.why}`);
