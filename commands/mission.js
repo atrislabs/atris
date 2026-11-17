@@ -8112,17 +8112,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
   const sharedProcess = memberProcessPrompt(cwd);
   const baseRoot = mission.worktree_root || mission.worktree?.path || cwd;
   const owner = String(mission.owner || '').trim();
-  let standingMission = '';
-  if (owner && /^[a-zA-Z0-9._-]+$/.test(owner)) {
-    const dir = memberDir(owner, baseRoot) || path.join(baseRoot, 'atris', 'team', owner);
-    try { standingMission = fs.readFileSync(path.join(dir, 'MISSION.md'), 'utf8'); } catch {}
-    if (/\batris\/MISSION\.md\b/i.test(standingMission)) {
-      try { standingMission += `\n${fs.readFileSync(path.join(baseRoot, 'atris', 'MISSION.md'), 'utf8')}`; } catch {}
-    }
-  }
-  const { jobForbidsCommit } = require('../lib/member-save-work');
-  const forbidsLanding = [mission.objective, standingMission].some((text) =>
-    jobForbidsCommit(String(text || '').replace(/\b(?:push|merge)/gi, 'commit')));
+  const forbidsLanding = require('../lib/member-save-work').memberForbidsLanding(owner, mission.objective, baseRoot);
   const pingLines = pings.length
     ? [
       ``,
@@ -9883,7 +9873,8 @@ async function executeMissionRunTicksPhase(context) {
           // when status is "allowed". Only a non-allowed status is a cooldown;
           // treating an allowed resetsAt as one pauses every timed run after
           // tick 1 with rate-limit-exceeded-wall.
-          lastRateLimit = claudeResult.rate_limit_info.status === 'allowed' ? null : claudeResult.rate_limit_info;
+          // "allowed_warning" (seen live 2026-11-17 at 75% of the weekly window) still runs.
+          lastRateLimit = /^allowed/i.test(String(claudeResult.rate_limit_info.status || '')) ? null : claudeResult.rate_limit_info;
           rateLimitedEngineId = lastRateLimit ? tickEngineId : null;
         }
         if (claudeResult.aborted) { pauseReason = 'aborted-during-claude'; break; }

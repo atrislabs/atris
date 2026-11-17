@@ -455,7 +455,7 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   // "fatal: not a git repository", degrade to the shared checkout instead.
   // A job that says "do not commit" wants the change in the person's own
   // files; a side checkout would hide uncommitted work where they never see it.
-  const forbidsCommit = !hasFlag(args, '--worktree') && require('../lib/member-save-work').jobForbidsCommit(missionText);
+  const forbidsCommit = !hasFlag(args, '--worktree') && require('../lib/member-save-work').memberForbidsLanding(owner, missionText, cwd);
   if (hasFlag(args, '--shared-checkout') || hasFlag(args, '--no-worktree')) {
     startArgs.push('--shared-checkout');
   }
