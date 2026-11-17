@@ -155,6 +155,9 @@ test('a bad state file or no repo prints nothing and never throws', () => {
     assert.equal(pile.startNotice(notRepo), '');
     assert.equal(pile.reportLine(notRepo), '');
     assert.equal(pile.startNotice(dir, { base: 'no-such-branch' }), '');
+    // A repo with no .atris folder is not counted at all.
+    fs.rmSync(path.join(dir, '.atris'), { recursive: true, force: true });
+    assert.equal(pile.startNotice(dir, { budgetMs: 30000 }), '');
   } finally {
     cleanup(dir, notRepo);
   }
