@@ -39,6 +39,7 @@ const receipts = require('../lib/check-receipt');
 const proofs = require('../lib/check-proof');
 const budget = require('../lib/check-budget');
 const recompute = require('../lib/check-recompute');
+const receiptRefs = require('../lib/check-receipt-ref');
 const { planOptions } = require('../lib/check-context');
 
 const { EXIT } = receipts;
@@ -757,6 +758,13 @@ async function pushCommand(root, map, options, log) {
     log('push straight to the default branch?');
     for (const condition of conditions) log(`  ${condition.ok ? 'yes' : 'no '}  ${condition.label}`);
     const head = revParse(root, 'HEAD');
+    // Anything the lander may pick up later carries its receipt with it, as a
+    // small ref on origin (lib/check-receipt-ref.js). The lander works it out
+    // again; when the ref cannot be pushed it checks the change itself.
+    if (!conditions.every((condition) => condition.ok) || rules.push.via) {
+      const kept = receiptRefs.publishReceipt(root, result.receipt);
+      log(kept.ok ? `receipt: kept on origin as ${kept.ref}` : `receipt: not kept on origin (${kept.detail || 'unknown'}); the lander will check the change itself`);
+    }
     if (!conditions.every((condition) => condition.ok)) {
       const ref = `refs/heads/atris/ready/${head.slice(0, 12)}`;
       const staged = run(root, ['push', '--quiet', 'origin', `HEAD:${ref}`]);
@@ -851,6 +859,8 @@ function sweepCommand(root, log, { now = Date.now() } = {}) {
   }
   log(`atris check sweep: removed ${removed} staged ref(s) already on ${target.branch} and older than ${STALE_READY_DAYS} days`);
   for (const row of waiting) log(`  waiting, not on ${target.branch}: ${row.name} (${Math.floor(row.days)} days old)`);
+  const kept = receiptRefs.sweepReceiptRefs(root, { target: target.ref, now });
+  log(`atris check sweep: removed ${kept.removed} receipt ref(s) whose commit has been on ${target.branch} over ${receiptRefs.LANDED_DAYS} days or that are over ${receiptRefs.MAX_DAYS} days old; ${kept.kept} kept`);
   log(receipts.storageLine(root));
   return EXIT.proven;
 }
