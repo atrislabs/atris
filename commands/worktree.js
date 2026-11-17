@@ -555,7 +555,11 @@ function doctorCommand(args) {
     console.error('Usage: atris worktree doctor [--workspace <dir>] [--repo <name>] [--older-than <hours>] [--json]');
     return 2;
   }
-  const report = doctor.doctorWorkspace({ workspace, olderThanHours: olderThan, repoFilter: readFlag(args, '--repo') || '' });
+  let currentRepo = '';
+  if (!readFlag(args, '--workspace')) {
+    try { currentRepo = findPrimaryRoot(repoRoot()); } catch {}
+  }
+  const report = doctor.doctorWorkspace({ workspace, repoRoot: currentRepo, olderThanHours: olderThan, repoFilter: readFlag(args, '--repo') || '' });
   if (hasFlag(args, '--json')) {
     console.log(JSON.stringify({ ok: !report.error, ...report }, null, 2));
     return report.error ? 1 : 0;
