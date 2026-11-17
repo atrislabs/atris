@@ -203,3 +203,15 @@ test('failed atomic receipt replacement preserves prior execution receipt', () =
     assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { execution_id: 'run-a', status: 'running' });
   } finally { fs.renameSync = rename; fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test('runner cleanup unknown marker prevents terminal success or stopped claim', async () => {
+  const h = harness({ onRequest: url => url.endsWith('/subscription-only') ? started
+    : url.includes('/cancel-strict?') ? ack : { ok: true, data: {
+      execution_id: 'run-a', status: 'failed',
+      events: [{ type: 'error', error: 'permission denied', cleanup_status: 'unknown' }],
+    } } });
+  const r = await h.run();
+  assert.equal(r.receipt.status, 'cancellation_unconfirmed');
+  assert.equal(r.receipt.terminal_status_observed, false);
+  assert.equal(h.calls.filter(c => c.url.includes('/cancel-strict?')).length, 1);
+});

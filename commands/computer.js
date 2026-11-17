@@ -1129,7 +1129,7 @@ function printComputerPrHelp(log = console.log) {
   log('  --think          ask the thinker first, for bugs you already know are hard');
   log('  --no-think       never ask the thinker');
   log('  --require-subscription  request linked-subscription-only execution; needs compatible server and runner');
-  log('  --max-turns <1-100>     cap each model round, not elapsed time; use --no-think for one round');
+  log('  --max-turns <1-100>     request a per-round budget; Codex scales timeout, not a turn cap; --no-think selects one round');
   log('  --timeout-seconds <1-3600>  stop admission/polling, request scoped cancellation, observe for up to 15s');
   log('                   requires subscription-only, max-turns, no-think and an awake computer; not a remote hard deadline');
   log('  --as <member>    work as a team member. On a computer with /workspace/atris/team the member');
