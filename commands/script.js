@@ -861,8 +861,4 @@ module.exports = {
   scriptCommand,
   codeName,
   readAnswer,
-  renderPage,
-  listRuns,
-  FIRST_WORDS,
-  SECOND_WORDS,
 };
