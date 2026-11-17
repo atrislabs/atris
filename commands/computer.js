@@ -1116,7 +1116,7 @@ async function computerExec(token, prompt, ctx = null, options = {}) {
 
 function printComputerPrHelp(log = console.log) {
   const openaiThinker = require('../lib/computer-pr').defaultThinkerModel('openai', {});
-  log('Usage: atris computer pr <owner/repo> "<task>" [--business <slug>] [--worker claude|openai] [--model <id>] [--base <branch>] [--branch <name>] [--thinker <id>] [--think | --no-think] [--as <member>] [--no-feed] [--require-subscription] [--max-turns <1-100>]');
+  log('Usage: atris computer pr <owner/repo> "<task>" [--business <slug>] [--worker claude|openai] [--model <id>] [--base <branch>] [--branch <name>] [--thinker <id>] [--think | --no-think] [--as <member>] [--no-feed] [--require-subscription] [--max-turns <1-100>] [--timeout-seconds <1-3600>]');
   log('');
   log('The business computer does the task on a new branch and opens a pull request.');
   log('It prints the pull request link. It never merges.');
@@ -1130,6 +1130,8 @@ function printComputerPrHelp(log = console.log) {
   log('  --no-think       never ask the thinker');
   log('  --require-subscription  request linked-subscription-only execution; needs compatible server and runner');
   log('  --max-turns <1-100>     cap each model round, not elapsed time; use --no-think for one round');
+  log('  --timeout-seconds <1-3600>  stop admission/polling, request scoped cancellation, observe for up to 15s');
+  log('                   requires subscription-only, max-turns, no-think and an awake computer; not a remote hard deadline');
   log('  --as <member>    work as a team member. On a computer with /workspace/atris/team the member');
   log('                   must be there; it reads its MEMBER.md and newest 20 lessons, and one lesson');
   log('                   line is saved to its lessons.md after the run. Default there: executor.');
@@ -1289,6 +1291,8 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   const warning = () => { if (!warned) { warned = true; logError('Could not update the desktop feed.'); } };
   const sendFeed = (message) => { if (feed) { try { feed.postMessage(message); } catch (_) { warning(); } } };
   let stopped = false;
+  let bounded = false;
+  const stopController = new AbortController();
   let cloudMember = null;
   let lastBuilder = null;
   let parsedRepo = null;
@@ -1307,8 +1311,11 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
     })();
     return finishing;
   };
-  const onSigint = () => { stopped = true; };
-  const onSigterm = () => { stopped = true; void finishFeed().then(() => process.exit(143)); };
+  const onSigint = () => { stopped = true; stopController.abort(); };
+  const onSigterm = () => {
+    stopped = true; stopController.abort();
+    if (!bounded) void finishFeed().then(() => process.exit(143));
+  };
   process.on('SIGINT', onSigint);
   process.once('SIGTERM', onSigterm);
   try {
@@ -1327,13 +1334,29 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
     return fail('No business computer selected. Pass --business <slug>.');
   }
 
+  bounded = parsed.timeoutSeconds != null;
+  const deadlineAt = bounded ? startedAt + parsed.timeoutSeconds * 1000 : null;
+  const pastDeadline = () => bounded && (stopped || Date.now() >= deadlineAt);
+  const admissionTimeout = () => bounded ? Math.max(1, Math.min(15000, Math.floor((deadlineAt - Date.now()) / 2))) : 15000;
+
   if (parsed.requireSubscription) {
     const policy = await request(`/business/${ctx.businessId}/chat/execution-policy`, {
-      method: 'GET', token, timeoutMs: 15000, retries: 0,
+      method: 'GET', token, timeoutMs: admissionTimeout(), retries: 0, ...(bounded ? { noAuthRenewal: true } : {}),
     });
     if (!policy.ok || policy.data?.version !== 1 || policy.data?.require_subscription !== true) {
       return fail('the server does not confirm subscription-only request support; no run was started.');
     }
+  }
+
+  if (bounded) {
+    if (pastDeadline()) return fail('stopped before wake; no run was started.');
+    const capability = await request(`/business/${ctx.businessId}/chat/cancel-strict/capability`, {
+      method: 'GET', token, timeoutMs: admissionTimeout(), retries: 0, ...(bounded ? { noAuthRenewal: true } : {}),
+    });
+    if (!capability.ok || capability.data?.version !== 1 || capability.data?.execution_scoped !== true) {
+      return fail('the server does not confirm scoped cancellation support; no run was started.');
+    }
+    if (pastDeadline()) return fail('stopped before wake; no run was started.');
   }
 
   const { repo, task, base } = parsed;
@@ -1353,7 +1376,17 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   const root = process.cwd();
   // Tests that fake the network and give no cloud team stay off the files API.
   teamIo = deps.cloudTeam !== undefined ? deps.cloudTeam : (deps.apiRequestJson ? null : cloudTeamIo(token, ctx));
-  const awake = await wake(token, ctx);
+  let awake;
+  if (bounded) {
+    if (pastDeadline()) return fail('stopped before admission; no run was started.');
+    const status = await request(`/business/${ctx.businessId}/ai-computer/status`, {
+      method: 'GET', token, retries: 0, noAuthRenewal: true, timeoutMs: admissionTimeout(),
+    });
+    awake = status.ok && status.data?.status === 'running' && Boolean(status.data?.endpoint);
+    if (!awake) return fail('bounded runs need an already awake computer; no run was started.');
+  } else {
+    awake = await wake(token, ctx);
+  }
   if (!awake) return fail('The business computer did not become ready in time, so no pull request was started.');
 
   // A computer with a team folder: the member must exist there, the job is
@@ -1405,6 +1438,7 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   // One round on the computer: start it (waiting out a busy runner), stream
   // its words through the redacting writer, and hand back what it said.
   const runRound = async ({ prompt: message, model, sessionId, builder = false }) => {
+    if (pastDeadline()) return { startError: 'stopped before dispatch; no run was started.' };
     const startOptions = {
       method: 'POST',
       token,
@@ -1421,6 +1455,16 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
       timeoutMs: 40000,
       retries: 0,
     };
+    if (bounded) {
+      const out = prLib.createRedactingWriter(chunk => write(chunk));
+      try {
+        return await require('../lib/computer-pr-bounded').runBoundedPrRound({
+          request, token, ctx, startOptions, deadlineAt, signal: stopController.signal,
+          write: chunk => out.write(chunk),
+          ...(deps.saveReceipt ? { saveReceipt: deps.saveReceipt } : {}),
+        });
+      } finally { out.flush(); }
+    }
     let started;
     for (let attempt = 1; attempt <= 15; attempt++) {
       started = await request(`/business/${ctx.businessId}/chat${parsed.requireSubscription ? '/subscription-only' : ''}`, startOptions);
