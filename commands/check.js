@@ -17,11 +17,17 @@
 //   atris check sweep              remove staged refs that landed over 7 days ago
 //   atris check fix [--dry-run]    hand a failed receipt to CodeOps, one job per receipt
 //   atris check init               write a starter atris/checks.json
+//   atris check --lint-map         check atris/checks.json itself (also done at
+//                                  the start of every check)
+//   atris check replay --last <n>  the plan each of the last n commits on the
+//                                  default branch would get; runs nothing
 //
 // Exit codes: 0 proven, 3 partly or staged (needs a lane), 1 failed,
 // 2 usage or map error. A check that did not run is never a pass.
-// Rules: lib/check-plan.js. Receipt: lib/check-receipt.js. Proof and key scan:
-// lib/check-proof.js. Reverse imports: lib/check-imports.js.
+// Rules and tiers: lib/check-plan.js. Test selection: lib/check-select.js.
+// Time budget: lib/check-budget.js. Receipt: lib/check-receipt.js. Proof and
+// key scan: lib/check-proof.js. Import graph: lib/check-imports.js. What the
+// planner sees of a repo: lib/check-context.js. Replay: lib/check-replay.js.
 
 const fs = require('fs');
 const os = require('os');
@@ -31,12 +37,13 @@ const { spawn, spawnSync } = require('child_process');
 const plan = require('../lib/check-plan');
 const receipts = require('../lib/check-receipt');
 const proofs = require('../lib/check-proof');
-const { reverseImporters } = require('../lib/check-imports');
+const budget = require('../lib/check-budget');
+const { planOptions } = require('../lib/check-context');
 
 const { EXIT } = receipts;
-const VALUE_FLAGS = new Set(['--base', '--files', '--lane', '--receipt', '--gate', '--parallel', '--timeout', '--proof']);
-const LOCAL_FLAGS = new Set([...VALUE_FLAGS, '--explain', '--verify', '--allow-paid', '--push', '--deep', '--dry-run']);
-const SUBCOMMANDS = new Set(['init', 'push', 'land', 'sweep', 'fix']);
+const VALUE_FLAGS = new Set(['--base', '--files', '--lane', '--receipt', '--gate', '--parallel', '--timeout', '--proof', '--last', '--map']);
+const LOCAL_FLAGS = new Set([...VALUE_FLAGS, '--explain', '--verify', '--allow-paid', '--push', '--deep', '--dry-run', '--lint-map']);
+const SUBCOMMANDS = new Set(['init', 'push', 'land', 'sweep', 'fix', 'replay']);
 const LANES = ['here', 'no-screen'];
 // A receipt keeps no logs: only the last 40 lines of a failed check.
 const TAIL_LINES = 40;
@@ -57,12 +64,16 @@ function usage(log) {
   log('       atris check sweep             remove landed staged refs older than 7 days, list the rest');
   log('       atris check fix [--receipt <file>] [--dry-run]   hand a failed receipt to CodeOps');
   log('       atris check init [--print]');
+  log('       atris check --lint-map        check the map itself');
+  log('       atris check replay --last <n> [--json] [--map <file>]   plans for recent commits, runs nothing');
   log('       atris check <mission-id> [--json]   checks of a cloud mission');
   log('');
   log('Picks checks from atris/checks.json by rule, runs the ones that may run on this machine,');
   log("checks the change's own proof, scans the change for keys, and writes one receipt in");
   log(".atris/receipts/. Checks marked no-screen or paid never run on a person's machine; they");
-  log('are recorded as needing that lane, and that is never a pass.');
+  log('are recorded as needing that lane, and that is never a pass. Each change gets a risk tier:');
+  log('low (docs, comments, styles, tests) runs only quick checks, normal runs the few tests that');
+  log('cover it, high runs those first and then the whole release gate. Every plan shows its seconds.');
   log('Exit: 0 proven, 3 needs a lane (or staged), 1 failed, 2 usage or map error.');
 }
 
@@ -96,6 +107,9 @@ function parseArgs(args) {
     else if (arg === '--push') options.push = true;
     else if (arg === '--deep') options.deep = true;
     else if (arg === '--dry-run') options.dryRun = true;
+    else if (arg === '--lint-map') options.lintMap = true;
+    else if (arg === '--last') options.last = Number(value());
+    else if (arg === '--map') options.mapFile = value();
     else if (arg === '--base') options.base = value();
     else if (arg === '--files') options.files = value().split(',').map((file) => file.trim().replace(/^\.\//, '')).filter(Boolean);
     else if (arg === '--lane') options.lane = value();
@@ -111,6 +125,7 @@ function parseArgs(args) {
   if (options.push && (options.files || options.base || options.gate)) throw new UsageError('--push checks the whole change against the default branch; drop --files, --base and --gate');
   if (options.parallel !== undefined && !(Number.isInteger(options.parallel) && options.parallel > 0)) throw new UsageError('--parallel needs a whole number above 0');
   if (options.timeout !== undefined && !(options.timeout > 0)) throw new UsageError('--timeout needs seconds above 0');
+  if (options.last !== undefined && !(Number.isInteger(options.last) && options.last > 0)) throw new UsageError('--last needs a whole number above 0');
   return options;
 }
 
@@ -152,7 +167,11 @@ function cageEnv(entry, context) {
     if (!entry.needsElectron) env.ELECTRON_RUN_AS_NODE = '1';
   }
   if (entry.port && context.port) env.PORT = String(context.port);
-  return { ...env, ...(context.extraEnv || {}) };
+  // The map's own env for the check (a selector's test settings) comes first;
+  // the cage's window guards above cannot be undone by it.
+  const own = { ...(entry.env || {}) };
+  for (const key of ['ATRIS_CHECK', 'CI', 'BROWSER', 'ELECTRON_RUN_AS_NODE', 'OBELISK_ALLOW_APP_LAUNCH']) delete own[key];
+  return { ...env, ...own, ...(context.extraEnv || {}) };
 }
 
 function runCaged(command, root, env, timeoutSeconds) {
@@ -224,40 +243,104 @@ function timeoutFor(entry, options) {
   return Math.max(120, (entry.seconds || 0) * 4);
 }
 
-function loadMap(root, log) {
+function readMapFile(file) {
+  if (!fs.existsSync(file)) return { missing: true };
   try {
+    return { raw: JSON.parse(fs.readFileSync(file, 'utf8')) };
+  } catch (error) {
+    return { error: `${path.basename(file)} is not valid JSON: ${error.message}` };
+  }
+}
+
+// Every check starts here, so a bad map (a slow always, a chained command)
+// stops it before anything runs.
+function loadMap(root, log, options = {}) {
+  try {
+    if (options.mapFile) {
+      const read = readMapFile(path.resolve(options.mapFile));
+      if (read.missing) { log(`atris check: no map at ${options.mapFile}`); return null; }
+      if (read.error) { log(`atris check: ${read.error}`); return null; }
+      return plan.validateMap(read.raw);
+    }
     const map = plan.loadMap(root);
     if (!map) log('atris check: this project has no atris/checks.json yet. Run atris check init to write a starter.');
     return map;
   } catch (error) {
-    if (error instanceof plan.CheckMapError) { log(`atris check: ${error.message}`); return null; }
+    if (error instanceof plan.CheckMapError) { log(`atris check: ${error.message}`); log('atris check: the map was refused, so nothing ran (atris check --lint-map lists every problem)'); return null; }
     throw error;
   }
 }
 
-function lister(root) {
-  let cached = null;
-  return () => {
-    if (!cached) {
-      const result = spawnSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
-      cached = String(result.stdout || '').split('\0').filter(Boolean);
-    }
-    return cached;
-  };
+function lintMapCommand(root, options, log) {
+  const file = options.mapFile ? path.resolve(options.mapFile) : path.join(root, plan.MAP_PATH);
+  const read = readMapFile(file);
+  if (read.missing) { log('atris check --lint-map: no atris/checks.json here. Run atris check init to write a starter.'); return EXIT.usage; }
+  if (read.error) { log(`atris check --lint-map: ${read.error}`); return EXIT.usage; }
+  const history = budget.loadDurations(root);
+  const result = plan.lintMap(read.raw, { durations: (name) => (history[name] ? budget.median(history[name].s) : null) });
+  if (options.json) log(JSON.stringify(result, null, 2));
+  else {
+    for (const error of result.errors) log(`  refused  ${error}`);
+    for (const warning of result.warnings) log(`  note     ${warning}`);
+    log(result.errors.length ? `atris check --lint-map: ${result.errors.length} problem(s); every check refuses this map until they are fixed` : `atris check --lint-map: the map is fine (${Object.keys(read.raw.checks).length} checks)`);
+  }
+  return result.errors.length ? EXIT.usage : EXIT.proven;
 }
 
-// The plan for this change: changed files, one hop of importers, the picks.
+function replayCommand(root, map, options, log) {
+  const { replay, summaryLines: replayLines, rowLine } = require('../lib/check-replay');
+  const base = options.base || receipts.defaultBase(root);
+  if (!base) { log('atris check replay: could not find the default branch; pass --base <ref>'); return EXIT.usage; }
+  const result = replay(root, map, { last: options.last || 20, base, onRow: options.json ? null : (row) => log(rowLine(row)) });
+  if (options.json) log(JSON.stringify(result, null, 2));
+  else for (const line of replayLines(result)) log(line);
+  return EXIT.proven;
+}
+
+// The plan for this change: changed files, the import graph, the picks, and
+// each pick's expected seconds.
 function makePlan(root, map, options) {
   const change = receipts.changeSet(root, { base: options.base, files: options.files });
   if (!change.ok) return { error: change.error };
   if (options.extraFiles && options.extraFiles.length) change.files = [...new Set([...change.files, ...options.extraFiles])].sort();
-  const readFile = (file) => { try { return fs.readFileSync(path.join(root, file), 'utf8'); } catch { return ''; } };
-  const graph = options.gate ? { importers: new Map(), unreadable: [] }
-    : reverseImporters(root, change.files, { dirtyFiles: receipts.uncommittedFiles(root) });
-  const picked = plan.planChecks(map, change.files, {
-    gate: options.gate, listFiles: lister(root), readFile, importers: graph.importers, unreadable: graph.unreadable,
+  const context = planOptions(root, map, change.files, {
+    base: change.mergeBase || 'HEAD',
+    dirtyFiles: receipts.uncommittedFiles(root),
+    gate: options.gate,
   });
+  const picked = plan.planChecks(map, change.files, context);
+  const history = budget.loadDurations(root);
+  for (const entry of picked.selected) {
+    const guess = budget.estimate(entry, history);
+    entry.expected = guess.seconds;
+    entry.expectedFrom = guess.source;
+  }
+  const here = picked.selected.filter((entry) => placement(entry, options).run);
+  picked.expected = budget.planSeconds(here, options.parallel || map.parallel);
+  picked.unknownTimes = here.filter((entry) => entry.expected === null).map((entry) => entry.key);
   return { change, picked };
+}
+
+function tierLine(picked) {
+  const high = [...picked.files, ...picked.importers].filter((file) => file.tier === 'high');
+  if (high.length) return `risk: high (${picked.highKinds.join(', ')}: ${high[0].path}${high[0].imports ? ` imports ${high[0].imports}` : ''}${high.length > 1 ? ` +${high.length - 1} more` : ''})`;
+  if (picked.tier === 'low') {
+    const kinds = [...new Set(picked.lowWhy.map((file) => file.why))];
+    return `risk: low (${kinds.join(', ')})`;
+  }
+  const normal = picked.files.filter((file) => file.tier === 'normal');
+  return `risk: normal (${normal[0] ? normal[0].path : 'code'}${normal.length > 1 ? ` +${normal.length - 1} more` : ''})`;
+}
+
+function budgetLine(picked) {
+  const target = picked.target;
+  const unknown = picked.unknownTimes && picked.unknownTimes.length ? `, ${picked.unknownTimes.length} with no time yet` : '';
+  return `expected: about ${Math.round(picked.expected)}s for the checks that run here${unknown} (target ${target}s for a ${picked.gate ? `whole ${picked.gate} gate` : `${picked.tier} risk change`})`;
+}
+
+function slowestExpected(picked, options) {
+  return picked.selected.filter((entry) => placement(entry, options).run && entry.expected)
+    .sort((a, b) => b.expected - a.expected)[0] || null;
 }
 
 function proofLabel(proof) {
@@ -269,23 +352,43 @@ function explainLines(picked, change, options, person, proof, lines = []) {
   const what = picked.gate ? `the ${picked.gate} gate` : `${change.files.length} changed file${change.files.length === 1 ? '' : 's'}`;
   const against = change.filesOverride ? 'files given by hand' : `base ${change.base} at ${String(change.mergeBase).slice(0, 9)}`;
   lines.push(`atris check plan for ${what} (${against})`);
-  const high = [...picked.files, ...picked.importers].filter((file) => file.tier === 'high');
-  lines.push(`risk: ${picked.tier}${high.length ? ` (${picked.highKinds.join(', ')}: ${high[0].path}${high[0].imports ? ` imports ${high[0].imports}` : ''}${high.length > 1 ? ` +${high.length - 1} more` : ''})` : ''}`);
+  lines.push(tierLine(picked));
   if (picked.importers.length) lines.push(`importers counted: ${picked.importers.length} file(s) import a changed file`);
   lines.push(`machine: ${person ? "a person's machine" : 'no person at the screen'}, lane ${options.lane}`);
-  let expected = 0;
-  for (const entry of picked.selected) {
-    const place = placement(entry, options);
-    if (place.run) expected += entry.seconds || 0;
-    const label = place.run ? 'run here' : `needs ${place.lane}`;
-    lines.push(`  ${label.padEnd(15)} ${entry.key}  <- ${entry.reasons.join('; ')}${entry.seconds ? `  ~${entry.seconds}s` : ''}`);
+  const stages = new Set(picked.selected.map((entry) => entry.stage || 1));
+  for (const stage of [...stages].sort()) {
+    if (stages.size > 1) lines.push(stage === 1 ? 'first, for fast feedback:' : 'then, only if those pass:');
+    for (const entry of picked.selected.filter((item) => (item.stage || 1) === stage)) {
+      const place = placement(entry, options);
+      const label = place.run ? 'run here' : `needs ${place.lane}`;
+      const time = entry.expected ? `  ~${entry.expected}s${entry.expectedFrom === 'measured' ? '' : ` (${entry.expectedFrom})`}` : '  ~?s';
+      lines.push(`  ${label.padEnd(15)} ${entry.key}  <- ${entry.reasons.join('; ')}${time}`);
+      if (entry.tests && entry.tests.length && !entry.file) {
+        for (const test of entry.tests.slice(0, 40)) lines.push(`      ${test.file}  <- ${test.reasons.join('; ')}`);
+        if (entry.tests.length > 40) lines.push(`      ... and ${entry.tests.length - 40} more`);
+      }
+    }
   }
-  if (!picked.selected.length) lines.push('  (no check picked)');
+  if (!picked.selected.length) lines.push(picked.tier === 'low' ? '  (no check picked; a low risk change runs the key scan)' : '  (no check picked)');
+  for (const [name, sel] of Object.entries(picked.selections || {})) {
+    if (sel.mode === 'fallback') lines.push(`${name}: ${sel.why}, so it runs its fallback`);
+    if (sel.mode === 'none') lines.push(`${name}: no test to run for this change`);
+    if (sel.broad_names && sel.broad_names.length) lines.push(`${name}: names too common to pick by: ${sel.broad_names.slice(0, 5).join(', ')}`);
+    if (sel.hubs && sel.hubs.length) {
+      const hubs = [...new Map(sel.hubs.map((hub) => [hub.file, hub])).values()];
+      lines.push(`${name}: not through ${hubs.length} hub file${hubs.length === 1 ? '' : 's'} many tests import: ${hubs.slice(0, 3).map((hub) => `${hub.file} (${hub.tests} tests)`).join(', ')}${hubs.length > 3 ? ', ...' : ''}`);
+    }
+  }
+  for (const file of picked.uncovered || []) lines.push(`no test covers ${file}`);
   if (picked.notPicked.length) lines.push(`not picked by rule: ${picked.notPicked.join(', ')}`);
   lines.push(`unmapped: ${picked.unmapped.length ? picked.unmapped.join(', ') : 'none'}`);
   lines.push(`proof: ${picked.tier === 'low' && !proof ? 'not needed for a low risk change' : proofLabel(proof)}`);
   if (picked.toConfirm.length) lines.push(`still to confirm in the map: ${picked.toConfirm.join(', ')}`);
-  lines.push(`expected: about ${Math.round(expected)}s for the checks that run here`);
+  lines.push(budgetLine(picked));
+  if (picked.target && picked.expected > picked.target) {
+    const slow = slowestExpected(picked, options);
+    if (slow) lines.push(`expected over budget: ${slow.key} (~${slow.expected}s) is most of it`);
+  }
   return lines;
 }
 
@@ -366,8 +469,8 @@ async function evaluate(root, map, options, log) {
     else for (const line of explainLines(picked, change, options, person, proof)) log(line);
     return { code: EXIT.proven, explained: true };
   }
-  if (!picked.selected.length) {
-    log('atris check: the map picked no check for this change, and nothing checked is not proof. Add an always check to atris/checks.json.');
+  if (!picked.selected.length && picked.tier !== 'low') {
+    log('atris check: the map picked no check for this change, and nothing checked is not proof. Add a check whose "when" covers it, or a selector.');
     return { code: EXIT.usage };
   }
 
@@ -377,27 +480,46 @@ async function evaluate(root, map, options, log) {
   const context = { person };
   const done = options.alreadyPassed || new Set();
   const toRun = picked.selected.filter((entry) => placement(entry, options).run && !done.has(entry.key));
-  const runs = await inPool(toRun, options.parallel || map.parallel, async (entry) => {
-    const port = entry.port ? await freePort() : null;
-    return runCaged(entry.run, root, cageEnv(entry, { ...context, port }), timeoutFor(entry, options));
-  });
-  const runByKey = new Map(toRun.map((entry, index) => [entry.key, runs[index]]));
+  const clockStart = Date.now();
+  // Stages run in order: on high risk the selected tests and quick checks
+  // first, then the release gate, which does not start if the first stage failed.
+  const runByKey = new Map();
+  let stopped = false;
+  for (const stage of [...new Set(toRun.map((entry) => entry.stage || 1))].sort()) {
+    const list = toRun.filter((entry) => (entry.stage || 1) === stage);
+    if (stopped) { for (const entry of list) runByKey.set(entry.key, null); continue; }
+    const runs = await inPool(list, options.parallel || map.parallel, async (entry) => {
+      const port = entry.port ? await freePort() : null;
+      const cwd = entry.cwd ? path.join(root, entry.cwd) : root;
+      return runCaged(entry.run, cwd, cageEnv(entry, { ...context, port }), timeoutFor(entry, options));
+    });
+    list.forEach((entry, index) => runByKey.set(entry.key, runs[index]));
+    if (list.some((entry, index) => resultRow(entry, runs[index], map.skipLines).status === 'failed')) stopped = true;
+  }
   const rows = picked.selected.map((entry) => {
     const place = placement(entry, options);
+    const base = { name: entry.key, run: entry.run, where: entry.where, why: entry.reasons, expected_seconds: entry.expected, stage: entry.stage || 1, ...(entry.tests && !entry.file ? { tests: entry.tests } : {}) };
     if (place.run && done.has(entry.key)) {
-      return { name: entry.key, run: entry.run, where: entry.where, why: entry.reasons, status: 'passed', note: 'passed in the receipt for this same code', seconds: 0, exit_code: 0 };
+      return { ...base, status: 'passed', note: 'passed in the receipt for this same code', seconds: 0, exit_code: 0 };
     }
     if (!place.run) {
-      return { name: entry.key, run: entry.run, where: entry.where, why: entry.reasons, status: 'needs-lane', lane: place.lane, seconds: 0, exit_code: null };
+      return { ...base, status: 'needs-lane', lane: place.lane, seconds: 0, exit_code: null };
     }
-    return resultRow(entry, runByKey.get(entry.key), map.skipLines);
+    const result = runByKey.get(entry.key);
+    if (!result) return { ...base, status: 'not-run', note: 'an earlier stage failed, so it did not start', seconds: 0, exit_code: null };
+    return { ...base, ...resultRow(entry, result, map.skipLines), expected_seconds: entry.expected, stage: entry.stage || 1 };
   });
+  budget.recordDurations(root, picked.selected.map((entry, index) => ({ entry, row: rows[index] }))
+    .filter(({ row }) => (row.status === 'passed' || row.status === 'failed') && !row.note && row.seconds > 0)
+    .map(({ entry, row }) => ({ key: entry.key, seconds: row.seconds, count: entry.selectedCount || 0 })));
   for (const name of picked.notPicked) {
     const check = map.checks[name];
     rows.push({ name, run: check.run, where: check.where, why: [check.each ? 'no changed file it runs for' : 'no changed file matches'], status: 'skipped-by-rule', seconds: 0, exit_code: null });
   }
   const proof = options.gate ? { status: 'exempt', why: 'a whole gate run proves the gate, not one change' } : await checkProof(root, map, change, picked, options, context);
   const secrets = await secretCheck(root, map, change, context);
+  const actualSeconds = seconds(Date.now() - clockStart);
+  const over = budget.overBudget(picked.target, actualSeconds, rows);
   // Code changed while the checks ran: this receipt cannot vouch for either state.
   const after = receipts.codeIdentity(root);
   const counted = [...rows.filter((row) => row.status !== 'skipped-by-rule'), proof, secrets].filter((row) => row.status !== 'exempt');
@@ -424,6 +546,12 @@ async function evaluate(root, map, options, log) {
     changed_files: change.files,
     importers_counted: picked.importers.length,
     unmapped: picked.unmapped,
+    uncovered: picked.uncovered,
+    selections: Object.fromEntries(Object.entries(picked.selections).map(([name, sel]) => [name, { mode: sel.mode, why: sel.why, selected: sel.tests.length, max: sel.max }])),
+    tier_target_seconds: picked.target,
+    expected_seconds: picked.expected,
+    actual_seconds: actualSeconds,
+    over_budget: over,
     checks: rows,
     proof,
     secret_scan: secrets,
@@ -444,8 +572,9 @@ function summaryLines(receipt, file, root) {
   const lines = [];
   for (const row of receipt.checks) {
     if (row.status === 'skipped-by-rule') continue;
-    const mark = row.status === 'passed' ? 'pass' : row.status === 'failed' ? 'FAIL' : `needs ${row.lane}`;
-    lines.push(`  ${mark.padEnd(15)} ${row.name}${row.seconds ? ` (${row.seconds}s)` : ''}${row.note ? `, ${row.note}` : ''}`);
+    const mark = row.status === 'passed' ? 'pass' : row.status === 'failed' ? 'FAIL' : row.status === 'not-run' ? 'not run' : `needs ${row.lane}`;
+    const time = row.seconds ? ` (${row.seconds}s${row.expected_seconds ? `, expected ~${row.expected_seconds}s` : ''})` : '';
+    lines.push(`  ${mark.padEnd(15)} ${row.name}${time}${row.note ? `, ${row.note}` : ''}`);
     if (row.status === 'failed' && row.output_tail) lines.push(`      ${row.output_tail.split('\n').slice(-4).join('\n      ')}`);
   }
   const proof = receipt.proof;
@@ -455,6 +584,14 @@ function summaryLines(receipt, file, root) {
   lines.push(`  ${(receipt.secret_scan.status === 'passed' ? 'keys' : 'FAIL keys').padEnd(15)} ${receipt.secret_scan.status === 'passed' ? 'no key-shaped strings added' : receipt.secret_scan.why}`);
   if (receipt.high_risk.length) {
     lines.push(`  high risk (${receipt.high_risk.join(', ')}): the release gate ran. Full audit: atris security-review audit ${receipt.changed_files.slice(0, 3).join(' ')} --quick`);
+  }
+  if (receipt.uncovered && receipt.uncovered.length) for (const gap of receipt.uncovered) lines.push(`  no test covers ${gap}`);
+  if (receipt.tier_target_seconds) {
+    lines.push(`  time            ${receipt.actual_seconds}s, expected ~${Math.round(receipt.expected_seconds)}s, target ${receipt.tier_target_seconds}s for a ${receipt.gate ? `whole ${receipt.gate} gate` : `${receipt.risk_tier} risk change`}`);
+  }
+  if (receipt.over_budget) {
+    const over = receipt.over_budget;
+    lines.push(`over budget: ${over.actual_seconds}s against the ${over.target_seconds}s target${over.check ? `; ${over.check} took ${over.check_seconds}s. Make it faster or move it to the lane` : ''}`);
   }
   const where = path.relative(root, file);
   const picked = counts.passed + counts.failed + counts['needs-lane'];
@@ -854,7 +991,7 @@ async function checkCommand(args, context = {}) {
   let landSha = '';
   if (args[0] === 'push') { sub = 'push'; rest = args.slice(1); }
   if (args[0] === 'land') { sub = 'land'; landSha = args[1]; rest = args.slice(2); }
-  if (args[0] === 'sweep' || args[0] === 'fix') { sub = args[0]; rest = args.slice(1); }
+  if (args[0] === 'sweep' || args[0] === 'fix' || args[0] === 'replay') { sub = args[0]; rest = args.slice(1); }
   let options;
   try {
     options = parseArgs(rest);
@@ -865,8 +1002,11 @@ async function checkCommand(args, context = {}) {
   if (sub === 'push') options.push = true;
   if (sub === 'sweep') return sweepCommand(root, log);
   if (sub === 'fix') return fixCommand(root, options, log, context);
-  const map = loadMap(root, log);
+  if (options.lintMap) return lintMapCommand(root, options, log);
+  if (options.mapFile && sub !== 'replay' && !options.explain) { log('atris check: --map is for replay and --explain only; a real check reads atris/checks.json'); return EXIT.usage; }
+  const map = loadMap(root, log, options);
   if (!map) return EXIT.usage;
+  if (sub === 'replay') return replayCommand(root, map, options, log);
   if (sub === 'land') return landCommand(root, map, landSha, options, log);
   if (options.verify) return verifyReceipt(root, options, log);
   if (options.push) return pushCommand(root, map, options, log);

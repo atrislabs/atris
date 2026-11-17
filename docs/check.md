@@ -4,7 +4,12 @@ One command, any project: pick the checks a change needs by plain rules, run
 the ones that may run on this machine, check the change's own proof, scan it
 for keys and write one receipt. `--push` then puts it on GitHub.
 
-No model calls, no learned picker, no cloud. Every pick prints its reason.
+No model calls, no learned picker, no cloud. Every pick prints its reason and
+how long it should take.
+
+The aim is speed you can feel: a wording change checks in a second or two, an
+ordinary change runs the few tests that cover it and only a risky change
+waits for the whole gate.
 
 ```
 atris check                 pick, run, prove, scan, write .atris/receipts/check-<sha>.json
@@ -15,6 +20,8 @@ atris check land <sha>      on a runner with no screen: run the rest, fast-forwa
 atris check init            write a starter atris/checks.json from what the project has
 atris check sweep           remove staged refs that landed over 7 days ago, list the others
 atris check fix             hand a failed receipt to CodeOps (--dry-run sends nothing)
+atris check --lint-map      check the map itself (every check does this first)
+atris check replay --last N the plan each of the last N commits would get; runs nothing
 ```
 
 Other flags: `--base <ref>`, `--files a,b` (a hand-picked list never makes a
@@ -35,31 +42,154 @@ Exit 3 always prints `atris check: not proven here; needs a lane`. Task
 ready, the hourly lander and `atris worktree ship` read that code and line
 together as "not proven here", never as passed.
 
+## Three risk tiers
+
+Every change gets one tier and the tier decides how wide the check goes.
+
+| tier | what makes it | what runs | target |
+|---|---|---|---|
+| low | docs, wording, styles, tests or code whose diff is only comments and whitespace | only checks marked `"tier": "low"`, the changed tests themselves and the key scan. Never the gate. No proof needed. | 5s |
+| normal | any other change | fast `always` checks, checks whose `when` matches and the tests a selector picks. The full gate does not run here. | 20s |
+| high | money, sign-in, access, security, migrations, lockfiles, the map itself, release paths or a file that imports one of those | the selected tests first, for fast feedback, then the whole `release` gate. If the first stage fails the gate does not start; its checks read `not-run`, which is never a pass. | 300s |
+
+Comments only: both versions of the file are reduced to their code (comments
+out, spaces squashed, line breaks and Python indentation kept) and compared
+and every changed line must look like a comment or differ only in spaces. Any
+doubt (a trailing comment after code, an unreadable file, a language it does
+not know) counts as code. A high risk path stays high whatever its diff.
+
+A check can say which tiers it runs in: `"tier": "low"` runs in every tier,
+no tier means normal and high, `"tier": "high"` only for high risk and gates.
+A map can make normal changes wait for a lane with `"normal_needs_lane":
+["<check>"]`; by default nothing does.
+
+`always` is only for checks of 5 seconds or less and the check must say its
+`seconds`. A slower always is refused by `atris check --lint-map` and at the
+start of every check, with the fix: give it `when` globs, put it in the
+release gate or make it a selector.
+
+## Selectors: the few tests that cover a change
+
+A check can pick tests instead of running one fixed command:
+
+```json
+"tests": {
+  "select": "pytest",
+  "roots": ["backend/tests"],
+  "when": ["backend/**"],
+  "cwd": "backend",
+  "python": "venv/bin/python",
+  "run": "{python} -m pytest -q {parallel} {files}",
+  "env": { "PYTHONPATH": "." },
+  "max": 40,
+  "fallback": "fast-gate"
+}
+```
+
+`select` is `pytest` (files named `test_*.py` or `*_test.py`) or `node-test`
+(`test-*.mjs`, `*.test.ts`, `*.spec.tsx` and so on). `roots` are the folders
+or globs the tests live in. `run` takes `{files}` (one run for all picked
+tests; vitest and jest work this way) or `{file}` (one run per test, a few at
+a time). Paths are relative to `cwd`. `{python}` is the map's `python` from
+this copy, else from the main checkout, else `python3`. `{parallel}` becomes
+`-n <workers>` when pytest-xdist is installed and at least `parallel_min` (4)
+tests were picked.
+
+A test is picked, with its reason printed, when it:
+
+- `changed`: is itself part of the change;
+- `imports: x`: imports the changed file x directly or one hop away (it
+  imports a file that imports x). A file in between that more than
+  `hub_tests` (8) tests import is a hub and the hop does not go through it;
+  the plan names the hubs it skipped;
+- `named-for: x`: is named for x (`test_x.py`, `x.test.ts`, `test-x.mjs`,
+  kebab-case too) or its text mentions x by path, by Python module path or
+  (JS) by a name x exports. A name more than 12 tests mention is too common to
+  say anything and is not used;
+- `owner: <glob>`: is listed for x's path in the map's `owners` table,
+  `{"src/billing/**": ["tests/test_billing.py"]}`.
+
+Imports are read with plain patterns: JS and TS `import`, `require`, `export
+from`, plus aliases from `tsconfig.json` or `jsconfig.json` `paths` and
+`baseUrl`; Python `import a.b`, `from a.b import c` (also in parentheses over
+several lines), relative imports and `from pkg import mod` as an import of
+`pkg/mod.py`.
+
+A map can list `broad` files (an app's main file that hundreds of tests
+name). For those the selector looks for the names the change touches instead
+of the file name: the function each changed hunk sits in and the names
+declared on changed lines, `named-for: main.js (changes normalizeClaudeEvent)`.
+
+Two rules widen, never narrow:
+
+- A changed source file no picked test covers is a finding: the plan prints
+  `no test covers <file>` and the selector runs its `fallback` instead. This
+  is how gaps get seen.
+- More than `max` picked tests means a big blast radius: the fallback runs.
+
+`fallback` names another check (usually the full gate) or is one command.
+Same rule as before: a selected test marked `launches: app` goes to the
+no-screen lane and one marked `spends:` is paid.
+
+## Time you can see
+
+Every plan prints the expected seconds of each check, the total and the
+tier's target. A map can change the targets with `"budget": {"low": 5,
+"normal": 20, "high": 300}`. Every run records what each check really took in
+`.atris/cache/check-durations.json` (9 runs per check, 2,000 checks, 512 KB at
+most) and the next estimate is the median of those runs. A selector's
+estimate is its `seconds` (the start-up) plus `per_test_seconds` for each
+picked test, spread over its workers, learned the same way.
+
+When a run takes longer than its target the summary says which check blew it
+and the receipt keeps it in `over_budget` so slow checks get fixed or moved
+to the lane. The receipt also keeps `tier_target_seconds`,
+`expected_seconds`, `actual_seconds`, each check's `expected_seconds` and
+`seconds`, the picked tests with their reasons and `uncovered`.
+
+## Replay
+
+`atris check replay --last 100` plans each of the last 100 commits on the
+default branch as if it were the change and runs nothing. Commits are walked
+first-parent so a merged pull request counts once with its whole diff and
+docs-only commits are skipped and counted. Each row shows the tier, how many
+tests were picked (or that it fell back), the expected seconds and whether it
+would push straight or be staged. The summary gives each tier's share and its
+median and 90th percentile seconds, how often a changed file had no covering
+test and the files most often uncovered. Everything is read from git
+objects; the checkout is not touched. `--json` for the rows, `--map <file>` to
+try a map before it lands.
+
 ## The map: atris/checks.json
 
 ```json
 {
   "checks": {
-    "fast-gate": { "run": "bash scripts/test_fast.sh", "always": true, "risk": "sign-in", "seconds": 120 },
+    "parses": { "run": "node --check main.js", "always": true, "seconds": 1 },
+    "fast-gate": { "run": "bash scripts/test_fast.sh", "tier": "high", "risk": "sign-in", "seconds": 120 },
     "ui": { "run": "node scripts/test-ui.mjs", "when": ["src/**"], "where": "no-screen" },
-    "changed-tests": { "run": "node {file}", "each": ["scripts/test-*.mjs"], "names_changed": { "of": ["src/**"] } }
+    "tests": { "select": "node-test", "roots": ["scripts"], "run": "node {file}", "fallback": "fast-gate", "seconds": 3 }
   },
   "risk": { "low": ["**/*.md"], "high": { "money": ["src/billing/**"], "sign-in": ["src/auth/**"] } },
   "gates": { "release": ["fast-gate", "ui"] },
-  "default": ["fast-gate"],
+  "default": ["tests"],
   "importers_except": ["src/App.tsx"],
+  "broad": ["main.js"],
+  "owners": { "src/billing/**": ["scripts/test-billing.mjs"] },
   "push": { "lane_status": "gh run list --workflow lane.yml --branch main --limit 1 --json conclusion --jq .[0].conclusion" }
 }
 ```
 
 A check: `run` (one command, no `&&`, `||` or `;`), `where` (`here`,
-`no-screen`, `paid`), `when` (path globs), `always`, `risk` (`money`,
+`no-screen`, `paid`), `when` (path globs), `always` (5s or less), `tier`,
+`env`, `cwd`, a selector's fields (above), `risk` (`money`,
 `sign-in`, `access`, `security`, `release`, `data`), `seconds`,
 `timeout_seconds`, `needsElectron` (forces `no-screen`), `port` (a free port
 arrives as `PORT`), `each` plus `{file}` in `run` (one run per file),
 `names_changed`, `confirm` (a note from init for a person to clear).
 
-Map level: `risk`, `gates`, `default`, `importers_except`, `skip_lines`,
+Map level: `risk`, `gates`, `default`, `importers_except`, `broad`, `owners`,
+`budget`, `normal_needs_lane`, `skip_lines`,
 `secret_scan` (the project's own scan command), `parallel`,
 `proof.coverage_floor` and `push` (`update`: rebase or merge, `via`,
 `lane_status`, `low_risk_ahead_of_lane`, `max_files` 5, `max_lines` 200).
@@ -69,11 +199,14 @@ spans folders, `{a,b}` is either, a trailing `/` means everything under it.
 
 ## The rules
 
+0. The change gets its tier (above); a check runs only in the tiers it allows.
 1. Each changed file, plus the files that import it directly (one hop), is
-   matched against every check's `when`.
+   matched against every check's `when`. A low risk file's importers are not
+   counted: nothing they run changed.
 2. Every `always` check runs.
 3. A high risk file (in the change or importing it) adds every check that
-   guards that risk, plus the whole `release` gate.
+   guards that risk, plus the whole `release` gate (a selector in the gate
+   runs whole: its fallback).
 4. A changed file no glob knows adds the `default` set and is listed as
    unmapped. A changed code file whose imports cannot be read (Go, Rust and
    others) counts as unmapped too. Unknown widens, never narrows.
@@ -212,6 +345,15 @@ back as a branch. `atris check push` on it is the same path as any change.
 
 v1: CodeOps fixes red. Next: the lane itself runs on the CodeOps computer,
 once it can return a receipt and run the app with no screen.
+
+## What the selectors do not see yet
+
+- Tests that reach code only through a string the selector cannot read (a
+  path built at run time, a plugin loaded by name).
+- Python changed-line coverage for the proof.
+- A hub's own callers: a change to a service imported by a router many tests
+  mount runs the service's tests, not the router's. The release gate runs
+  those for high risk.
 
 ## Next
 
