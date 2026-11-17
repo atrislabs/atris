@@ -1,0 +1,292 @@
+{
+  "id": "newsletter",
+  "ready": true,
+  "title": "Start a newsletter",
+  "pitch": "Start a newsletter or blog from nothing.",
+  "thing": "newsletter",
+  "opening": [
+    "A few quick questions so your team knows you.",
+    "Pick a number or say it your own way. There are no wrong answers."
+  ],
+  "questions": [
+    {
+      "id": "readers",
+      "line": "Who do you want to write for?",
+      "choices": [
+        { "id": "behind", "label": "People one step behind me", "says": "people one step behind you" },
+        { "id": "work", "label": "People in my line of work", "says": "people in your line of work" },
+        { "id": "love", "label": "People who love what I love", "says": "people who love what you love" },
+        { "id": "town", "label": "People in my town or city", "says": "people in your town" }
+      ]
+    },
+    {
+      "id": "gift",
+      "line": "What do you know or love that they do not have yet?",
+      "choices": [
+        { "id": "lessons", "label": "Lessons I learned the hard way", "says": "the lessons you learned the hard way" },
+        { "id": "finds", "label": "Good things I find before others do", "says": "the good things you find first" },
+        { "id": "how", "label": "How I do my work, step by step", "says": "how you do your work, step by step" },
+        { "id": "craft", "label": "A craft or hobby I am deep into", "says": "your craft, up close" }
+      ]
+    },
+    {
+      "id": "voice",
+      "line": "How do you want to sound?",
+      "choices": [
+        { "id": "friend", "label": "Like a friend passing on a tip", "says": "like a friend passing on a tip" },
+        { "id": "teacher", "label": "Like a calm teacher", "says": "like a calm teacher" },
+        { "id": "insider", "label": "Like a sharp insider", "says": "like a sharp insider" },
+        { "id": "story", "label": "Like a storyteller", "says": "like a storyteller" }
+      ]
+    },
+    {
+      "id": "rhythm",
+      "line": "How often can you really write? Pick the honest one.",
+      "choices": [
+        { "id": "weekly", "label": "Once a week", "says": "once a week" },
+        { "id": "biweekly", "label": "Every two weeks", "says": "every two weeks" },
+        { "id": "monthly", "label": "Once a month", "says": "once a month" }
+      ]
+    },
+    {
+      "id": "proud",
+      "line": "A year from now, what would make you proud?",
+      "choices": [
+        { "id": "helped", "label": "A stranger says it helped them", "says": "a stranger tells you it helped them" },
+        { "id": "paid", "label": "People pay to read it", "says": "people pay to read it" },
+        { "id": "doors", "label": "It opens doors for me", "says": "it opens doors for you" },
+        { "id": "kept", "label": "I kept going", "says": "you keep going" }
+      ]
+    },
+    {
+      "id": "number",
+      "goal": "number",
+      "line": "What number would tell you this is working? Say it your way.",
+      "hint": "Not sure yet? Press enter. You can add it later."
+    },
+    {
+      "id": "date",
+      "goal": "date",
+      "line": "By when?",
+      "hint": "Not sure yet? Press enter. You can add it later."
+    }
+  ],
+  "playback": [
+    { "asks": ["readers"], "line": "You write for {readers}." },
+    { "asks": ["gift"], "line": "You give them {gift}." },
+    { "asks": ["voice", "rhythm"], "line": "You sound {voice}, {rhythm}." },
+    { "asks": ["proud"], "line": "You will be proud when {proud}." },
+    { "asks": ["number", "date"], "line": "{goal_line}" }
+  ],
+  "mission": "A newsletter that gives {readers} {gift}, {rhythm}.",
+  "values": {
+    "will": [
+      "Write for {readers}, not for everyone.",
+      "Give {gift} in every issue.",
+      "Sound {voice}.",
+      "Show up {rhythm}, even when the issue is short."
+    ],
+    "will_not": [
+      "Pretend to know what you do not. Say so and keep going.",
+      "Chase every topic.",
+      "Buy readers or message people who did not ask.",
+      "Send anything you did not approve."
+    ]
+  },
+  "your_part": [
+    "You pick the name.",
+    "You say when a sample sounds like you.",
+    "You press publish. Nothing goes out without you.",
+    "You decide if and when to charge."
+  ],
+  "team": [
+    { "name": "editor", "role": "Editor", "job": "Turns your rough lines into issues that still sound like you." },
+    { "name": "researcher", "role": "Researcher", "job": "Finds what your readers ask about and where they already gather." },
+    { "name": "growth", "role": "Growth", "job": "Finds your first readers and drafts ways to share that you approve." },
+    { "name": "publisher", "role": "Publisher", "job": "Sets up where issues live and keeps your send days on the calendar." }
+  ],
+  "chapters": [
+    {
+      "id": "voice",
+      "title": "Find your voice",
+      "finish_line": "You approved one sample that sounds like you.",
+      "moves": [
+        {
+          "id": "name-it",
+          "who": "you",
+          "taste": true,
+          "minutes": 5,
+          "you": "Name your newsletter. Say three names out loud and keep the one that makes you smile.",
+          "brief": "Wait for the name. It is theirs to pick. If they ask for help, offer three names that fit {readers} and a voice {voice}, then let them choose.",
+          "proof_hint": "the name you picked"
+        },
+        {
+          "id": "first-lines",
+          "who": "you",
+          "taste": true,
+          "minutes": 10,
+          "you": "Write three rough sentences about one thing you wish you knew a year ago. Rough is the point.",
+          "brief": "Do not write these for them. When the three sentences arrive, save them as they are in {run_dir}/first-lines.md.",
+          "proof_hint": "where the three sentences are"
+        },
+        {
+          "seat": "editor",
+          "id": "voice-sample",
+          "who": "team",
+          "you": "Your editor turns your three sentences into a short sample in your voice.",
+          "brief": "Read {run_dir}/first-lines.md. Write a sample issue of about 150 words for {readers}, sounding {voice}. Keep their own words where you can. Save it as {run_dir}/voice-sample.md and say it is ready."
+        },
+        {
+          "id": "approve-voice",
+          "who": "you",
+          "taste": true,
+          "finish": true,
+          "minutes": 5,
+          "you": "Read the sample. If it sounds like you, approve it. If not, say one thing to change.",
+          "brief": "This call is theirs. If they ask for a change, make only that change and show the sample again.",
+          "proof_hint": "the sample you approved"
+        }
+      ]
+    },
+    {
+      "id": "first-issue",
+      "title": "First issue out",
+      "finish_line": "Your first issue is live and you have the link.",
+      "moves": [
+        {
+          "seat": "publisher",
+          "id": "pick-home",
+          "who": "team",
+          "you": "Your publisher picks a free place for your issues to live and writes the five clicks to set it up.",
+          "brief": "Pick one free place to publish a newsletter. Write the setup as five short steps the person can do in under ten minutes. Do not make accounts for them. Save it as {run_dir}/where-it-lives.md."
+        },
+        {
+          "seat": "researcher",
+          "id": "issue-one-outline",
+          "who": "team",
+          "you": "Your researcher gathers three things worth saying in issue one.",
+          "brief": "Find three things {readers} want to know that fit {gift}. One line each, with where you found it. Save as {run_dir}/issue-one-outline.md."
+        },
+        {
+          "id": "issue-one-draft",
+          "who": "you",
+          "taste": true,
+          "minutes": 30,
+          "you": "Write issue one from the outline. Three hundred words is a real issue.",
+          "brief": "The writing is theirs. If they ask, the editor can tighten it, keeping their voice. Do not add new ideas.",
+          "proof_hint": "where the draft is"
+        },
+        {
+          "id": "send-issue-one",
+          "who": "you",
+          "taste": true,
+          "finish": true,
+          "minutes": 5,
+          "you": "Press publish. Then keep the link as your proof.",
+          "brief": "Only they press publish. Once it is live, save the link in {run_dir}/issues.md.",
+          "proof_hint": "the link to issue one"
+        }
+      ]
+    },
+    {
+      "id": "first-readers",
+      "title": "First 10 readers who are not friends",
+      "finish_line": "10 people you did not know before signed up.",
+      "moves": [
+        {
+          "seat": "researcher",
+          "id": "where-readers-are",
+          "who": "team",
+          "you": "Your researcher finds five places where your readers already gather.",
+          "brief": "Find five public places where {readers} already talk: forums, groups, newsletters they read. One line each on why it fits. Save as {run_dir}/where-readers-are.md."
+        },
+        {
+          "seat": "growth",
+          "id": "share-ideas",
+          "who": "team",
+          "you": "Your growth seat drafts three ways to share issue one, in your voice, for you to pick from.",
+          "brief": "Write three short ways to share issue one in the places from where-readers-are.md, each sounding {voice}. Drafts only. Never post or message anyone. Save as {run_dir}/share-ideas.md."
+        },
+        {
+          "id": "share-once",
+          "who": "you",
+          "taste": true,
+          "minutes": 10,
+          "you": "Pick one way to share and do it once today.",
+          "brief": "Only they share. Do not post for them.",
+          "proof_hint": "where you shared it"
+        },
+        {
+          "id": "ten-readers",
+          "who": "you",
+          "finish": true,
+          "you": "Count readers you did not know before. When you reach 10, write the count as your proof.",
+          "brief": "Keep a plain count of new readers who are not friends or family in {run_dir}/readers.md. Counts only, no names.",
+          "proof_hint": "how many and where you counted"
+        }
+      ]
+    },
+    {
+      "id": "rhythm",
+      "title": "A steady rhythm for four issues",
+      "finish_line": "Four issues out on your rhythm, none skipped.",
+      "moves": [
+        {
+          "seat": "publisher",
+          "id": "send-days",
+          "who": "team",
+          "you": "Your publisher puts your next send days on the calendar, {rhythm}.",
+          "brief": "Plan the next three send days {rhythm}. Write them as dates in {run_dir}/send-days.md. Drafts only, nothing gets sent."
+        },
+        {
+          "seat": "researcher",
+          "id": "idea-bank",
+          "who": "team",
+          "you": "Your researcher keeps ten ideas ready so you never start from a blank page.",
+          "brief": "Keep ten issue ideas for {readers}, one line each, in {run_dir}/ideas.md. Replace an idea once it is used."
+        },
+        {
+          "id": "four-issues",
+          "who": "you",
+          "taste": true,
+          "finish": true,
+          "you": "Send issues two, three and four on your rhythm. Keep the four links as your proof.",
+          "brief": "Only they press publish. After each send, add the link to {run_dir}/issues.md.",
+          "proof_hint": "the four links"
+        }
+      ]
+    },
+    {
+      "id": "first-paid",
+      "title": "First paid reader",
+      "finish_line": "One reader paid you and the money is real.",
+      "moves": [
+        {
+          "seat": "growth",
+          "id": "paid-offer",
+          "who": "team",
+          "you": "Your growth seat drafts one simple paid offer for you to say yes or no to.",
+          "brief": "Draft one paid offer: what readers get and one price. Leave the price for the person to set if they have not. Save as {run_dir}/paid-offer.md. Do not turn on payments."
+        },
+        {
+          "id": "approve-offer",
+          "who": "you",
+          "taste": true,
+          "minutes": 10,
+          "you": "Read the offer. Keep it, change it or drop it.",
+          "brief": "This call is theirs. Change only what they ask.",
+          "proof_hint": "the offer you kept"
+        },
+        {
+          "id": "first-payment",
+          "who": "you",
+          "taste": true,
+          "finish": true,
+          "you": "Turn on payments and tell your readers once. Your proof is the first real payment.",
+          "brief": "Only they turn on payments and tell readers. A kind reply is not a payment. Count it only when the money arrives.",
+          "proof_hint": "the first payment you can see"
+        }
+      ]
+    }
+  ]
+}
