@@ -36,7 +36,8 @@ test('a terminal save with no agent running is marked as a person; an agent save
   assert.match(person, /^Atris-Made-By: person$/m);
   assert.equal(isAgentCommitBody(person), false);
 
-  for (const marker of ['CLAUDECODE', 'CODEX_SANDBOX', 'ATRIS_MISSION_DRIVER_DETACHED']) {
+  // ATRIS_RUNNER_PROFILE: found 2026-11-17 by a member testing this before it landed; atris engine sets it.
+  for (const marker of ['CLAUDECODE', 'CODEX_SANDBOX', 'ATRIS_MISSION_DRIVER_DETACHED', 'ATRIS_RUNNER_PROFILE']) {
     const agent = hook(root, { TERM_PROGRAM: 'Apple_Terminal', [marker]: '1' });
     assert.match(agent, /^Co-authored-by: Atris /m);
     assert.doesNotMatch(agent, /Atris-Made-By/, marker);
