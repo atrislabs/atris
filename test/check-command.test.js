@@ -88,7 +88,7 @@ function receiptOf(root) {
 
 const BASE_MAP = {
   checks: {
-    lint: { run: 'node ok.js', always: true },
+    lint: { run: 'node ok.js', always: true, seconds: 1 },
     feature: { run: 'node ok.js', when: ['src/**'] },
     docs: { run: 'node ok.js', when: ['docs/**'] },
     auth: { run: 'node ok.js', risk: 'sign-in' },
@@ -151,7 +151,7 @@ test('a chained command, an unknown where or a gate naming nothing is a map erro
 });
 
 test('needsElectron sends a check to the no-screen lane, whatever where says', () => {
-  const map = validateMap({ checks: { app: { run: 'node ok.js', where: 'here', needsElectron: true, always: true } } });
+  const map = validateMap({ checks: { app: { run: 'node ok.js', where: 'here', needsElectron: true, always: true, seconds: 1 } } });
   assert.equal(map.checks.app.where, 'no-screen');
 });
 
@@ -165,14 +165,17 @@ test('backend: changing routers/auth_utils.py selects the whole fast gate and th
   assert.equal(picked.tier, 'high');
   assert.ok(picked.highKinds.includes('sign-in'));
   assert.equal(byName['fast-gate'].run, 'bash backend/scripts/test_fast.sh');
-  assert.ok(byName['fast-gate'].reasons.includes('always'));
   assert.ok(byName['fast-gate'].reasons.some((reason) => reason.startsWith('high-risk: sign-in')));
+  assert.ok(byName['fast-gate'].reasons.some((reason) => reason.startsWith('release gate')));
+  assert.equal(byName['fast-gate'].stage, 2, 'the gate runs after the quick first stage');
   for (const name of map.gates.release) assert.ok(byName[name], `release gate check ${name} picked`);
+  // fast-gate is no longer always: a wording change does not run it.
+  assert.ok(!planChecks(map, ['README.md']).selected.some((entry) => entry.name === 'fast-gate'));
 });
 
 test('a changed helper picks the checks of the files that import it', (t) => {
   const { root } = project(t, {
-    map: { checks: { lint: { run: 'node ok.js', always: true }, feature: { run: 'node ok.js', when: ['src/feature.js'] } } },
+    map: { checks: { lint: { run: 'node ok.js', always: true, seconds: 1 }, feature: { run: 'node ok.js', when: ['src/feature.js'] } } },
     files: { 'lib/util.js': 'module.exports = 1;\n', 'src/feature.js': "const util = require('../lib/util');\nmodule.exports = function feature() {\n  return util;\n};\n" },
   });
   return (async () => {
@@ -281,7 +284,7 @@ test('a receipt made from a hand-picked --files list never verifies', async (t) 
 });
 
 test('--explain runs nothing and writes no receipt', async (t) => {
-  const map = { checks: { lint: { run: 'node touch.js', always: true } } };
+  const map = { checks: { lint: { run: 'node touch.js', always: true, seconds: 1 } } };
   const { root } = project(t, { map, files: { 'touch.js': "require('fs').writeFileSync('ran', '');\n" } });
   write(root, 'src/feature.js', 'module.exports = 3;\n');
   const result = await check(root, ['--explain']);
@@ -321,7 +324,7 @@ test('the cage kills a hung check and its whole process group, and keeps windows
     "require('fs').writeFileSync('env.json', JSON.stringify({ CI: process.env.CI, BROWSER: process.env.BROWSER, ERAN: process.env.ELECTRON_RUN_AS_NODE, ALLOW: process.env.OBELISK_ALLOW_APP_LAUNCH || null }));",
     'setInterval(() => {}, 1000);',
   ].join('\n');
-  const map = { checks: { hang: { run: 'node hang.js', always: true, timeout_seconds: 1 } } };
+  const map = { checks: { hang: { run: 'node hang.js', always: true, seconds: 1, timeout_seconds: 1 } } };
   const { root } = project(t, { map, files: { 'hang.js': hang } });
   write(root, 'README.md', 'docs only\n');
   const result = await check(root, [], { OBELISK_ALLOW_APP_LAUNCH: '1' });
@@ -430,7 +433,10 @@ test('init names only checks that exist, marks each to confirm, and reads launch
     },
   });
   const { map, notes } = starterMap(root);
-  assert.deepEqual(Object.keys(map.checks).sort(), ['changed-tests', 'lint', 'test', 'test-app']);
+  assert.deepEqual(Object.keys(map.checks).sort(), ['lint', 'test', 'test-app', 'tests']);
+  assert.equal(map.checks.tests.select, 'node-test');
+  assert.equal(map.checks.tests.fallback, 'test');
+  assert.ok(!Object.values(map.checks).some((check) => check.always), 'init never writes always: it cannot know how long a check takes');
   assert.equal(map.checks['test-app'].where, 'no-screen');
   assert.equal(map.checks.lint.where, 'here');
   for (const check of Object.values(map.checks)) assert.ok(check.confirm);
@@ -497,7 +503,7 @@ test('push is compare and swap: when the default branch moves mid-check it updat
     "  for (const args of [['add', '-A'], ['commit', '-q', '-m', 'race'], ['push', '-q', 'origin', 'master']]) execFileSync('git', args, { cwd: other });",
     '}',
   ].join('\n');
-  const map = { ...PUSH_MAP, checks: { ...PUSH_MAP.checks, lint: { run: 'node racer.js', always: true } } };
+  const map = { ...PUSH_MAP, checks: { ...PUSH_MAP.checks, lint: { run: 'node racer.js', always: true, seconds: 1 } } };
   const { root, remote, dir } = project(t, { map, files: { 'racer.js': racer, 'docs/.keep': '' } });
   const other = otherClone(t, remote, dir);
   write(root, 'src/feature.js', 'module.exports = function feature() {\n  return 2;\n};\n');
