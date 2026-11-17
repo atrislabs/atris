@@ -101,6 +101,10 @@ function printStatus(args) {
 }
 
 function startWorktree(args) {
+  const started = process.hrtime.bigint();
+  const timing = (step) => {
+    if (process.env.ATRIS_TIMING === '1') console.error(`timing: ${step} ${Number(process.hrtime.bigint() - started) / 1e6 | 0}ms elapsed`);
+  };
   const root = repoRoot();
   const member = readFlag(args, '--member');
   const agent = readFlag(args, '--agent');
@@ -118,7 +122,8 @@ function startWorktree(args) {
 
   const force = hasFlag(args, '--force');
   const now = new Date();
-  const flights = inFlightAgentFlights({ root, now });
+  const flights = inFlightAgentFlights({ root, now, localRemote: true });
+  timing('flight check');
   const active = flights.filter((flight) => flight.kind === 'worktree');
   const repoName = path.basename(findPrimaryRoot(root));
   console.log(`flights: ${active.length} active agent ${active.length === 1 ? 'worktree' : 'worktrees'} for ${repoName}`);
@@ -153,6 +158,7 @@ function startWorktree(args) {
     return 2;
   }
   const { path: target, branch, base } = created;
+  timing('copy created');
 
   if (created.reapedBeforeStart.length) {
     console.log(`cleanup: reaped ${created.reapedBeforeStart.length} completed ${created.reapedBeforeStart.length === 1 ? 'worktree' : 'worktrees'}`);
@@ -192,6 +198,7 @@ function startWorktree(args) {
   }
   console.log(`base: ${base}`);
   console.log(`next: cd ${target}`);
+  timing('start complete');
   return 0;
 }
 

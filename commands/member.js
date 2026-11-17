@@ -456,6 +456,9 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   // A job that says "do not commit" wants the change in the person's own
   // files; a side checkout would hide uncommitted work where they never see it.
   const forbidsCommit = !hasFlag(args, '--worktree') && require('../lib/member-save-work').jobForbidsCommit(missionText);
+  if (hasFlag(args, '--shared-checkout') || hasFlag(args, '--no-worktree')) {
+    startArgs.push('--shared-checkout');
+  }
   if (!forbidsCommit && !hasFlag(args, '--shared-checkout') && !hasFlag(args, '--no-worktree') && insideGitRepo(cwd)) {
     startArgs.push('--worktree');
   }
@@ -799,6 +802,13 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
         return printMemberRunResult({ started: false, state: null, mission_id: missionId, error: `mission ${missionId} was not found` }, asJson, { quiet });
       }
     }
+  }
+
+  const missionCheckout = mission.worktree_root || mission.worktree?.path;
+  if ((hasFlag(args, '--shared-checkout') || hasFlag(args, '--no-worktree'))
+    && missionCheckout && path.resolve(missionCheckout) !== path.resolve(process.cwd())) {
+    return printMemberRunResult({ started: false, state: mission.status, mission_id: mission.id, mission,
+      error: 'this job belongs to a separate checkout; start a new shared checkout job instead' }, asJson, { quiet });
   }
 
   if (startedNewMission && !asJson) {
