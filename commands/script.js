@@ -84,6 +84,11 @@ function readAnswer(question, typed) {
     if (!words || SKIP_WORDS.test(words)) return { picked: null, text: '', says: '', set: false };
     return { picked: null, text: words, says: words, set: true };
   }
+  // A choice can also be named by its id from the script file ("behind"), so
+  // a helper driving an answers file gets the choice, not the bare id as words.
+  const id = String(typed || '').trim().toLowerCase();
+  const byId = id ? (question.choices || []).find((item) => String(item.id).toLowerCase() === id) : null;
+  if (byId) return { picked: byId.id, text: '', says: byId.says || byId.label, set: true };
   const reply = readOrbReply(question, typed);
   if (!reply) return null;
   if (reply.picked.length > 0) {

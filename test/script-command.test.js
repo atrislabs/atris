@@ -384,3 +384,17 @@ test('a folder that already has atris/, a goal and an editor keeps them and says
   assert.match(out, /Their files are in atris\/team\/: researcher, growth, publisher\./);
   assert.match(out, /\(it replaced your old goal: Ship the app\)/);
 });
+
+test('an answers file can name choices by their id from the script file', async (t) => {
+  const dir = tempDir(t);
+  const answers = writeAnswers(dir, {
+    readers: 'behind', gift: 'LESSONS', voice: 'friend', rhythm: 'weekly', proud: 'helped', number: '', date: '',
+  });
+  const { code, out, errs } = await run(dir, ['start', 'newsletter', '--yes', '--answers', answers]);
+  assert.equal(code, 0, errs);
+  assert.match(out, /1 {2}You write for people one step behind you\./);
+  assert.match(out, /2 {2}You give them the lessons you learned the hard way\./);
+  assert.match(out, /3 {2}You sound like a friend passing on a tip, once a week\./);
+  assert.match(out, /4 {2}You will be proud when a stranger tells you it helped them\./);
+  assert.equal(readRun(dir, 'quiet-lantern').answers.readers.picked, 'behind');
+});
