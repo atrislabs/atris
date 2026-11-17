@@ -79,11 +79,14 @@ const {
   worktreeHasActiveProcess,
 } = worktreeCore;
 
-function printStatus() {
+function printStatus(args) {
   const root = repoRoot();
   const worktrees = listWorktrees(root);
   const primary = worktrees[0]?.path;
-  for (const wt of worktrees) {
+  const name = readFlag(args, '--agent') || readFlag(args, '--member');
+  const matches = name ? worktrees.filter((wt) => path.basename(wt.path).startsWith(name) || wt.branch.startsWith(name)) : worktrees;
+  if (name && matches.length === 0) console.log(`no copies for ${name}`);
+  for (const wt of matches) {
     const counts = statusCounts(wt.path);
     const tags = [];
     if (wt.path === primary) tags.push('primary');
@@ -820,7 +823,7 @@ function help() {
   console.log('    --skip-nets     skip the repo hygiene tests that run before --verify; they run first by default');
   console.log('    --keep-copy     keep this build copy after it ships');
   console.log('    recommended verify: npm run test:fast && node --test <focused files>');
-  console.log('  atris worktree status');
+  console.log('  atris worktree status [--agent <name>|--member <name>]  find copies by folder or branch name prefix');
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree doctor [--older-than 24] [--repo <name>] [--json]  every copy: real size, age, merged, in use, what a prune would free');
   console.log('  atris worktree prune [--apply]  drop registrations of copies whose folder is gone');
@@ -842,7 +845,7 @@ function worktreeCommand(args = []) {
   if (sub === 'start') return startWorktree(rest);
   if (sub === 'ship') return shipWorktree(rest);
   if (sub === 'status') {
-    printStatus();
+    printStatus(rest);
     return 0;
   }
   if (sub === 'guard') return guard(rest);
