@@ -1578,6 +1578,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
         could_not_tell: green.could_not_tell,
         verdicts: green.verdicts.map(greenVerdictRow),
         summary: summaryLine(green),
+        waiting: green.waiting_pile ? green.waiting_pile.line : null,
       };
       state.green_landing = { at: green.at, ...receipt.green_landing };
     } catch (err) {
