@@ -38,6 +38,7 @@ const plan = require('../lib/check-plan');
 const receipts = require('../lib/check-receipt');
 const proofs = require('../lib/check-proof');
 const budget = require('../lib/check-budget');
+const recompute = require('../lib/check-recompute');
 const { planOptions } = require('../lib/check-context');
 
 const { EXIT } = receipts;
@@ -299,10 +300,16 @@ function replayCommand(root, map, options, log) {
 
 // The plan for this change: changed files, the import graph, the picks, and
 // each pick's expected seconds.
-function makePlan(root, map, options) {
+// The map that decides is the default branch's (lib/check-recompute.js
+// rulesFor): a change that edits atris/checks.json is checked by the map it
+// would replace, and its settings (skip lines, the key scan, push limits) too.
+function makePlan(root, ownMap, options) {
   const change = receipts.changeSet(root, { base: options.base, files: options.files });
   if (!change.ok) return { error: change.error };
   if (options.extraFiles && options.extraFiles.length) change.files = [...new Set([...change.files, ...options.extraFiles])].sort();
+  const rules = recompute.rulesFor(root, change, { workingMap: ownMap });
+  if (rules.error) return { error: rules.error };
+  const map = rules.map;
   const context = planOptions(root, map, change.files, {
     base: change.mergeBase || 'HEAD',
     dirtyFiles: receipts.uncommittedFiles(root),
@@ -318,7 +325,7 @@ function makePlan(root, map, options) {
   const here = picked.selected.filter((entry) => placement(entry, options).run);
   picked.expected = budget.planSeconds(here, options.parallel || map.parallel);
   picked.unknownTimes = here.filter((entry) => entry.expected === null).map((entry) => entry.key);
-  return { change, picked };
+  return { change, picked, map, rules };
 }
 
 function tierLine(picked) {
@@ -463,11 +470,12 @@ async function evaluate(root, map, options, log) {
     throw error;
   }
   if (made.error) { log(`atris check: ${made.error}`); return { code: EXIT.usage }; }
-  const { change, picked } = made;
+  const { change, picked, rules } = made;
+  map = made.map;
   if (options.explain) {
     const proof = proofs.findProof(root, change, options);
-    if (options.json) log(JSON.stringify({ plan: picked, change, lane: options.lane, person, proof }, null, 2));
-    else for (const line of explainLines(picked, change, options, person, proof)) log(line);
+    if (options.json) log(JSON.stringify({ plan: picked, change, lane: options.lane, person, proof, map_from: rules.from }, null, 2));
+    else for (const line of [...explainLines(picked, change, options, person, proof), `map: ${rules.from}`]) log(line);
     return { code: EXIT.proven, explained: true };
   }
   if (!picked.selected.length && picked.tier !== 'low') {
@@ -541,6 +549,8 @@ async function evaluate(root, map, options, log) {
     lane: options.lane,
     person_machine: person,
     gate: picked.gate,
+    map_blob: rules.blob,
+    map_from: rules.from,
     risk_tier: picked.tier,
     high_risk: picked.highKinds,
     changed_file_count: change.files.length,
@@ -564,7 +574,7 @@ async function evaluate(root, map, options, log) {
   const file = receipts.writeReceipt(root, receipt);
   if (options.json && !options.quiet) log(JSON.stringify({ ...receipt, receipt_file: file }, null, 2));
   else for (const line of [...summaryLines(receipt, file, root), receipts.storageLine(root)]) log(line);
-  return { code: receipts.exitForVerdict(verdict), receipt, file, change, picked };
+  return { code: receipts.exitForVerdict(verdict), receipt, file, change, picked, map };
 }
 
 function summaryLines(receipt, file, root) {
@@ -609,7 +619,10 @@ function summaryLines(receipt, file, root) {
   return lines;
 }
 
-function verifyReceipt(root, options, log) {
+// The receipt is not taken at its word: the plan is worked out again from the
+// diff and the default branch's map, and every row is held to it
+// (lib/check-recompute.js). Each refusal names the check or field.
+function verifyReceipt(root, map, options, log) {
   let file = options.receipt ? path.resolve(options.receipt) : null;
   let receipt = file ? receipts.readReceipt(file) : null;
   if (!file) {
@@ -617,22 +630,29 @@ function verifyReceipt(root, options, log) {
     if (found) { file = found.file; receipt = found.receipt; }
   }
   if (!receipt) {
-    log(file ? `atris check: ${file} is not an atris check receipt` : 'atris check: no receipt for the code here now; run atris check');
+    if (options.json) log(JSON.stringify({ receipt_file: file, matches: false, why: file ? 'not an atris check receipt' : 'no receipt for the code here now', problems: [], verdict: null }, null, 2));
+    else log(file ? `atris check: ${file} is not an atris check receipt` : 'atris check: no receipt for the code here now; run atris check');
     return EXIT.failed;
   }
-  const match = receipts.matchReceipt(root, receipt);
-  if (options.json) log(JSON.stringify({ receipt_file: file, matches: match.ok, why: match.why || null, verdict: match.ok ? receipt.verdict : null }, null, 2));
-  if (!match.ok) {
-    if (!options.json) log(`atris check: the receipt does not prove this code: ${match.why}`);
+  const result = recompute.recheckReceipt(root, receipt, { workingMap: map });
+  if (options.json) {
+    log(JSON.stringify({ receipt_file: file, matches: result.ok, why: result.why || null, problems: result.problems, verdict: result.verdict, risk_tier: result.tier || null, map_from: result.rules ? result.rules.from : null }, null, 2));
+  }
+  if (!result.ok) {
+    if (!options.json) {
+      log(`atris check: the receipt does not prove this code (${result.problems.length} problem${result.problems.length === 1 ? '' : 's'}):`);
+      for (const problem of result.problems) log(`  - ${problem}`);
+    }
     return EXIT.failed;
   }
   if (!options.json) {
-    if (receipt.verdict === 'proven') log(`atris check: proven. The receipt matches the code here (${path.relative(root, file)}).`);
-    else if (receipt.verdict === 'partly') log(`${receipts.CHECK_NEEDS_LANE_LINE}. The receipt matches the code, and some of its checks still need a lane.`);
-    else log('atris check: failed. The receipt matches the code, and it records a failed check.');
+    const where = path.relative(root, file);
+    if (result.verdict === 'proven') log(`atris check: proven. The plan was worked out again and the receipt matches it (${where}).`);
+    else if (result.verdict === 'partly') log(`${receipts.CHECK_NEEDS_LANE_LINE}. The receipt matches the plan, and ${result.needs_lane.join(', ')} still need${result.needs_lane.length === 1 ? 's' : ''} a lane.`);
+    else log('atris check: failed. The receipt matches the plan, and it records a failed check.');
+    log(receipts.storageLine(root));
   }
-  if (!options.json) log(receipts.storageLine(root));
-  return receipts.exitForVerdict(receipt.verdict);
+  return receipts.exitForVerdict(result.verdict);
 }
 
 // ---------------------------------------------------------------- push and land
@@ -730,7 +750,10 @@ async function pushCommand(root, map, options, log) {
     const result = await evaluate(root, map, { ...options, base: target.ref, extraFiles }, log);
     if (result.code === EXIT.usage) return EXIT.usage;
     if (result.code === EXIT.failed) { log('atris check: not pushed, a check failed.'); return EXIT.failed; }
-    const conditions = pushNowConditions(root, map, result, baseSha);
+    // The default branch's map decides the push too: a change cannot raise its
+    // own limits or name its own push command.
+    const rules = result.map || map;
+    const conditions = pushNowConditions(root, rules, result, baseSha);
     log('push straight to the default branch?');
     for (const condition of conditions) log(`  ${condition.ok ? 'yes' : 'no '}  ${condition.label}`);
     const head = revParse(root, 'HEAD');
@@ -742,9 +765,9 @@ async function pushCommand(root, map, options, log) {
       log(`${STAGED_LINE}. Ready on ${ref.replace('refs/heads/', '')}; a runner lands it with: atris check land ${head.slice(0, 12)} --lane no-screen`);
       return EXIT.partly;
     }
-    if (map.push.via) {
-      log(`push: through the project's own command, ${map.push.via}`);
-      const via = spawnSync(map.push.via, { cwd: root, shell: true, stdio: 'inherit' });
+    if (rules.push.via) {
+      log(`push: through the project's own command, ${rules.push.via}`);
+      const via = spawnSync(rules.push.via, { cwd: root, shell: true, stdio: 'inherit' });
       return via.status === 0 ? EXIT.proven : EXIT.failed;
     }
     // Compare and swap: refused if the default branch moved since it was checked.
@@ -1009,7 +1032,7 @@ async function checkCommand(args, context = {}) {
   if (!map) return EXIT.usage;
   if (sub === 'replay') return replayCommand(root, map, options, log);
   if (sub === 'land') return landCommand(root, map, landSha, options, log);
-  if (options.verify) return verifyReceipt(root, options, log);
+  if (options.verify) return verifyReceipt(root, map, options, log);
   if (options.push) return pushCommand(root, map, options, log);
   return (await evaluate(root, map, options, log)).code;
 }
