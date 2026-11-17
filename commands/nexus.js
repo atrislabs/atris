@@ -20,6 +20,7 @@ const mail = require('./nexus-mail');
 const local = require('./nexus-local');
 const capture = require('./nexus-capture');
 const importer = require('./nexus-import');
+const hour = require('./nexus-hour');
 
 const USAGE = [
   'atris nexus: your people, the same cards as atris.ai/dashboard/nexus',
@@ -57,6 +58,7 @@ const USAGE = [
   '  atris nexus push-notes              send the notes written offline, then clear them',
   ...capture.HELP,
   ...importer.HELP,
+  ...hour.HELP,
   '  --json on any of these prints one JSON object for agents (the store\'s own answer when it answers)',
   'The store is tried first. If it does not answer, reads use the saved list; changes are never saved there (wall, goal, due, paid, city, bring-over and the filters need the store).',
 ].join('\n');
@@ -237,6 +239,11 @@ async function nexusCommand(args = [], deps = {}) {
 
   // The one-by-one walk: its own file, signed in and through the store like the commands above.
   if (words[0] === 'review') return review.run({ rawArgs: args, json, log, fail, usage, deps, request: deps.apiRequestJson || apiRequestJson, getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN, view: { card, cardLines, tableLines } });
+
+  // The hour: one outbound sprint on a saved list. Its own file, its own flags.
+  if (words[0] === 'hour') {
+    return hour.run({ rawArgs: args, log, err, now, deps, request: deps.apiRequestJson || apiRequestJson, getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN });
+  }
 
   // The local copy: pull and push-notes sign in; local reads only files on this computer.
   if (local.SUBS.has(words[0])) {
