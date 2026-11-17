@@ -596,6 +596,7 @@ function showHelpAll() {
   console.log('  atris mission                    see the current goal');
   console.log('  atris recap                      what your ai agent did today');
   console.log('  atris review                     check the work');
+  console.log('  atris check                      pick checks by rule, prove the change, one receipt (--push to push it)');
   console.log('  atris stop                       stop the live goal');
   console.log('');
   console.log('How it fits together:');
@@ -2125,7 +2126,8 @@ if (command === 'guide') {
     approve: humanCommands.approveCommand,
     stop: humanCommands.stopCommand,
     ready: humanCommands.readyCommand,
-    check: humanCommands.checkCommand,
+    // local rule-picked checks; `atris check <mission-id>` still reaches the cloud mission checks
+    check: (args) => require('../commands/check').checkCommand(args),
     proof: humanCommands.proofCommand,
   };
   Promise.resolve().then(() => handlers[command](process.argv.slice(3)))
