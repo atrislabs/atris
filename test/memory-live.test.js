@@ -283,6 +283,18 @@ test('ls lists files with sizes and folders with counts', async () => {
   assert.deepEqual(j, { ok: true, folder: 'wiki', items: [{ name: 'lease.md', size: 24 }, { name: 'people/', files: 1 }] });
 });
 
+test('ls points to a folder index in plain output only', async () => {
+  const server = fakeServer({ files: { 'MAP.md': 'map', 'files/index.md': 'index', 'files/sends.md': 'sends', 'other/index.md/nested.md': 'nested' } });
+  const root = await run(['ls'], server);
+  assert.match(root.text, /what each file holds is in MAP\.md: atris memory read MAP\.md$/);
+  const folder = await run(['ls', 'files/'], server);
+  assert.match(folder.text, /what each file holds is in index\.md: atris memory read files\/index\.md$/);
+  const noIndex = await run(['ls', 'other'], server);
+  assert.doesNotMatch(noIndex.text, /what each file holds/);
+  const json = JSON.parse((await run(['ls', 'files', '--json'], server)).text);
+  assert.deepEqual(json, { ok: true, folder: 'files', items: [{ name: 'index.md', size: 5 }, { name: 'sends.md', size: 5 }] });
+});
+
 test('remember saves one line to the person\'s notes, tagged with the agent', async () => {
   const server = fakeServer();
   const r = await run(['remember', 'prefers', 'short answers'], server, { env: { ATRIS_AGENT: 'codex' } });
