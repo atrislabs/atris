@@ -40,7 +40,7 @@ const proofs = require('../lib/check-proof');
 const budget = require('../lib/check-budget');
 const recompute = require('../lib/check-recompute');
 const receiptRefs = require('../lib/check-receipt-ref');
-const { planOptions } = require('../lib/check-context');
+const { planOptions, mainCheckout } = require('../lib/check-context');
 
 const { EXIT } = receipts;
 const VALUE_FLAGS = new Set(['--base', '--files', '--lane', '--receipt', '--gate', '--parallel', '--timeout', '--proof', '--last', '--map']);
@@ -933,28 +933,37 @@ function failedReceipt(root, file) {
 }
 
 // Failure lines name folders on this machine; the cloud task gets repo-relative paths.
+// No folder of this machine goes into a cloud task: the work copy, the main
+// checkout it came from (a work copy can borrow its python) and the home
+// folder all come out.
 function localPathsOut(text, receipt) {
   let out = String(text || '');
-  const roots = new Set([receipt.repo_root]);
-  try { roots.add(fs.realpathSync(receipt.repo_root)); } catch {}
-  for (const root of roots) if (root) out = out.split(`${root}/`).join('').split(root).join('.');
+  const roots = new Set();
+  for (const root of [receipt.repo_root, receipt.repo_root && mainCheckout(receipt.repo_root)]) {
+    if (!root) continue;
+    roots.add(root);
+    try { roots.add(fs.realpathSync(root)); } catch {}
+  }
+  for (const root of [...roots].sort((a, b) => b.length - a.length)) out = out.split(`${root}/`).join('').split(root).join('.');
+  const home = os.homedir();
+  if (home && home !== '/') out = out.split(`${home}/`).join('~/').split(home).join('~');
   return out;
 }
 
 function fixTask(receipt, slug) {
   const tailLines = (text) => localPathsOut(text, receipt).split('\n').slice(-TAIL_LINES).map((line) => `   ${line}`);
   const failedRuns = new Set();
-  const lines = [`Repo ${slug}, branch ${receipt.branch} at commit ${String(receipt.head_sha).slice(0, 12)}.`, 'These checks failed in atris check:'];
+  const lines = [`Repo ${slug}, branch ${receipt.branch} at commit ${String(receipt.head_sha).slice(0, 12)}.`, `Receipt: check-${String(receipt.head_sha).slice(0, 12)}.json, tree ${receipt.tree}.`, 'These checks failed in atris check:'];
   let n = 0;
   for (const row of receipt.checks.filter((entry) => entry.status === 'failed')) {
     n += 1;
     failedRuns.add(row.run);
-    lines.push(`${n}. ${row.name}: \`${row.run}\` (exit ${row.exit_code === null ? 'none' : row.exit_code}${row.note ? `, ${row.note}` : ''})`);
+    lines.push(`${n}. ${row.name}: \`${localPathsOut(row.run, receipt)}\` (exit ${row.exit_code === null ? 'none' : row.exit_code}${row.note ? `, ${row.note}` : ''})`);
     if (row.output_tail) lines.push('   last lines:', ...tailLines(row.output_tail));
   }
   if (receipt.proof && receipt.proof.status === 'failed' && !failedRuns.has(receipt.proof.command)) {
     n += 1;
-    lines.push(`${n}. the change's proof${receipt.proof.command ? `: \`${receipt.proof.command}\`` : ''} (${receipt.proof.why})`);
+    lines.push(`${n}. the change's proof${receipt.proof.command ? `: \`${localPathsOut(receipt.proof.command, receipt)}\`` : ''} (${receipt.proof.why})`);
     if (receipt.proof.output_tail) lines.push('   last lines:', ...tailLines(receipt.proof.output_tail));
   }
   if (receipt.secret_scan && receipt.secret_scan.status === 'failed') {
@@ -969,7 +978,64 @@ function shellWord(value) {
   return /^[A-Za-z0-9_./@:=+-]+$/.test(value) ? value : `'${String(value).replace(/'/g, "'\\''")}'`;
 }
 
-function fixCommand(root, options, log) {
+// Is this failed receipt a big bug? One plain rule: its risk tier is high, or
+// a check failed and a changed file matches the map's "big" globs.
+function bigVerdict(receipt, map) {
+  if (receipt.risk_tier === 'high') return { big: true, why: `high risk (${(receipt.high_risk || []).join(', ') || 'high'})` };
+  const failed = (receipt.checks || []).some((row) => row.status === 'failed');
+  const globs = (map && map.big) || [];
+  const hit = failed && globs.length ? (receipt.changed_files || []).find((file) => plan.globsMatch(globs, file)) : null;
+  if (hit) return { big: true, why: `${hit} matches the map's big list` };
+  return { big: false, why: receipt.risk_tier ? `${receipt.risk_tier} risk, nothing in the map's big list` : 'nothing in the map\'s big list' };
+}
+
+// The one line the owner gets about a big bug. No names of people.
+function bigNoticeLine(receipt) {
+  const row = (receipt.checks || []).find((entry) => entry.status === 'failed');
+  const name = row ? row.name : (receipt.proof && receipt.proof.status === 'failed' ? 'the proof' : 'a check');
+  const why = row ? (row.note || `exit ${row.exit_code === null || row.exit_code === undefined ? 'none' : row.exit_code}`) : String((receipt.proof && receipt.proof.why) || 'a failure');
+  return `Big bug in ${receipt.repo}: ${name} failed on ${String(why).split('\n')[0].slice(0, 80)}. A fix job is running with the strongest model.`;
+}
+
+// Post the line to the owner notice channel. A failure to post never fails
+// the hand-off.
+function postOwnerNotice(root, line, channel, post) {
+  if (channel !== 'feed') return { posted: false, why: 'owner_notice is none' };
+  try {
+    const result = post ? post(line) : spawnSync('atris', ['feed', 'post', line], { cwd: root, encoding: 'utf8', timeout: 60000 });
+    return result && result.status === 0 ? { posted: true } : { posted: false, why: `atris feed post exited ${result ? result.status : 'none'}` };
+  } catch (error) {
+    return { posted: false, why: String(error && error.message || error).split('\n')[0] };
+  }
+}
+
+// The job's own lines: the pull request link, and the run id and job record
+// computer pr prints when it has them.
+function fixJobFrom(output, exitCode, sentAt) {
+  const text = String(output || '');
+  const field = (name) => { const hit = text.match(new RegExp(`^${name}=(\\S+)`, 'm')); return hit ? hit[1] : null; };
+  const link = field('PR_URL') || (text.match(/https:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+/) || [null])[0];
+  return { sent_at: sentAt, exit_code: exitCode, pr_url: link, execution_id: field('EXECUTION_ID'), job_record: field('JOB_RECORD') };
+}
+
+// Run computer pr, showing its output as it comes and keeping a copy.
+function sendFixJob(root, argv, env) {
+  return new Promise((resolve) => {
+    let output = '';
+    let child;
+    try {
+      child = spawn('atris', argv, { cwd: root, env, stdio: ['inherit', 'pipe', 'inherit'] });
+    } catch (error) {
+      resolve({ status: null, output: String(error && error.message || error) });
+      return;
+    }
+    child.stdout.on('data', (chunk) => { output += chunk; process.stdout.write(chunk); });
+    child.on('error', (error) => resolve({ status: null, output: `${output}${error.message}` }));
+    child.on('close', (status) => resolve({ status, output }));
+  });
+}
+
+async function fixCommand(root, options, log, context = {}) {
   const found = failedReceipt(root, options.receipt);
   if (!found) { log('atris check fix: no failed receipt here (run atris check, or pass --receipt <file>)'); return EXIT.usage; }
   const { file, receipt } = found;
@@ -987,7 +1053,16 @@ function fixCommand(root, options, log) {
   if (!receipt.branch || receipt.branch === 'HEAD') { log('atris check fix: the receipt names no branch; check from a branch, then fix'); return EXIT.usage; }
   const task = fixTask(receipt, slug);
   if (!task.count) { log('atris check fix: the receipt lists no failed check to hand over'); return EXIT.usage; }
-  const argv = ['computer', 'pr', slug, task.text, '--business', CODEOPS_BUSINESS, '--base', receipt.branch];
+  let ownMap = null;
+  try { ownMap = plan.loadMap(root); } catch { ownMap = null; }
+  const big = bigVerdict(receipt, ownMap);
+  // A big bug gets the strongest model: computer pr --think asks the thinker first.
+  if (big.big) task.text = `big bug: ${task.text}`;
+  const argv = ['computer', 'pr', slug, task.text, '--business', CODEOPS_BUSINESS, '--base', receipt.branch, ...(big.big ? ['--think'] : [])];
+  const channel = ownMap ? ownMap.ownerNotice : 'feed';
+  const notice = big.big ? bigNoticeLine(receipt) : '';
+  log(`big: ${big.big ? 'yes' : 'no'} (${big.why})`);
+  if (big.big) log(channel === 'feed' ? `notice: to the feed, once the job is sent: atris feed post ${shellWord(notice)}` : 'notice: none (owner_notice is none)');
   log('atris check fix: a dispatch wakes a cloud computer (costs a little).');
   log(`command: TASK="$(cat <<'ATRIS_TASK'`);
   log(task.text);
@@ -1002,11 +1077,22 @@ function fixCommand(root, options, log) {
   }
   // Mark first, so a crash mid-dispatch can never send a second job for this receipt.
   const at = new Date().toISOString();
-  fs.writeFileSync(file, `${JSON.stringify({ ...receipt, fix_dispatched_at: at }, null, 2)}\n`);
+  fs.writeFileSync(file, `${JSON.stringify({ ...receipt, fix_dispatched_at: at, fix_big: { big: big.big, why: big.why } }, null, 2)}\n`);
   // The same code checked again gets a fresh receipt file; the ledger still says it was sent.
   const recent = Object.entries({ ...ledger, [receipt.tree]: at }).sort((a, b) => b[1].localeCompare(a[1])).slice(0, 200);
   fs.writeFileSync(ledgerFile, `${JSON.stringify(Object.fromEntries(recent), null, 2)}\n`);
-  const sent = spawnSync('atris', argv, { cwd: root, stdio: 'inherit' });
+  // computer pr learns who sent the job and which receipt it fixes.
+  const sent = await sendFixJob(root, argv, { ...process.env, ATRIS_RUNNER: 'atris check fix', ATRIS_FIX_RECEIPT: file });
+  const job = fixJobFrom(sent.output, sent.status, at);
+  try {
+    const now = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fs.writeFileSync(file, `${JSON.stringify({ ...now, fix_job: job }, null, 2)}\n`);
+  } catch {}
+  log(`fix job: exit ${sent.status === null ? 'none' : sent.status}${job.pr_url ? `, ${job.pr_url}` : ''}`);
+  if (sent.status === 0 && big.big) {
+    const told = postOwnerNotice(root, notice, channel, context.postNotice);
+    log(told.posted ? 'notice: posted to the feed' : `notice: not posted (${told.why}); the fix job was still sent`);
+  }
   return sent.status === 0 ? EXIT.proven : EXIT.failed;
 }
 
@@ -1091,4 +1177,4 @@ async function checkCommand(args, context = {}) {
   return (await evaluate(root, map, options, log)).code;
 }
 
-module.exports = { checkCommand, isLocalCheck, STAGED_LINE };
+module.exports = { checkCommand, isLocalCheck, STAGED_LINE, bigVerdict, bigNoticeLine };
