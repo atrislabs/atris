@@ -1,0 +1,177 @@
+{
+  "schema": "atris.mission_receipt.v1",
+  "tree_hash": "147293d22e83b7ffe59be4628c7982fddfdbe4500fdffe853de2de51505d9b19",
+  "clean": false,
+  "git_tree": null,
+  "code_provenance": {
+    "schema": "atris.mission_code_provenance.v1",
+    "status": "unavailable",
+    "reason": "product_dirty"
+  },
+  "mission_id": "mission-2026-11-17-bounded-work-fe57fb7c",
+  "objective": "bounded work",
+  "owner": "demo",
+  "at": "2026-11-17T13:17:47.908Z",
+  "verifier": null,
+  "result": {
+    "kind": "mission_run_summary",
+    "frozen": {
+      "verifier": "",
+      "lane": "workspace",
+      "runner": "claude",
+      "model": null,
+      "started_at": "2026-11-17T13:17:46.235Z"
+    },
+    "pause_reason": null,
+    "ran_ticks": 1,
+    "tick_count": 1,
+    "ticks": [
+      {
+        "status": "ran",
+        "reason": "tick-ok",
+        "tick_index": 1,
+        "ran": true,
+        "started_at": "2026-11-17T13:17:46.286Z",
+        "claude": {
+          "ok": true,
+          "protected_lane_guard": null,
+          "brief_id": null,
+          "summary": "finished the bounded task",
+          "receipt_text": "finished the bounded task",
+          "report_path": null,
+          "stop_reason": null,
+          "api_equivalent_estimate": null,
+          "duration_api_ms": null,
+          "duration_total_ms": 1045,
+          "num_turns": null,
+          "tokens_in": null,
+          "tokens_out": null,
+          "model_ran": null,
+          "observed_session_ids": [],
+          "parse_errors": 0,
+          "stderr": "",
+          "timed_out": false,
+          "aborted": false
+        },
+        "protected_lane_guard": {
+          "ok": true,
+          "allowed": true,
+          "status": "clear",
+          "reason": "mission diff contains no protected surface",
+          "unreadable": false,
+          "surfaces": [],
+          "matches": []
+        },
+        "layer": null,
+        "layer_source": "unknown",
+        "next_push": null,
+        "finished_at": "2026-11-17T13:17:47.586Z",
+        "worktree": {
+          "available": true,
+          "before_dirty_count": 11,
+          "after_dirty_count": 11,
+          "changed": false,
+          "baseline_source": "mission_start",
+          "baseline_dirty_count": 7,
+          "new_since_baseline_count": 0,
+          "new_since_baseline_sample": [],
+          "unverified_dirty": false,
+          "unverified_change": false,
+          "new_dirty_count": 0,
+          "cleared_dirty_count": 0,
+          "dirty_sample_after": [
+            "?? .atris/agent-worktree.json",
+            "?? .atris/state/engines.json",
+            "?? .atris/state/mission-baselines/mission-2026-11-17-bounded-work-fe57fb7c.json",
+            "?? .atris/state/mission-mission-2026-11-17-bounded-work-fe57fb7c.lock",
+            "?? .atris/state/mission_events.jsonl",
+            "?? .atris/state/missions.jsonl",
+            "?? .atris/state/usage.jsonl",
+            "?? atris/status/now.md",
+            "?? atris/team/demo/MISSION.md",
+            "?? atris/team/demo/logs/2026-11-17.md",
+            "?? atris/team/demo/now.md"
+          ],
+          "new_dirty_sample": [],
+          "cleared_dirty_sample": [],
+          "before_dirty_hash": "31d88e9ec8f2bf04381f015784ca259c997943e7",
+          "after_dirty_hash": "31d88e9ec8f2bf04381f015784ca259c997943e7"
+        }
+      }
+    ],
+    "session_id": null,
+    "pending_session_id": "99f074d9-8ed8-4d1e-883f-28dc09fbbd5a",
+    "elapsed_seconds": 1.488,
+    "budget_contract": {
+      "schema": "atris.mission_budget_contract.v1",
+      "requested_seconds": 1800,
+      "budget_label": "30 minutes",
+      "policy": "stop_when_done",
+      "plain_language": "Finish early if solved.",
+      "stop_rule": "Use up to 30 minutes; stop early when the mission is done, proven, or blocked."
+    },
+    "worktree": {
+      "available": true,
+      "before_dirty_count": 11,
+      "after_dirty_count": 14,
+      "changed": true,
+      "baseline_source": "mission_start",
+      "baseline_dirty_count": 7,
+      "new_since_baseline_count": 0,
+      "new_since_baseline_sample": [],
+      "unverified_dirty": false,
+      "unverified_change": true,
+      "new_dirty_count": 3,
+      "cleared_dirty_count": 0,
+      "dirty_sample_after": [
+        "?? .atris/agent-worktree.json",
+        "?? .atris/state/codex_goal.json",
+        "?? .atris/state/engines.json",
+        "?? .atris/state/mission-baselines/mission-2026-11-17-bounded-work-fe57fb7c.json",
+        "?? .atris/state/mission-mission-2026-11-17-bounded-work-fe57fb7c.lock",
+        "?? .atris/state/mission_events.jsonl",
+        "?? .atris/state/missions.jsonl",
+        "?? .atris/state/usage.jsonl",
+        "?? atris/runs/mission-mission-2026-11-17-bounded-work-fe57fb7c-2026-11-17T13-17-47-586Z.json",
+        "?? atris/status/codex-goal.md",
+        "?? atris/status/now.md",
+        "?? atris/team/demo/MISSION.md",
+        "?? atris/team/demo/logs/2026-11-17.md",
+        "?? atris/team/demo/now.md"
+      ],
+      "new_dirty_sample": [
+        "?? .atris/state/codex_goal.json",
+        "?? atris/runs/mission-mission-2026-11-17-bounded-work-fe57fb7c-2026-11-17T13-17-47-586Z.json",
+        "?? atris/status/codex-goal.md"
+      ],
+      "cleared_dirty_sample": [],
+      "before_dirty_hash": "31d88e9ec8f2bf04381f015784ca259c997943e7",
+      "after_dirty_hash": "a83aacf3e473debd6bf4c5b86b92a60d52c7ccf0"
+    },
+    "created_next": null,
+    "landing": {
+      "changed": "finished the bounded task.",
+      "timeline_command": "atris mission timeline mission-2026-11-17-bounded-work-fe57fb7c --limit 5",
+      "export_command": "atris mission timeline mission-2026-11-17-bounded-work-fe57fb7c --all --write",
+      "prune_preview_command": "atris mission timeline mission-2026-11-17-bounded-work-fe57fb7c --prune-preview",
+      "next": "Keep running the mission.",
+      "reason": ""
+    }
+  },
+  "render": {
+    "version": 1,
+    "card": {
+      "kind": "statement",
+      "headline": "Finished the bounded task.",
+      "text": "Finished the bounded task.",
+      "kicker": "mission receipt",
+      "sub": "",
+      "brand": "atris",
+      "size": "og",
+      "theme": "atris"
+    },
+    "page_section": "## mission receipt\n\nFinished the bounded task.\nNext: Keep running the mission.\n\ndetails: 3 changed files; status recorded; mission mission-2026-11-17-bounded-work-fe57fb7c",
+    "email_line": "Finished the bounded task.",
+    "morning_card_row": "- Finished the bounded task"
+  }
+}

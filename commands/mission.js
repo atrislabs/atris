@@ -2052,7 +2052,7 @@ function missionFromArgs(args) {
     '--native-goal-objective',
     '--visible-goal-status',
     '--visible-goal-objective',
-  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--duplicate', '--no-verify', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--preflight', '--no-preflight', '--room-preflight', '--no-room-preflight', '--manual-ack', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot'])
+  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--shared-checkout', '--duplicate', '--no-verify', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--preflight', '--no-preflight', '--room-preflight', '--no-room-preflight', '--manual-ack', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot'])
     .filter((part) => String(part || '').trim() !== '...');
   const objective = objectiveParts.join(' ').trim();
   if (!objective) {
@@ -3419,7 +3419,10 @@ function startMission(args, options = {}) {
   // lock (or none): the reused job would run without it. It gets a fresh
   // job under the lock instead. (Codex review rounds 3 and 4 on #1483.)
   const twinCandidate = hasFlag(args, '--duplicate') ? null : findActiveTwinMission(mission.objective, mission.owner);
-  if (twinCandidate && lockCovered(twinCandidate, mission)) {
+  const separateCheckout = twinCandidate && (twinCandidate.worktree_root || twinCandidate.worktree?.path);
+  const sharedCheckoutConflict = hasFlag(args, '--shared-checkout') && separateCheckout
+    && path.resolve(separateCheckout) !== path.resolve(process.cwd());
+  if (twinCandidate && !sharedCheckoutConflict && lockCovered(twinCandidate, mission)) {
     const twin = twinCandidate;
     const requestedDestination = mission.drive?.destination || '';
     if (requestedDestination && twin.drive?.destination && requestedDestination !== twin.drive.destination) {
@@ -8107,6 +8110,9 @@ function buildPreloadedMemberContextLines(mission, root = process.cwd()) {
 
 function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd = process.cwd()) {
   const sharedProcess = memberProcessPrompt(cwd);
+  const baseRoot = mission.worktree_root || mission.worktree?.path || cwd;
+  const owner = String(mission.owner || '').trim();
+  const forbidsLanding = require('../lib/member-save-work').memberForbidsLanding(owner, mission.objective, baseRoot);
   const pingLines = pings.length
     ? [
       ``,
@@ -8170,6 +8176,9 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     `- Write the tick summary in operator language: what changed and what it buys or costs in plain words, with no flags, task ids, or code identifiers.`,
     `- Propose the next needle-mover: include a \`next_push: <one concrete feature or optimization to build next>\` line in your receipt so the team compounds exponentially.`,
     ``,
+    ...(forbidsLanding ? [
+    `If there is no useful next step, say so and stop.`,
+    ] : [
     `## No claimable work? Work the backstop ladder`,
     `If the mission and task state offer no claimable work, inspect these rungs in order. Pick the FIRST rung with real fuel and do ONE bounded slice:`,
     `1. A failing or flaky test in this repo: fix it.`,
@@ -8177,15 +8186,20 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     `3. One unblocked item from the atris/TODO.md backlog.`,
     `4. Debloat: remove dead code or docs, with grep proof that nothing references what you remove.`,
     `If every rung is dry, report what you checked and why no safe slice exists. Do not hold or invent progress.`,
+    ]),
     ``,
     `## Proof rule`,
     `Verification must be a real invocation of the changed surface. Run the actual CLI command or endpoint and paste the command, an output excerpt, and its exit code. Self-description such as "it works now" is never proof. If you changed a CLI behavior, run that CLI command for real and show its output.`,
     ``,
+    ...(forbidsLanding ? [
+    `Leave your work as files, do not commit, push or merge.`,
+    ] : [
     `## Landing rule`,
     `Safe-lane work (internal code, tests, docs, and proofs) must be committed and pushed or landed WITHOUT asking a human. Protected lanes (external sends, payments, credentials, auth/CSP/iframe/sandbox surfaces, and deletes of user data) are never self-landed: file a decision card instead.`,
-    `The objective's own limits win over this rule: if it says do not commit, touch only certain files, or leave something alone, do exactly that.`,
+    `The objective's own limits win over this rule: if it says do not commit, touch only certain files, or leave something alone, do exactly that. The member's standing mission limits win too.`,
     `After landing a ladder-sourced slice, append a judge card to atris/status/for-you.md in this SHIPPED format:`,
     missionShippedCard(),
+    ]),
     ``,
     `## Constraints`,
     `- Lane = ${frozen.lane}: stay inside that lane.`,
@@ -9859,7 +9873,8 @@ async function executeMissionRunTicksPhase(context) {
           // when status is "allowed". Only a non-allowed status is a cooldown;
           // treating an allowed resetsAt as one pauses every timed run after
           // tick 1 with rate-limit-exceeded-wall.
-          lastRateLimit = claudeResult.rate_limit_info.status === 'allowed' ? null : claudeResult.rate_limit_info;
+          // "allowed_warning" (seen live 2026-11-17 at 75% of the weekly window) still runs.
+          lastRateLimit = /^allowed/i.test(String(claudeResult.rate_limit_info.status || '')) ? null : claudeResult.rate_limit_info;
           rateLimitedEngineId = lastRateLimit ? tickEngineId : null;
         }
         if (claudeResult.aborted) { pauseReason = 'aborted-during-claude'; break; }

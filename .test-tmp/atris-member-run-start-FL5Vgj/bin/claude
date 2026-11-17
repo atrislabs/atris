@@ -1,0 +1,6 @@
+#!/bin/sh
+if [ "$1" = "--help" ]; then
+  echo "--output-format --permission-mode --resume --session-id --include-partial-messages"
+  exit 0
+fi
+echo '{"type":"result","is_error":false,"result":"finished the bounded task"}'
