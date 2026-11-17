@@ -448,6 +448,14 @@ dispatch wakes a cloud computer, which costs a little. One job per receipt,
 and checking the same code again does not open a second one. The fix comes
 back as a branch. `atris check push` on it is the same path as any change.
 
+A big bug gets the strongest model: when the failed receipt is high risk, or
+a changed file matches the map's optional `"big"` globs, the job goes with
+`--think`, its task starts with "big bug" and one plain line goes to the
+owner notice channel (`"owner_notice"`: `"feed"`, the default, or `"none"`).
+A suggested `big` list: sign-in, payment, data loss and migrations, plus the
+paths that keep the app from opening. This covers red checks only: live
+production errors are not wired to `atris check fix` today.
+
 v1: CodeOps fixes red. Next: the lane itself runs on the CodeOps computer,
 once it can return a receipt and run the app with no screen.
 
