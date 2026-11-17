@@ -235,14 +235,18 @@ function recordPendingShip(root, { branch, targetRef, number }) {
 }
 
 // The atris check receipt for the code in this copy right now, if one exists
-// and still matches it (lib/check-receipt.js).
+// and still holds once its plan is worked out again (lib/check-recompute.js).
 function shipCheckReceipt(root) {
-  const { codeIdentity, findReceiptForTree, matchReceipt } = require('../lib/check-receipt');
+  const { codeIdentity, findReceiptForTree } = require('../lib/check-receipt');
   const found = findReceiptForTree(root, codeIdentity(root).tree);
   if (!found) return { verdict: 'none', line: 'no --verify and no atris check receipt for this code' };
-  const match = matchReceipt(root, found.receipt);
+  let ownMap = null;
+  try { ownMap = require('../lib/check-plan').loadMap(root); } catch (error) {
+    return { verdict: 'none', line: `atris check receipt does not match: ${String(error.message || error).split('\n')[0]}` };
+  }
+  const match = require('../lib/check-recompute').recheckReceipt(root, found.receipt, { workingMap: ownMap });
   if (!match.ok) return { verdict: 'none', line: `atris check receipt does not match: ${match.why}` };
-  return { verdict: found.receipt.verdict, line: `atris check receipt ${found.receipt.verdict} (${path.relative(root, found.file)})` };
+  return { verdict: match.verdict, line: `atris check receipt ${match.verdict} (${path.relative(root, found.file)})` };
 }
 
 function shipWorktree(args) {
