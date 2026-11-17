@@ -1794,6 +1794,20 @@ function missionBlockerReceiptLine(blocker) {
     : `blocker filed as ${blocker.taskId}, no engine ready: ${blocker.reason}`;
 }
 
+// A run the round limit ended before its time ran out says so, in the record and on screen.
+// Seen 2026-11-17: three 3-hour runs stopped at 36 rounds after about 1.5 hours, still read
+// "running", and nothing said why.
+function roundLimitEnding(reason, budgetSeconds, elapsedSeconds, rounds) {
+  const left = Number(budgetSeconds || 0) - Number(elapsedSeconds || 0);
+  if (reason !== 'max-ticks-reached' || !(left > 60)) return null;
+  const minutesLeft = Math.round(left / 60);
+  return {
+    rounds,
+    minutes_left: minutesLeft,
+    line: `Stopped early: the round limit (${rounds}) was reached with ${minutesLeft} minute${minutesLeft === 1 ? '' : 's'} of the time left.`,
+  };
+}
+
 function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason = null, continuationGoal = null, ticks = [], createdNext = null, blocker = null) {
   const changed = missionRunChangedText(mission, ranTicks, effectiveMaxTicks, ticks, createdNext);
   const reason = missionHumanReasonText(mission, changed);
@@ -10511,10 +10525,17 @@ function completeMissionRunPhase(context) {
       ? String(mission.status)
       : (pauseReason || (ticks.length >= effectiveMaxTicks ? 'max-ticks-reached' : 'run-returned'));
     detachedDriverLifecycle?.setExitReason(finalDriverReason);
+    const earlyStop = roundLimitEnding(finalDriverReason, effectiveBudgetContract?.requested_seconds,
+      (Date.now() - startedAt) / 1000, ticks.length);
+    if (earlyStop) {
+      try { appendEvent('mission_run_round_limit', mission, { rounds: earlyStop.rounds, minutes_left: earlyStop.minutes_left }, cwd); } catch {}
+    }
+    const summaryLines = missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason, continuationGoal, ticks, createdNext, blocker);
+    if (earlyStop) summaryLines.splice(1, 0, `  ${earlyStop.line}`);
 
     printJsonOrText(
-      { ok: true, action: 'mission_run', mission, runner_override: runnerOverride ? finalRuntimeMission.run_runner_override : null, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, blocker, session_id: sessionId, summary_receipt: finalReceipt, budget_contract: effectiveBudgetContract, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, created_next: createdNext },
-      missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason, continuationGoal, ticks, createdNext, blocker),
+      { ok: true, action: 'mission_run', mission, runner_override: runnerOverride ? finalRuntimeMission.run_runner_override : null, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, blocker, session_id: sessionId, summary_receipt: finalReceipt, budget_contract: effectiveBudgetContract, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, created_next: createdNext, early_stop: earlyStop },
+      summaryLines,
       asJson,
     );
   } catch (error) {
@@ -12009,6 +12030,7 @@ function missionCommand(args) {
 }
 
 module.exports = {
+  roundLimitEnding,
   isLiveInFlightMission,
   missionHaltedSince,
   keepOperatorHalt,
