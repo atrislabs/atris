@@ -176,6 +176,22 @@ function cageEnv(entry, context) {
   return { ...env, ...own, ...(context.extraEnv || {}) };
 }
 
+// Every running check's process group, so a stop from outside (the lander's
+// time limit sends SIGTERM) takes the checks down with atris check.
+const RUNNING = new Set();
+let stopHandler = false;
+
+function stopRunningOnSignal() {
+  if (stopHandler) return;
+  stopHandler = true;
+  process.once('SIGTERM', () => {
+    for (const pid of RUNNING) {
+      try { if (process.platform !== 'win32') process.kill(-pid, 'SIGKILL'); else process.kill(pid, 'SIGKILL'); } catch {}
+    }
+    process.exit(143);
+  });
+}
+
 function runCaged(command, root, env, timeoutSeconds) {
   return new Promise((resolve) => {
     const startedAt = Date.now();
@@ -188,6 +204,7 @@ function runCaged(command, root, env, timeoutSeconds) {
     });
     let out = '';
     let timedOut = false;
+    if (child.pid) RUNNING.add(child.pid);
     const keep = (chunk) => { out = (out + chunk).slice(-64 * 1024); };
     child.stdout.on('data', keep);
     child.stderr.on('data', keep);
@@ -204,6 +221,7 @@ function runCaged(command, root, env, timeoutSeconds) {
     child.on('exit', (code, signal) => {
       clearTimeout(timer);
       killGroup();
+      RUNNING.delete(child.pid);
       setImmediate(() => resolve({ code: Number.isInteger(code) ? code : null, signal: signal || null, timedOut, out, ms: Date.now() - startedAt }));
     });
   });
@@ -1017,6 +1035,9 @@ async function checkCommand(args, context = {}) {
     return EXIT.proven;
   }
   if (!isLocalCheck(args)) return require('./human-missions').checkCommand(args, context);
+  // Run from the command line (not called in-process with a log): a SIGTERM
+  // stops the running checks' process groups too.
+  if (!context.log) stopRunningOnSignal();
   const root = receipts.repoRootOf(context.cwd || process.cwd());
   if (!root) { log('atris check: run it inside a git repo or work copy'); return EXIT.usage; }
   if (args[0] === 'init') return initMap(root, args.slice(1), log);
