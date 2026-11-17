@@ -23,7 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
-(Empty)
+- **[FFC-1]** Feed: any member can answer on any card, read all comments, longer comments, members answer people's comments when they think · unassigned
+  **Done looks like:** People can now pull any awake team member into the talk on any card and read the whole talk, which saves time because answers land where everyone reads them.
 
 ## Blocked
 

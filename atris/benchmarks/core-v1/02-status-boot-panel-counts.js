@@ -38,21 +38,23 @@ module.exports = {
 
     const boot = ctx.runCli(['atris.md']);
     assert.equal(boot.status, 0, boot.stderr || boot.stdout);
-    const out = boot.stdout;
+    // Sentences wrap at the window edge; read them as one line.
+    const out = boot.stdout.replace(/\s+/g, ' ');
 
-    // The boot panel speaks in operator voice (plain phrases, not "Tasks: N open").
+    // The boot panel speaks in whole sentences (not "Tasks: N open").
     // It must still reflect the real lane counts from task state: 2 backlog,
-    // 1 active, 1 in review, 1 of those certified and waiting for a human ok.
-    const numberBefore = (phrase) => {
-      const match = out.match(new RegExp(`(\\d+)\\s+${phrase}`));
+    // 1 active, 1 in review, and that one already certified and waiting for
+    // a human ok (so nothing is left waiting for the agent check).
+    const numberAfter = (phrase) => {
+      const match = out.match(new RegExp(`${phrase} (\\d+)`));
       return match ? Number(match[1]) : null;
     };
-    assert.equal(numberBefore('done, waiting for your ok'), 1, `certified review count in boot:\n${out}`);
-    assert.equal(numberBefore('waiting to start'), 2, `backlog count in boot:\n${out}`);
-    assert.equal(numberBefore('getting a final look'), 1, `review count in boot:\n${out}`);
+    assert.equal(numberAfter('Waiting on you:'), 1, `certified review count in boot:\n${out}`);
+    assert.equal(numberAfter('Not started:'), 2, `backlog count in boot:\n${out}`);
+    assert.ok(!/Waiting for a check:/.test(out), `certified work counted twice in boot:\n${out}`);
 
-    // The single active task is surfaced by name (not rolled into "N more moving").
-    assert.ok(/\bnow\b/.test(out), `active lane row missing from boot:\n${out}`);
+    // The single active task is surfaced by name (not rolled into "N more").
+    assert.ok(/Working now: an agent is on "/.test(out), `active lane row missing from boot:\n${out}`);
     assert.ok(out.includes('claim the active count'), `active task title missing from boot:\n${out}`);
   },
 };

@@ -186,3 +186,7 @@ Your log compounds context. The next executor session reads your learnings and s
 ---
 
 **Executor = The Trigger. Pull once. Execute precisely. Validate constantly.**
+
+## Code I own
+
+- `commands/task/steps/`: Working a task step by step: step options, running a step, the current step, and step. Moved out of `commands/task.js` on 2026-11-16; read its README.md before changing it.

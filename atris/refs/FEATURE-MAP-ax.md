@@ -10,7 +10,7 @@ How to drive the running product. Code navigation lives in `atris/MAP.md`; this 
 | One prompt at a tier | `ax --fast\|--pro\|--max\|--rapid\|--alpha "<msg>"` | ax:4732-4744 |
 | Auto-pick lane, JSON includes `auto_lane`/`auto_reason` | `ax --auto --print "<msg>"` | ax:4850-4852 |
 | Gate the turn on a shell verifier | `ax --verify "<cmd>" "<msg>"` | ax:4721-4730 |
-| Interactive chat | `ax --chat` (tier flags compose) | ax:3592-3976 |
+| Interactive chat | `ax --chat` · `ax chat` (tier flags compose) | ax:3592-3976 |
 | Health report | `ax --doctor` | ax:4897-4903 |
 | Harness self-check, no backend | `ax --self-test` | ax:4887-4888 |
 | Approvals: list / run / deny / remember | `ax --approvals` · `--approve <id>` · `--deny <id>` · `--grant <id>` | ax:4906-4940 |

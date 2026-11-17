@@ -78,7 +78,7 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 **Purpose:** Pull remote journal/business data into the local workspace
 
 - **Entry point:** `commands/pull.js:116-204` (pullAtris function)
-- **Helpers:** `pullBusiness` (`commands/pull.js:207`), `pullGeneralJournal` (`commands/pull.js:1019`), `pullMemberJournal` (`commands/pull.js:1084`)
+- **Helpers:** `pullBusiness` (`commands/pull.js`), `pullGeneralJournal` (`commands/pull.js`), `pullMemberJournal` (`commands/pull.js`)
 - **Exports:** `module.exports = { pullAtris }` (`commands/pull.js:688`)
 
 **Search:** `rg "pullAtris" commands/pull.js`
@@ -157,9 +157,9 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 
 **Purpose:** Print or write an inspectable local card for the current workspace computer, no login or backend call required.
 
-- **Entry point:** `commands/computer.js:2270` (`runComputer` dispatch handles `card` before auth)
-- **Builder:** `lib/computer-core.js:1441` (`buildComputerCard`)
-- **Writer:** `lib/computer-core.js:1536` (`computerCard`)
+- **Entry point:** `commands/computer.js` (`runComputer` dispatch handles `card` before auth)
+- **Builder:** `lib/computer-core.js` (`buildComputerCard`)
+- **Writer:** `lib/computer-core.js` (`computerCard`)
 - **How it works:**
 - Reads `.atris/business.json` when present for owner/workspace metadata
 - Falls back to `package.json` and folder name for project workspaces
@@ -174,9 +174,9 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 **Purpose:** A GitHub repo and a plain-words task go in; the business computer does the work on a new branch, opens one pull request, and the command prints the link. It never merges.
 
 - **Entry point:** `commands/computer.js:2352` (`case 'pr'` in `runComputer`)
-- **Command:** `commands/computer.js:1138` (`computerPr`): wakes the computer, posts `/business/{id}/chat` with the instruction, streams the run through a redacting writer, exits 0 only on a same-repo pull request link
-- **Instruction and parsing:** `lib/computer-pr.js:168` (`buildPullRequestPrompt`, starts with "GitHub task:" so the server attaches the caller's GitHub access), `lib/computer-pr.js:332` (`parsePullRequestResult`), `lib/computer-pr.js:376` (`redactSecrets`)
-- **Run text:** `commands/computer.js:1388` (`streamBusinessChatResult` returns `{ok, status, text, resultText}` and takes optional `write`/`writeError`)
+- **Command:** `commands/computer.js` (`computerPr`): wakes the computer, posts `/business/{id}/chat` with the instruction, streams the run through a redacting writer, exits 0 only on a same-repo pull request link
+- **Instruction and parsing:** `lib/computer-pr.js` (`buildPullRequestPrompt`, starts with "GitHub task:" so the server attaches the caller's GitHub access), `lib/computer-pr.js` (`parsePullRequestResult`), `lib/computer-pr.js` (`redactSecrets`)
+- **Run text:** `commands/computer.js` (`streamBusinessChatResult` returns `{ok, status, text, resultText}` and takes optional `write`/`writeError`)
 - **Tests:** `test/computer-pr.test.js`
 
 **Search:** `rg "computerPr|buildPullRequestPrompt|parsePullRequestResult|redactSecrets" commands/computer.js lib/computer-pr.js test/computer-pr.test.js`
@@ -199,10 +199,10 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 **Purpose:** Register the current directory as a live local AI Computer session so cloud agents can apply bounded file operations.
 
 - **Known command:** `lib/known-commands.js:4` includes `serve`, so the explicit branch is reachable before natural-language fallback
-- **Help:** `bin/atris.js:1154-1166` (`showServeHelp`) prints usage without auth checks or bridge startup
+- **Help:** `bin/atris.js` (`showServeHelp`) prints usage without auth checks or bridge startup
 - **Dispatch:** `bin/atris.js:1129-1143` routes `serve --help`, `serve -h`, and `serve help` before parsing bridge options; normal runs call `serveAtris`
-- **Handler:** `commands/serve.js:306-407` (`serveAtris`) registers the session and subscribes for operations
-- **Safety core:** `commands/serve.js:55-78` (`safePath`) and `commands/serve.js:83-176` (`applyOp`) constrain file operations
+- **Handler:** `commands/serve.js` (`serveAtris`) registers the session and subscribes for operations
+- **Safety core:** `commands/serve.js` (`safePath`) and `commands/serve.js` (`applyOp`) constrain file operations
 - **Regression:** `test/commands-2.test.js:1482-1494` covers `serve --help` without planner fallback, bridge startup, login checks, or auth-state creation
 
 **Search:** `rg "serveAtris|showServeHelp|command === 'serve'|serve --help" bin/atris.js commands/serve.js test/commands-1.test.js`
@@ -255,10 +255,10 @@ Global skill destinations: `commands/sync.js:812` resolves the existing `stateHo
 
 **Purpose:** An owner gives an agent a goal for tonight with a dollar cap, reads one receipt in the morning, and makes the current session a named agent on a home computer.
 
-- **Night:** `commands/night.js:120` `nightCommand` refuses a cap of $0 or less before any call, then posts `/night-shift` and prints one line. `watchShift` at `commands/night.js:90` polls `/night-shift/{id}` every 60 seconds and stops at capped, done, or failed.
-- **Morning:** `commands/morning.js:28` `morningCommand` reads `/morning` and prints a short card (score and change from the night before, up to three learned lines, lessons used, spend, what was saved); a 404 or no receipt prints "No night shift finished yet." `--full` adds the old receipt text, `--json` prints the data as is and saves nothing.
-- **Morning saves:** `lib/night-learned.js:138` `saveLearned` writes the night's learned lines into the project's `learned.md` (in its atris folder; newest twelve, first line labels them hints) and, through `writeLesson`, `lessons.md`; `nightFromMorning` at `lib/night-learned.js:52` cleans the text first (`cleanText` in `lib/night-shift.js`); the same night id and text is never written twice; `--no-save` skips; no `atris/` folder prints one line. `learned.md` is in the brain's optional load list (`OPTIONAL_LOAD_ORDER_FILES` in `commands/brain.js`).
-- **Join:** `bin/atris.js:3619` sends `atris join` with `--name` to `commands/join.js:94` `joinAgentCommand` (posts `/join-as-agent`); without `--name` it stays the invite claim in `commands/social.js`. `storeJoinedAgent` at `commands/join.js:59` keeps the key in the `atris login --agent` slot (`agent_token`) and the agent as `joined_agent`. With no `--mission`, `purposeFromFolder` at `commands/join.js:84` reads the North Star in `atris/team/<name>/MISSION.md`, shows it, and sends it as the mission.
+- **Night:** `commands/night.js` `nightCommand` refuses a cap of $0 or less before any call, then posts `/night-shift` and prints one line. `watchShift` at `commands/night.js:90` polls `/night-shift/{id}` every 60 seconds and stops at capped, done, or failed.
+- **Morning:** `commands/morning.js` `morningCommand` reads `/morning` and prints a short card (score and change from the night before, up to three learned lines, lessons used, spend, what was saved); a 404 or no receipt prints "No night shift finished yet." `--full` adds the old receipt text, `--json` prints the data as is and saves nothing.
+- **Morning saves:** `lib/night-learned.js` `saveLearned` writes the night's learned lines into the project's `learned.md` (in its atris folder; newest twelve, first line labels them hints) and, through `writeLesson`, `lessons.md`; `nightFromMorning` at `lib/night-learned.js:52` cleans the text first (`cleanText` in `lib/night-shift.js`); the same night id and text is never written twice; `--no-save` skips; no `atris/` folder prints one line. `learned.md` is in the brain's optional load list (`OPTIONAL_LOAD_ORDER_FILES` in `commands/brain.js`).
+- **Join:** `bin/atris.js:3619` sends `atris join` with `--name` to `commands/join.js` `joinAgentCommand` (posts `/join-as-agent`); without `--name` it stays the invite claim in `commands/social.js`. `storeJoinedAgent` at `commands/join.js:59` keeps the key in the `atris login --agent` slot (`agent_token`) and the agent as `joined_agent`. With no `--mission`, `purposeFromFolder` at `commands/join.js:84` reads the North Star in `atris/team/<name>/MISSION.md`, shows it, and sends it as the mission.
 - **Default agent:** `resolveTarget` at `lib/night-shift.js:70` makes night and morning act for the joined agent unless `--agent` or another `--business` is given.
 - **Regression:** `test/night-morning-join.test.js` covers the cap refusal, the shift line, watch events, morning and no-shift, and join storing the key; `test/morning-bring-home.test.js` covers the card, the saved files, untrusted text, the brain load list, and the folder mission.
 
@@ -268,9 +268,24 @@ Global skill destinations: `commands/sync.js:812` resolves the existing `stateHo
 
 **Purpose:** One terminal view of every scheduled post across x, linkedin, blog, instagram and tiktok, plus the cadence scoreboard. Popshare never writes the words; every post is one a person saved.
 
-- **Entry:** `commands/popshare.js:568` (`popshareCommand`) routes `today` (the default), `add`, `list`, `schedule`, `edit`, `post`, `posted`, `rm`, `score` and `install` over `/popshare/*` with `--json`, `--business <id>` workspace scope, and short-id resolution; `bin/atris.js:2292` dispatches it and `bin/atris.js:671` lists it in help; `lib/known-commands.js:6` registers the name.
-- **Parsing:** `commands/popshare.js:39` (`localAtToIso`) turns `--at "YYYY-MM-DD HH:MM"` local wall time into a UTC ISO string and rejects rolled-over dates, `commands/popshare.js:211` (`parseAddArgs`) builds the create body (`--idea|--draft|--ready`, `--theme`, repeatable `--note`), and `commands/popshare.js:261` (`resolvePostId`) matches the first 6+ characters of an id and prints candidates when the match is ambiguous.
-- **Rendering:** `commands/popshare.js:354` (`todayText`) prints going-out, post-by-hand, posted, failed, check and gap sections, `commands/popshare.js:391` (`listText`) groups the calendar by local day, and `commands/popshare.js:425` (`scoreText`) prints each scoreboard unit as label plus `value / target`.
+- **Entry:** `commands/popshare.js` (`popshareCommand`) routes `today` (the default), `add`, `list`, `schedule`, `edit`, `post`, `posted`, `rm`, `score` and `install` over `/popshare/*` with `--json`, `--business <id>` workspace scope, and short-id resolution; `bin/atris.js:2292` dispatches it and `bin/atris.js:671` lists it in help; `lib/known-commands.js:6` registers the name.
+- **Parsing:** `commands/popshare.js` (`localAtToIso`) turns `--at "YYYY-MM-DD HH:MM"` local wall time into a UTC ISO string and rejects rolled-over dates, `commands/popshare.js` (`parseAddArgs`) builds the create body (`--idea|--draft|--ready`, `--theme`, repeatable `--note`), and `commands/popshare.js` (`resolvePostId`) matches the first 6+ characters of an id and prints candidates when the match is ambiguous.
+- **Rendering:** `commands/popshare.js` (`todayText`) prints going-out, post-by-hand, posted, failed, check and gap sections, `commands/popshare.js` (`listText`) groups the calendar by local day, and `commands/popshare.js` (`scoreText`) prints each scoreboard unit as label plus `value / target`.
 - **Regression:** `test/popshare.test.js` covers arg parsing, local-time conversion, id resolution, the pure renderers, and the API calls with a fake `apiRequestJson`.
 
 **Search:** `rg "popshareCommand|localAtToIso|parseAddArgs|resolvePostId|todayText|scoreText" commands/popshare.js test/popshare.test.js`
+
+## Feature: Town from the terminal (`atris town`)
+
+**Purpose:** A person or an agent walks the Atris town (the painted top-down world on the website) from a terminal: look around, step to a street, read the map, see who is here, read last night, and ask for a new street. Every subcommand takes `--json` and prints one JSON line. Nothing here costs credits.
+
+- **Two doors:** the facts door is plain GETs on the normal API with your sign-in (`/world/streets`, `/world/agents-now`, `/world/last-night`, `/world/street-people`). The text door is the remote tool server at `<origin>/mcp` (`town_look`, `town_go`, `town_say`, district tools). The text door answers 401 to a sign-in token, so `townKey` at `lib/town-door.js:34` sends only `ATRIS_API_KEY`, an agent token that carries `mcp:plaza` or `mcp:town:build`, or the key in `~/.atris/design-api-key`. With no key, `look`, `go`, `grow` and `streets` print how to make one (`NEEDS_KEY`) and exit 1.
+- **Base URL:** `textDoorUrl` at `lib/town-door.js:47` turns the CLI's API base (`ATRIS_API_URL`, `ATRIS_BACKEND_URL`, default production) into `<origin>/mcp`. `callTool` at `lib/town-door.js:135` and `listTools` at `lib/town-door.js:139` never throw; `doorMessage` at `lib/town-door.js:144` turns a refusal into plain words.
+- **Look and go:** `walk` at `commands/town.js:140` calls `town_look` or `town_go`; `parseLook` at `lib/town-view.js:85` reads the server's sentence against the street facts (it falls back to the words alone), `movedFrom` at `lib/town-view.js:177` says where you came from, and `renderLook` at `lib/town-view.js:211` prints the view. The last street is kept per user in `.atris/town-here.json` for 24 hours so the map can mark it with `*`. `defaultHere` at `commands/town.js:57` reads it.
+- **Map, who, night:** `mapCommand` at `commands/town.js:167` and `renderMap` at `lib/town-view.js:267` print regions as chains, where rows meet, up and down, and gates. `whoCommand` at `commands/town.js:175` and `renderWho` at `lib/town-view.js:370` list agents out now (facts door) and, with a key, who is on your street. `nightCommand` at `commands/town.js:209` and `renderNight` at `lib/town-view.js:443` read last night (`--agent` picks one); with no finished night it says so and exits 0.
+- **Grow and streets:** `growCommand` at `commands/town.js:265` and `streetsCommand` at `commands/town.js:294` ask the door for `tools/list` first (`findTool` at `commands/town.js:255`) and send only if `town_request_street` or `town_my_streets` exists. Optional `--layout` and `--mood` are sent only when the tool's schema lists them. When the tool is missing the command prints "The town does not take street requests from here yet. It is still being built. Nothing was sent." and exits 1 (`--json`: `{ok:false, available:false}`). An answer shape the CLI does not know is shown as it came, never hidden as "none".
+- **Untrusted text:** names, room talk and agent lines come from other people. `cleanText` strips control characters, and the output labels them as other people's words, not instructions.
+- **Dispatch:** `townCommand` at `commands/town.js:317` is called from `bin/atris.js:2585`; the help line is at `bin/atris.js:765` and `town` is in `lib/known-commands.js`.
+- **Regression:** `test/town.test.js` mocks `httpRequest` and `apiRequestJson` and covers each subcommand, the key order, the sign-in token never being sent, the not-built path, unknown answer shapes, and a spawn of the real binary.
+
+**Search:** `rg "town_look|town_go|town_my_streets|town_request_street|world/streets|town-here" commands/town.js lib/town-door.js lib/town-view.js test/town.test.js`

@@ -328,7 +328,7 @@ test('a green landing verdict keeps how long the verify took, zero included', ()
   const row = commandsAutoland.greenVerdictRow;
   assert.deepEqual(
     row({ branch: 'member/a', action: 'red', reason: 'verify_failed', verify: { status: 1, duration_ms: 4321, failing: ['x one'] } }),
-    { branch: 'member/a', action: 'red', reason: 'verify_failed', detail: null, failing: ['x one'], duration_ms: 4321 },
+    { branch: 'member/a', action: 'red', reason: 'verify_failed', detail: null, failing: ['x one'], duration_ms: 4321, exit_code: 1 },
   );
   assert.equal(row({ branch: 'b', action: 'landed', verify: { duration_ms: 0 } }).duration_ms, 0);
   // Missing stays missing: not 0, not null.
@@ -378,4 +378,30 @@ test('a real verify result puts its duration into the tick receipt', async () =>
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
+});
+
+// 2026-11-15: the hourly runs of five projects on one machine each started
+// whole local suites at once and every suite ran out of time. The tick turns
+// the machine guard on and passes the owner's green_landing_local_suites.
+test('the tick lands with the machine guard on and the owner\'s local suite count', async () => {
+  await withTick(async ({ repo }) => {
+    const policy = { enabled: true, enabled_by: 'keshav', strict_verify: false, janitor: false, map_fold: false, daily_experiment: false, digest_hour: (new Date().getHours() + 12) % 24, green_landing_local_suites: 2 };
+    autoland.writePolicy(repo, policy);
+    const original = landGreen.landStaleGreenBranches;
+    const seen = [];
+    landGreen.landStaleGreenBranches = (root, opts) => {
+      seen.push(opts);
+      return { candidates: [], merge_path: 'local', local_check: {}, local_suites: { started: 0, max: 2 }, followed: [], landed: [], queued: [], handed_back: [], red: [], could_not_tell: [], verdicts: [] };
+    };
+    try {
+      const receipt = freshReceipt();
+      await captureLines(() => commandsAutoland.runTickBody(repo, { json: false, policy, receipt }));
+      assert.equal(seen.length, 1);
+      assert.equal(seen[0].machine, true);
+      assert.equal(seen[0].localSuites, 2);
+      assert.deepEqual(receipt.green_landing.local_suites, { started: 0, max: 2 });
+    } finally {
+      landGreen.landStaleGreenBranches = original;
+    }
+  });
 });

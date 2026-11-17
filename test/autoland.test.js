@@ -849,18 +849,20 @@ test('cron line is labeled and removable', () => {
   assert.match(line, /autoland tick/);
 });
 
-test('autoland status never probes a stalled crontab', () => {
+// Status asks the crontab whether the hourly line is live, with a short
+// limit: a crontab that hangs makes the answer unknown, never a long wait.
+test('autoland status gives up on a stalled crontab quickly and says unknown', () => {
   const { base, repo } = makeTempRepo();
   const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-slow-crontab-'));
   const crontab = path.join(fakeBin, 'crontab');
   try {
-    fs.writeFileSync(crontab, '#!/bin/sh\nexec /bin/sleep 3\n', 'utf8');
+    fs.writeFileSync(crontab, '#!/bin/sh\nexec /bin/sleep 20\n', 'utf8');
     fs.chmodSync(crontab, 0o755);
     const started = Date.now();
-    const status = runCli(['autoland', 'status'], repo, { PATH: `${fakeBin}:${process.env.PATH}` });
+    const status = runCli(['autoland', 'status'], repo, { PATH: `${fakeBin}:${process.env.PATH}`, HOME: base });
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.match(status.stdout, /heartbeat: unknown - run atris autoland on to check and repair/);
-    assert.ok(Date.now() - started < 1500, 'read-only status should not wait on crontab');
+    assert.ok(Date.now() - started < 8000, 'read-only status must not wait out a stalled crontab');
   } finally {
     cleanupTempDir(fakeBin);
     cleanupTempDir(base);
@@ -1326,7 +1328,10 @@ test('auto-accept-certified json includes unsafe verify blockers with a reason',
     const ready = runCli(['task', 'ready', ref, '--verify', 'true', '--no-falsify-check', '--as', 'builder'], repo);
     assert.equal(ready.status, 0, ready.stderr || ready.stdout);
 
-    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
+    // This reads the blocker the review list shows, so the tick's reroute
+    // (which sends such a job back to its builder in the same pass, see
+    // test/check-shape-reroute.test.js) is switched off here.
+    autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false, check_reroute: false });
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());

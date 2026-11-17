@@ -128,6 +128,8 @@ const {
   computerCloudLogin,
   computerAudit,
 } = require('../lib/computer-core');
+const { buildMemberBrief, withMemberBrief } = require('../lib/member-brief');
+const codeOpsTeam = require('../lib/codeops-team');
 
 function getToken() {
   const creds = loadCredentials();
@@ -1126,11 +1128,132 @@ function printComputerPrHelp(log = console.log) {
   log('                   ATRIS_PR_THINKER says otherwise. The Claude lane has none unless you set one.');
   log('  --think          ask the thinker first, for bugs you already know are hard');
   log('  --no-think       never ask the thinker');
-  log('  --as <member>    assign the desktop feed card to a team member');
+  log('  --as <member>    work as a team member. On a computer with /workspace/atris/team the member');
+  log('                   must be there; it reads its MEMBER.md and newest 20 lessons, and one lesson');
+  log('                   line is saved to its lessons.md after the run. Default there: executor.');
   log('  --no-feed        do not create a desktop feed card');
   log('');
   log('Example:');
   log('  atris computer pr atrislabs/demo "Fix the typo in the README" --business my-lab');
+}
+
+// Reads and writes the team folder on a business computer through the same
+// files API `atris computer ls/cat` and `atris business push` use. read gives
+// '' for a file that is not there and null when the computer could not say.
+function cloudTeamIo(token, ctx, request = apiRequestJson) {
+  const base = `/business/${ctx.businessId}/workspaces/${ctx.workspaceId}`;
+  return {
+    async list() {
+      const r = await request(`${base}/files?path=${encodeURIComponent(codeOpsTeam.TEAM_DIR)}`, { method: 'GET', token, retries: 0 });
+      return r.ok ? (r.data?.files || []) : null;
+    },
+    async read(filePath) {
+      const r = await request(`${base}/file?path=${encodeURIComponent(filePath)}`, { method: 'GET', token, retries: 0 });
+      if (r.ok) return r.data?.content || '';
+      return r.status === 404 ? '' : null;
+    },
+    async write(filePath, content) {
+      const r = await request(`${base}/file`, { method: 'PUT', token, body: { path: filePath, content } });
+      return r.ok ? null : (require('../lib/computer-pr').errorText(r.error || r.data) || `status ${r.status}`);
+    },
+  };
+}
+
+// After a run: one dated line in the member's lessons.md and one line in its
+// log for the day. Each file is read first and written whole; if the read
+// fails, nothing is written, so a file is never cut down to one line.
+async function saveMemberLesson({ io, member, now, log, logError, repo, title, url, error, failedStep, replyText, lessonsRead }) {
+  const lesson = codeOpsTeam.replyValue(replyText, 'LESSON');
+  const used = codeOpsTeam.replyValue(replyText, 'USED_LESSON');
+  const lessonLine = codeOpsTeam.lessonLine({ date: codeOpsTeam.localDate(now), repo, url, error, lesson: lesson || codeOpsTeam.fallbackLesson({ url, error, failedStep }) });
+  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const line = codeOpsTeam.logLine({ time, repo, title, url, error, lessonsRead, used });
+  const append = async (file, text, header) => {
+    try {
+      const current = await io.read(file);
+      if (current == null) return 'the computer did not hand back the current file';
+      return await io.write(file, codeOpsTeam.appendLine(current, text, header));
+    } catch (err) { return err.message || String(err); }
+  };
+  const lessonErr = await append(codeOpsTeam.memberPath(member, 'lessons.md'), lessonLine, codeOpsTeam.LESSONS_HEADER);
+  if (lessonErr) logError(`Could not save ${member}'s lesson: ${lessonErr}`);
+  else log(`Lesson saved for ${member}: ${lessonLine}`);
+  const logErr = await append(codeOpsTeam.memberPath(member, `logs/${codeOpsTeam.localDate(now)}.md`), line);
+  if (logErr) logError(`Could not write ${member}'s log: ${logErr}`);
+}
+
+// The local feed cards that `atris computer pr` made, any project.
+function readCodeOpsCards() {
+  try {
+    const tasks = require('../lib/task-db');
+    const db = tasks.open();
+    return db.prepare(`SELECT id, title, status, claimed_by, created_at, updated_at, metadata FROM tasks WHERE metadata LIKE '%"source":"codeops"%'`).all();
+  } catch (_) { return []; }
+}
+
+// Merged pull request links among these, asked of GitHub once per repo.
+// null when GitHub could not be asked, so the view shows ? instead of 0.
+async function mergedPullLinks(urls = []) {
+  const repos = [...new Set(urls.map((u) => (u.match(/^https:\/\/github\.com\/([^/]+\/[^/]+)\/pull\/\d+/) || [])[1]).filter(Boolean))];
+  if (!repos.length) return new Set();
+  const { execFile } = require('child_process');
+  const ask = (repo) => new Promise((resolve) => {
+    execFile('gh', ['pr', 'list', '--repo', repo, '--state', 'merged', '--limit', '300', '--json', 'url'], { timeout: 20000 }, (err, stdout) => {
+      if (err) return resolve(null);
+      try { resolve(JSON.parse(stdout).map((p) => p.url)); } catch (_) { resolve(null); }
+    });
+  });
+  const lists = await Promise.all(repos.map(ask));
+  if (lists.some((l) => l == null)) return null;
+  return new Set(lists.flat());
+}
+
+// One table: each member on the computer, what it is doing, its last seven
+// days, and what it learned. `atris computer codeops team [--json]`.
+async function computerCodeOpsTeam(token, ctx, args = [], deps = {}) {
+  const log = deps.log || ((s) => console.log(s));
+  const logError = deps.logError || ((s) => console.error(s));
+  const io = deps.cloudTeam || cloudTeamIo(token, ctx);
+  const listing = await io.list();
+  if (!listing) {
+    logError('Could not read the team folder on the computer. If it is asleep, run: atris computer codeops wake');
+    process.exitCode = 1;
+    return 1;
+  }
+  const names = codeOpsTeam.teamMembersFromListing(listing);
+  const members = await Promise.all(names.map(async (name) => ({
+    name,
+    memberMd: (await io.read(codeOpsTeam.memberPath(name, 'MEMBER.md'))) || '',
+    lessonsText: (await io.read(codeOpsTeam.memberPath(name, 'lessons.md'))) || '',
+  })));
+  const now = deps.now ? deps.now().getTime() : Date.now();
+  const cards = (deps.cards || readCodeOpsCards)();
+  const weekUrls = cards
+    .filter((c) => now - Number(c.created_at || 0) <= 7 * 24 * 60 * 60 * 1000)
+    .map((c) => { try { return (typeof c.metadata === 'string' ? JSON.parse(c.metadata) : c.metadata)?.feed?.url; } catch (_) { return null; } })
+    .filter(Boolean);
+  const merged = await (deps.mergedLinks || mergedPullLinks)(weekUrls);
+  const view = codeOpsTeam.buildTeamView({ members, cards, merged, now });
+  if (args.includes('--json')) log(JSON.stringify(view, null, 2));
+  else log(codeOpsTeam.renderTeamView(view));
+  return 0;
+}
+
+// `atris team --business atris-codeops`: the same view from the team command.
+async function codeOpsTeamCommand(args = []) {
+  const slugAt = args.findIndex((a) => a === '--business' || a.startsWith('--business='));
+  const slug = args[slugAt].includes('=') ? args[slugAt].split('=')[1] : args[slugAt + 1];
+  if (slug !== 'atris-codeops') {
+    console.error('The cloud team view covers --business atris-codeops for now.');
+    return 1;
+  }
+  const token = getToken();
+  const ctx = await resolveBusinessContextBySlug(token, 'atris-codeops');
+  if (!ctx) {
+    console.error('Atris CodeOps is not available for this account.');
+    return 1;
+  }
+  return computerCodeOpsTeam(token, ctx, args);
 }
 
 // One pull request from a repo and a plain-words task. Exit 0 only when a
@@ -1149,7 +1272,9 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   const request = deps.apiRequestJson || apiRequestJson;
   const wake = deps.ensureBusinessAwake || ensureBusinessAwake;
   const stream = deps.streamBusinessChatResult || streamBusinessChatResult;
+  let failReason = null;
   const fail = (message) => {
+    failReason = failReason || message;
     logError(prLib.redactSecrets(message));
     process.exitCode = 1;
     return 1;
@@ -1161,6 +1286,29 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   let warned = false;
   const warning = () => { if (!warned) { warned = true; logError('Could not update the desktop feed.'); } };
   const sendFeed = (message) => { if (feed) { try { feed.postMessage(message); } catch (_) { warning(); } } };
+  let stopped = false;
+  let cloudMember = null;
+  let lastBuilder = null;
+  let parsedRepo = null;
+  let parsedTitle = '';
+  let teamIo = null;
+  let finishing = null;
+  const finishFeed = () => {
+    if (!finishing) finishing = (async () => {
+      const time = elapsed();
+      sendFeed({ type: 'finish', url: finalUrl, stopped, duration: `${time.minutes}m ${time.seconds}s`, model: options.model || 'default' });
+      if (feedExited) {
+        let timer;
+        await Promise.race([feedExited, new Promise(resolve => { timer = setTimeout(resolve, 2000); })]);
+        clearTimeout(timer);
+      }
+    })();
+    return finishing;
+  };
+  const onSigint = () => { stopped = true; };
+  const onSigterm = () => { stopped = true; void finishFeed().then(() => process.exit(143)); };
+  process.on('SIGINT', onSigint);
+  process.once('SIGTERM', onSigterm);
   try {
   let parsed;
   try {
@@ -1178,9 +1326,11 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   }
 
   const { repo, task, base } = parsed;
+  parsedRepo = repo;
   const suffix = deps.branchSuffix ? deps.branchSuffix() : prLib.randomBranchSuffix();
   const branch = parsed.branch || prLib.defaultBranchName(task, deps.now ? deps.now() : new Date(), suffix);
   const title = prLib.titleFromTask(task);
+  parsedTitle = title;
   const worker = activeWorker(options.worker || ctx.worker);
   const thinker = parsed.noThink ? null : (parsed.thinker || prLib.defaultThinkerModel(worker));
   const noThinkerLine = `No thinker is set for the ${formatWorkerName(worker)} lane, so the builder's answer stands. Pass --thinker <id> to ask one.`;
@@ -1188,11 +1338,41 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
     printComputerPrHelp(logError);
     return fail(`--think needs a thinker. ${noThinkerLine}`);
   }
-  const prompt = prLib.buildPullRequestPrompt({ owner: repo.owner, name: repo.name, task, base, branch, title });
-
-  const member = parsed.member || 'executor';
+  const asMember = parsed.member || options.member || null;
   const root = process.cwd();
-  if (!parsed.noFeed && fs.existsSync(path.join(root, 'atris', 'team', member))) {
+  // Tests that fake the network and give no cloud team stay off the files API.
+  teamIo = deps.cloudTeam !== undefined ? deps.cloudTeam : (deps.apiRequestJson ? null : cloudTeamIo(token, ctx));
+  const awake = await wake(token, ctx);
+  if (!awake) return fail('The business computer did not become ready in time, so no pull request was started.');
+
+  // A computer with a team folder: the member must exist there, the job is
+  // wrapped so the worker acts as it, and its newest lessons ride along.
+  // With no --as the builder is that team's executor.
+  let briefText = null;
+  if (teamIo) {
+    const listing = await teamIo.list();
+    const members = listing ? codeOpsTeam.teamMembersFromListing(listing) : [];
+    const name = asMember || (members.includes('executor') ? 'executor' : null);
+    if (members.length && name) {
+      const check = codeOpsTeam.checkCloudMember(members, name);
+      if (!check.ok) return fail(check.error);
+      const lessons = codeOpsTeam.newestLessons(await teamIo.read(codeOpsTeam.memberPath(name, 'lessons.md')) || '');
+      cloudMember = { name, lessons };
+      briefText = codeOpsTeam.memberWrapper({ member: name, lessons });
+      log(`Working as ${name} on the computer. Read back ${lessons.length} lesson${lessons.length === 1 ? '' : 's'}.`);
+      if (lessons.length) log(`  Newest: ${lessons[lessons.length - 1]}`);
+    }
+  }
+  // --as loads the member's own files into the builder's message; the feed
+  // card still gets the same name.
+  if (!cloudMember && asMember) {
+    const brief = buildMemberBrief(root, asMember);
+    if (!brief.ok) return fail(brief.error);
+    briefText = brief.text;
+    log(`Working as ${brief.member} (${brief.files.length} files loaded).`);
+  }
+  const member = cloudMember?.name || asMember || 'executor';
+  if (!parsed.noFeed && (cloudMember || fs.existsSync(path.join(root, 'atris', 'team', member)))) {
     try {
       const { Worker } = require('node:worker_threads');
       feed = new Worker(path.join(__dirname, '../lib/computer-pr-feed.js'), { workerData: { root, member, repo: `${repo.owner}/${repo.name}`, title: task.match(/^.*?[.!?](?=\s|$)/)?.[0] || task } });
@@ -1202,8 +1382,6 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
       feed.on('message', warning);
     } catch (_) { warning(); }
   }
-  const awake = await wake(token, ctx);
-  if (!awake) return fail('The business computer did not become ready in time, so no pull request was started.');
 
   const laneSource = options.worker ? '' : ctx.worker ? ' (saved for this business)' : '';
   log(`Opening a pull request on ${repo.owner}/${repo.name} from branch ${branch}.`);
@@ -1296,6 +1474,7 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
     const why = round.streamed?.ok
       ? `${result.error} No pull request is confirmed.`
       : `The run stopped before it finished (${round.streamed?.status || 'unknown'}), and no pull request link came back.`;
+    failReason = failReason || why;
     logError(prLib.redactSecrets(`${note}${why}`));
     const tail = prLib.lastLines(round.streamed?.text || round.streamed?.resultText || '', 15);
     if (tail) {
@@ -1307,15 +1486,15 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   };
 
   const runBuilder = async (usedBranch, sessionId, proposal) => {
+    const built = prLib.buildPullRequestPrompt({ owner: repo.owner, name: repo.name, task, base, branch: usedBranch, title, proposal, reportLesson: Boolean(cloudMember) });
     const round = await runRound({
-      prompt: proposal
-        ? prLib.buildPullRequestPrompt({ owner: repo.owner, name: repo.name, task, base, branch: usedBranch, title, proposal })
-        : prompt,
+      prompt: briefText ? withMemberBrief(briefText, built) : built,
       model: options.model,
       sessionId,
       builder: true,
     });
     const result = round.startError ? null : prLib.parsePullRequestResult(round.text, repo);
+    lastBuilder = { round, result };
     return { round, result };
   };
 
@@ -1364,13 +1543,19 @@ async function computerPr(token, args = [], ctx = null, options = {}, deps = {})
   if (second.result?.ok) return succeed(second.result, retryBranch);
   return builderFailed(second.round, second.result, 'The builder could not prove a fix, then tried again with the thinker\'s proposal and still could not finish. ');
   } finally {
-    const time = elapsed();
-    sendFeed({ type: 'finish', url: finalUrl, duration: `${time.minutes}m ${time.seconds}s`, model: options.model || 'default' });
-    if (feedExited) {
-      let timer;
-      await Promise.race([feedExited, new Promise(resolve => { timer = setTimeout(resolve, 2000); })]);
-      clearTimeout(timer);
+    process.removeListener('SIGINT', onSigint);
+    process.removeListener('SIGTERM', onSigterm);
+    await finishFeed();
+    if (cloudMember && lastBuilder) {
+      await saveMemberLesson({
+        io: teamIo, member: cloudMember.name, now: deps.now ? deps.now() : new Date(), log, logError,
+        repo: `${parsedRepo.owner}/${parsedRepo.name}`, title: parsedTitle,
+        url: finalUrl, error: stopped && !finalUrl ? 'stopped before it finished' : failReason,
+        failedStep: lastBuilder.result?.failedStep ?? null,
+        replyText: lastBuilder.round?.text || '', lessonsRead: cloudMember.lessons.length,
+      });
     }
+    const time = elapsed();
     log(`Done in ${time.minutes}m ${time.seconds}s`);
   }
 }
@@ -1514,6 +1699,7 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null, opti
     }
   } finally {
     sigintTarget.removeListener('SIGINT', onSigint);
+    if (cancelPromise) await cancelPromise;
   }
 }
 
@@ -1577,6 +1763,25 @@ async function computerChat(token, ctx, initialOptions = {}) {
     console.error('Cloud computer mode requires a bound business workspace.');
     console.error('run this inside a bound business workspace, or use `atris computer --local` for local mode.');
     return;
+  }
+
+  // --as runs the one-shot message as a team member; there is no interactive
+  // member mode, so the flag only works next to --message.
+  const memberName = String(initialOptions.member || '').trim();
+  if (memberName) {
+    if (initialOptions.message == null) {
+      console.error('--as works with --message "<job>".');
+      process.exitCode = 1;
+      return;
+    }
+    const brief = buildMemberBrief(process.cwd(), memberName);
+    if (!brief.ok) {
+      console.error(brief.error);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`Working as ${brief.member} (${brief.files.length} files loaded).`);
+    initialOptions = { ...initialOptions, message: withMemberBrief(brief.text, String(initialOptions.message)) };
   }
 
   const isCodeOps = initialOptions.mode === 'codeops' || ctx.slug === 'atris-codeops';
@@ -2266,7 +2471,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
   if ((sub === 'exec' || sub === 'chat') && argv.slice(argv.indexOf(sub) + 1).some(arg => arg === '--help' || arg === '-h')) {
     console.log(sub === 'exec'
       ? 'Usage: atris computer exec "<prompt>" [--business <slug>] [--workspace <id>] [--no-wait]'
-      : 'Usage: atris computer chat [--message <text>] [--business <slug>] [--workspace <id>]');
+      : 'Usage: atris computer chat [--message <text>] [--business <slug>] [--workspace <id>] [--as <member>]');
     return;
   }
 
@@ -2510,13 +2715,15 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     switch (codeopsSub) {
       case '--help':
       case 'help':
-        console.log('Usage: atris computer codeops [chat|status|wake|sleep|run|grep|ls|cat|exec|audit|workflow]');
+        console.log('Usage: atris computer codeops [chat|status|wake|sleep|run|grep|ls|cat|exec|team|audit|workflow]');
         console.log('');
         console.log('Examples:');
         console.log('  atris computer codeops');
         console.log('  atris computer codeops status');
         console.log('  atris computer codeops run "pwd && git status --short"');
         console.log('  atris computer codeops exec "Plan the smallest safe fix, then wait"');
+        console.log('  atris computer codeops team          who is doing what, and what each member learned');
+        console.log('  atris computer pr owner/repo "<task>" --business atris-codeops --as navigator');
         return;
       case 'status': return computerStatus(token, codeopsCtx);
       case 'wake': return computerWake(token, codeopsCtx);
@@ -2526,6 +2733,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
       case 'ls': return computerLs(token, codeopsRest || undefined, codeopsCtx);
       case 'cat': return computerCat(token, codeopsRest, codeopsCtx);
       case 'exec': return computerExec(token, codeopsRest, codeopsCtx, codeopsOptions);
+      case 'team': return computerCodeOpsTeam(token, codeopsCtx, args.slice(2));
       case 'audit': {
         const limit = codeopsRest ? Number.parseInt(codeopsRest, 10) : 10;
         return computerAudit(token, codeopsCtx, Number.isFinite(limit) ? limit : 10);
@@ -2616,5 +2824,7 @@ module.exports = {
   withoutRecruitingWrapperFlags,
   formatCloudSelection,
   computerPr,
+  computerCodeOpsTeam,
+  codeOpsTeamCommand,
   streamBusinessChatResult,
 };

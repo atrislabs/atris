@@ -39,6 +39,8 @@ test/business-create-validation.test.js
 test/calendar-search.test.js
 test/card.test.js
 test/check-command-regression.test.js
+test/check-shape-reroute.test.js
+test/checked-merged-done.test.js
 test/clean-heal.test.js
 test/code-review.test.js
 test/codex-goal.test.js
@@ -69,7 +71,6 @@ test/file-ops-inbox.test.js
 test/fleet.test.js
 test/front-doors.test.js
 test/gm-bet.test.js
-test/gm-phone.test.js
 test/gm-season.test.js
 test/gm-target.test.js
 test/golden-path-help.test.js
@@ -200,3 +201,7 @@ test/worktree-core.test.js
 test/first-minute--load-local-tasks.test.js
 test/first-minute--speak-keep-working-minute.test.js
 test/next-work-context.test.js
+test/avail-holds.test.js
+test/nexus-hour-command.test.js
+test/nexus-experiments.test.js
+test/script-command.test.js

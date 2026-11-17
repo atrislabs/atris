@@ -47,6 +47,22 @@ function baseBranch(root, override = '') {
   return '';
 }
 
+// No base found. When git itself will not run, every lookup fails the same
+// way and the base only looks missing; say what git said instead of sending
+// people to create a branch that already exists.
+function noBaseError(root) {
+  const probe = runGit(['rev-parse', '--git-dir'], { cwd: root, check: false });
+  if (probe.status !== 0) {
+    const said = String(probe.stderr || probe.stdout || (probe.error && probe.error.message) || '').trim().split(/\r?\n/)[0];
+    const err = new Error(`git will not run here, so the base branch cannot be read: ${said || `git exited with code ${probe.status}`}`);
+    err.code = 'LAND_GIT_FAILED';
+    return err;
+  }
+  const err = new Error('no master/main branch found. fix: git checkout -b main');
+  err.code = 'LAND_NO_BASE';
+  return err;
+}
+
 function ageDays(unixSeconds, now = Date.now()) {
   return Math.floor((now / 1000 - Number(unixSeconds)) / 86400);
 }
@@ -320,11 +336,7 @@ function resolveSha(root, ref) {
 //   due, has unlanded commits, older than TTL; --reap collects it
 function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', now = Date.now(), light = false } = {}) {
   const base = baseBranch(root, baseOverride);
-  if (!base) {
-    const err = new Error('no master/main branch found. fix: git checkout -b main');
-    err.code = 'LAND_NO_BASE';
-    throw err;
-  }
+  if (!base) throw noBaseError(root);
 
   const branches = [];
   const lastCommitMsByBranch = new Map();
@@ -780,11 +792,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
 // into master some other way, and what would be lost if it were cleared.
 function collectStory(root, name, { base: baseOverride = '' } = {}) {
   const base = baseBranch(root, baseOverride);
-  if (!base) {
-    const err = new Error('no master/main branch found. fix: git checkout -b main');
-    err.code = 'LAND_NO_BASE';
-    throw err;
-  }
+  if (!base) throw noBaseError(root);
   if (!refExists(root, name)) return null;
 
   const logResult = runGit(
@@ -1013,8 +1021,36 @@ function showHelp() {
   console.log('  atris land --ttl <days>        change the 7-day overdue line');
   console.log('  atris land --json              machine-readable output');
   console.log('');
+  console.log('  atris land --prs [--repo <owner/name>]');
+  console.log('                                 sort every open pull request into merge,');
+  console.log('                                 catch-up, close, owner or leave, with a reason');
+  console.log('  atris land --prs --apply       merge, label catch-up, close stale ones with a');
+  console.log('                                 plain comment; branches are always kept');
+  console.log('  atris land --prs --all         list every row, not the ten oldest per bucket');
+  console.log('  atris land --prs --ours a,b    use these accounts as ours instead of the');
+  console.log('                                 authors of the last 200 merged pull requests');
+  console.log('');
   console.log('backups go to .atris/salvage/<date>/; clearing never loses work.');
   console.log('');
+}
+
+function landPullRequests(args, json) {
+  const sweep = require('../lib/pr-sweep');
+  const repo = readFollowingFlag(args, '--repo', '');
+  const oursRaw = readFollowingFlag(args, '--ours', '');
+  const ours = oursRaw ? oursRaw.split(',').map((s) => s.trim()).filter(Boolean) : null;
+  try {
+    let report = sweep.sweepRepo({ repo, oursOverride: ours });
+    if (args.includes('--apply') && !args.includes('--dry-run')) report = sweep.applySweep(report);
+    if (json) console.log(JSON.stringify(report, null, 2));
+    else for (const line of sweep.formatSweep(report, { show: args.includes('--all') ? 0 : 10 })) console.log(line);
+    return report.actions.some((a) => !a.ok) ? 1 : 0;
+  } catch (err) {
+    const msg = String((err && err.message) || err || 'pull request sweep failed').split('\n')[0];
+    if (json) printCliJson({ ok: false, error: msg }, { ok: false, error: msg }, ['--json']);
+    else console.error(`pull request sweep: ${msg.toLowerCase()}`);
+    return 1;
+  }
 }
 
 function landCommand(args = []) {
@@ -1023,6 +1059,13 @@ function landCommand(args = []) {
     return 0;
   }
   const json = args.includes('--json');
+  // Pull requests live on github, so --repo works from any folder.
+  if (args.includes('--prs')) return landPullRequests(args, json);
+  const git = gitSpawn.ensureWorkingGit();
+  if (!git.ok) {
+    console.error(`git will not start here: ${git.detail}`);
+    return 2;
+  }
   const root = repoRoot();
   if (!root) return printEmptyLand('not_a_git_repo', json);
   if (!hasCommits(root)) return printEmptyLand('no_commits', json);
@@ -1033,15 +1076,29 @@ function landCommand(args = []) {
 
   if (args.includes('--auto')) {
     try {
-      const { landStaleGreenBranches, summaryLine, DEFAULT_VERIFY } = require('../lib/land-green');
+      const { landStaleGreenBranches, summaryLine, DEFAULT_VERIFY, localCheckSetting, holdLabelSetting, machineWaitSetting, scratchDirSetting } = require('../lib/land-green');
       const limitRaw = Number(readFollowingFlag(args, '--limit', ''));
+      const verifyFlag = readFollowingFlag(args, '--verify', '');
+      // The owner's switch lives in the main checkout. Run from a work copy,
+      // the copy's own folder has no policy, so read the one that owns it.
+      const common = runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, check: false });
+      const owner = common.status === 0 && String(common.stdout || '').trim() ? path.dirname(String(common.stdout).trim()) : root;
+      let policy = null;
+      try { policy = require('../lib/autoland').readPolicy(owner); } catch { policy = null; }
+      const suitesRaw = Number(policy && policy.green_landing_local_suites);
       const result = landStaleGreenBranches(root, {
         ttlDays,
         base,
         dryRun: args.includes('--dry-run'),
         push: !args.includes('--no-remote'),
-        verifyCommand: readFollowingFlag(args, '--verify', '') || DEFAULT_VERIFY,
+        verifyCommand: verifyFlag || DEFAULT_VERIFY,
         limit: Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : 1,
+        localCheck: localCheckSetting(policy, { explicitVerify: Boolean(verifyFlag) }),
+        localSuites: suitesRaw > 0 ? suitesRaw : undefined,
+        holdLabels: holdLabelSetting(policy),
+        waitMinutes: machineWaitSetting(policy),
+        scratchDir: scratchDirSetting(policy),
+        machine: true,
       });
       if (json) console.log(JSON.stringify(result, null, 2));
       else console.log(`green landing: ${summaryLine(result)}`);
