@@ -155,6 +155,36 @@ test('a sentence that both forbids and asks still seeds the question', () => {
   assert.deepEqual(namedBy('Do not delete the cache, delete the temp folder.', ['delete']), ['delete']);
 });
 
+// Found by an independent check of #1965: each of these asks for the act and
+// slipped through on the base code too.
+test('double negatives, conditions and orders about a past send still seed the question', () => {
+  const asks = [
+    ['Never close a ticket without emailing the customer.', 'send'],
+    ['Never leave the office without sending the report.', 'send'],
+    ['Do not leave without deleting the temp folder.', 'delete'],
+    ['Do not finish without posting the card.', 'post'],
+    ['Not a single day should pass without you emailing the owner.', 'send'],
+    ['Avoid forgetting to send the invoice.', 'send'],
+    ['Avoid delaying the email to the client.', 'send'],
+    ['If there is no reply send a follow-up.', 'send'],
+    ['If there are no objections email the client.', 'send'],
+    ['Make sure the invoice has been sent to the client by Friday.', 'send'],
+    ['Ensure the notes were sent before noon.', 'send'],
+    ['Make sure the budget was spent by Friday.', 'spend'],
+    ['Do not send email unless the owner approves.', 'send'],
+  ];
+  for (const [objective, category] of asks) {
+    assert.equal(objectiveNamesCategory(objective, category), true, `${category} should match "${objective}"`);
+  }
+});
+
+test('a ban written with a curly apostrophe or an aside is still a ban', () => {
+  assert.deepEqual(namedBy('Don’t send any email today.', ['send']), []);
+  assert.deepEqual(namedBy('Never, under any circumstances, send email.', ['send']), []);
+  assert.deepEqual(namedBy('Do not under any circumstances send email.', ['send']), []);
+  assert.deepEqual(namedBy('Summarize the logs without deleting them.', ['delete']), []);
+});
+
 test('the two real walsh mission texts seed no question', () => {
   assert.deepEqual(namedBy(WALSH_TEXT_ONE, WALSH), []);
   assert.deepEqual(namedBy(WALSH_TEXT_TWO, WALSH), []);
