@@ -362,7 +362,8 @@ function explainLines(picked, change, options, person, proof, lines = []) {
       const place = placement(entry, options);
       const label = place.run ? 'run here' : `needs ${place.lane}`;
       const time = entry.expected ? `  ~${entry.expected}s${entry.expectedFrom === 'measured' ? '' : ` (${entry.expectedFrom})`}` : '  ~?s';
-      lines.push(`  ${label.padEnd(15)} ${entry.key}  <- ${entry.reasons.join('; ')}${time}`);
+      const why = entry.reasons.length > 4 ? `${entry.reasons.slice(0, 4).join('; ')}; +${entry.reasons.length - 4} more` : entry.reasons.join('; ');
+      lines.push(`  ${label.padEnd(15)} ${entry.key}  <- ${why}${time}`);
       if (entry.tests && entry.tests.length && !entry.file) {
         for (const test of entry.tests.slice(0, 40)) lines.push(`      ${test.file}  <- ${test.reasons.join('; ')}`);
         if (entry.tests.length > 40) lines.push(`      ... and ${entry.tests.length - 40} more`);
