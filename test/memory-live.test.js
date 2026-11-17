@@ -678,3 +678,20 @@ test('the fast path loads only what memory needs', async () => {
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+// Seen live 2026-11-17: four of ten plain searches printed a line from files/people.json
+// with a name and an amount; agents read what search prints.
+test('search and ask leave out raw data files unless asked with --all-files', async () => {
+  const server = fakeServer({ files: { ...FILES, 'files/people.json': '[{"name":"Pat","paid":200,"rent":"due"}]\n', 'logs/2026/11-17.md': 'rent talk with Pat\n' } });
+  const r = await run(['search', 'rent'], server);
+  assert.equal(r.code, 0);
+  assert.match(r.text, /^wiki\/people\/sam\.md:3: works on rent tools$/m);
+  assert.doesNotMatch(r.text, /people\.json|logs\//);
+  assert.match(r.text, /2 lines from raw data files left out\. Add --all-files to see them\./);
+  const all = await run(['search', 'rent', '--all-files'], server);
+  assert.match(all.text, /^files\/people\.json:1: /m);
+  assert.doesNotMatch(all.text, /left out/);
+  const ask = await run(['ask', 'who is busy'], server);
+  assert.equal(ask.code, 0);
+  assert.doesNotMatch(ask.text, /left out/, 'a clean answer says nothing extra');
+});
