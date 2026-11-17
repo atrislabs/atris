@@ -641,9 +641,15 @@ function sweep(args) {
     console.error('Usage: atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours <n>] [--rescue] [--rescue-after-days <n>]');
     return 2;
   }
+  const staleHours = Number(readFlag(args, '--stale-hours', '24'));
+  if (!Number.isFinite(staleHours) || staleHours <= 0) {
+    console.error('Usage: atris worktree sweep [--apply] [--stop-stale] [--stale-hours <n>]');
+    return 2;
+  }
   const apply = hasFlag(args, '--apply');
   const rescue = hasFlag(args, '--rescue');
-  const report = sweepWorkspace({ workspace, apply, rescue, idleMs: idleHours * 3600000, rescueIdleMs: rescueDays * 86400000 });
+  const stopStale = hasFlag(args, '--stop-stale');
+  const report = sweepWorkspace({ workspace, apply, rescue, idleMs: idleHours * 3600000, rescueIdleMs: rescueDays * 86400000, staleMs: staleHours * 3600000, stopStale });
   if (hasFlag(args, '--json')) {
     console.log(JSON.stringify({ ok: !report.error, ...report }, null, 2));
     return report.error ? 1 : 0;
@@ -684,15 +690,24 @@ function sweep(args) {
     for (const item of repo.kept) {
       if (item.reason === 'rescue_push_failed') console.log(`  kept: ${item.path} (could not push its work to origin/${item.rescue_branch}: ${item.error})`);
       if (item.reason === 'unprovable') console.log(`  kept: ${item.path} (${item.why})`);
+      if (item.reason === 'base_refresh_failed' && item.why) console.log(`  kept: ${item.path} (${item.why})`);
+      if (item.reason === 'stale_process') console.log(`  stale: ${item.path} (pids ${item.pids.join(', ')}, oldest ${Math.max(...item.processes.map((p) => p.hours))} h; atris worktree sweep --stop-stale --apply stops them and removes it)`);
       if (item.reason === 'stale_dirty' || item.reason === 'stale_unpushed') console.log(`  stale: ${item.path} (idle ${item.idle_days} days; atris worktree sweep --rescue --apply saves and removes it)`);
       if (item.reason === 'ignored_data' && item.files) console.log(`  kept: ${item.path} (ignored files atris cannot rebuild: ${item.files.join(', ')})`);
     }
     for (const item of cleared) console.log(`  ${apply ? 'cleared' : 'clear'}: ${item.path}`);
   }
+  const orphans = report.orphans || [];
+  const removable = orphans.filter((item) => item.status === 'removable');
+  const gb = (list) => space.formatGb(list.reduce((sum, item) => sum + (item.kib || 0), 0) * 1024);
+  if (orphans.length) {
+    console.log(`orphans: ${orphans.length} folders no repo lists; ${apply ? 'removed' : 'would remove'} ${removable.filter((item) => !apply || item.removed).length} that hold only caches (${gb(removable)}), ${orphans.length - removable.length} kept for a person (${gb(orphans.filter((item) => item.status !== 'removable'))})`);
+    for (const item of orphans.filter((o) => o.status !== 'removable')) console.log(`  abandoned: ${item.path} (${item.why}${item.files ? `: ${item.files.join(', ')}` : ''})`);
+  }
   if (reviewTotal) console.log(`review: ${plural(reviewTotal, 'other build folder waits', 'other build folders wait')} for a person; \`atris worktree cleanup\` in each repo lists them`);
   if (apply) {
     console.log(`free: ${space.formatGb(report.before)} before, ${space.formatGb(report.after)} after`);
-  } else if (removedTotal || clearedTotal) {
+  } else if (removedTotal || clearedTotal || removable.length) {
     console.log('next: atris worktree sweep --apply');
   }
   return 0;
@@ -794,7 +809,7 @@ function help() {
   console.log('  atris worktree prune [--apply]  drop registrations of copies whose folder is gone');
   console.log('  atris worktree prune --merged --older-than <hours> [--yes]  remove merged, clean, unused copies idle that long; dry run unless --yes');
   console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]  reap completed checkouts and verified webpack caches');
-  console.log('  atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours 2] [--rescue] [--rescue-after-days 7]');
+  console.log('  atris worktree sweep [--apply] [--json] [--workspace <dir>] [--idle-hours 2] [--rescue] [--rescue-after-days 7] [--stop-stale] [--stale-hours 24]');
   console.log('    removes merged or pushed idle copies in every repo and reports abandoned ones; --rescue saves those to a new branch on origin, then removes them');
   console.log('  atris worktree sweep --install [--every 3] | --uninstall  run the sweep on a timer');
 }
