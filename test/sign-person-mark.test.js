@@ -62,6 +62,8 @@ test('a save started from a plain terminal is marked as a person; one started by
   const signed = hook(root, { TERM_PROGRAM: 'Apple_Terminal', CLAUDECODE: '1', ...tree(root) });
   assert.doesNotMatch(signed, /Atris-Made-By/, 'a helper sign is enough on its own');
   assert.doesNotMatch(hook(root, tree(root)), /Atris-Made-By/, 'no terminal, no claim it was a person');
+  // A member's case, 2026-11-17: when the process list cannot be read, nobody is called a person.
+  assert.doesNotMatch(hook(root, { TERM_PROGRAM: 'Apple_Terminal', ATRIS_SIGN_PS: 'true' }), /Atris-Made-By/, 'a blind look says agent');
 });
 
 test('an older install is upgraded in place, and a named agent still wins over the person mark', (t) => {
