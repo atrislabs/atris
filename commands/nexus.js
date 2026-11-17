@@ -21,6 +21,7 @@ const local = require('./nexus-local');
 const capture = require('./nexus-capture');
 const importer = require('./nexus-import');
 const hour = require('./nexus-hour');
+const experiments = require('./nexus-experiments');
 
 const USAGE = [
   'atris nexus: your people, the same cards as atris.ai/dashboard/nexus',
@@ -59,6 +60,7 @@ const USAGE = [
   ...capture.HELP,
   ...importer.HELP,
   ...hour.HELP,
+  ...experiments.HELP,
   '  --json on any of these prints one JSON object for agents (the store\'s own answer when it answers)',
   'The store is tried first. If it does not answer, reads use the saved list; changes are never saved there (wall, goal, due, paid, city, bring-over and the filters need the store).',
 ].join('\n');
@@ -243,6 +245,12 @@ async function nexusCommand(args = [], deps = {}) {
   // The hour: one outbound sprint on a saved list. Its own file, its own flags.
   if (words[0] === 'hour') {
     return hour.run({ rawArgs: args, log, err, now, deps, request: deps.apiRequestJson || apiRequestJson, getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN });
+  }
+
+  // Saved lists as experiments: lists, experiment, score, guess, learned, common, alike, compare, drafts.
+  // Before the person-search fallback, so "atris nexus score" never looks up a person called "score".
+  if (experiments.SUBS.has(words[0])) {
+    return experiments.run({ rawArgs: args, log, err, now, request: deps.apiRequestJson || apiRequestJson, getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN, confirm: deps.confirm });
   }
 
   // The local copy: pull and push-notes sign in; local reads only files on this computer.

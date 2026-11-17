@@ -202,3 +202,4 @@ test/first-minute--speak-keep-working-minute.test.js
 test/next-work-context.test.js
 test/avail-holds.test.js
 test/nexus-hour-command.test.js
+test/nexus-experiments.test.js
