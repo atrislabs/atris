@@ -8122,7 +8122,7 @@ function buildPreloadedMemberContextLines(mission, root = process.cwd()) {
   ];
 }
 
-function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd = process.cwd()) {
+function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd = process.cwd(), runRound = null) {
   const sharedProcess = memberProcessPrompt(cwd);
   const baseRoot = mission.worktree_root || mission.worktree?.path || cwd;
   const owner = String(mission.owner || '').trim();
@@ -8158,7 +8158,9 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
   // The person is waiting on this member's answer in the feed: that comes first.
   const feedTalkLines = require('../lib/feed-core').talkBriefLines(cwd, mission.owner);
   const lines = [
-    `# Mission Tick ${tickIndex}/${maxTicks}`,
+    // Seen 2026-11-17: "61/60" set the mission's whole-life count over this run's guard,
+    // which reads as a run past its limit. Say each number for what it is.
+    runRound ? `# Mission Tick ${tickIndex} (round ${runRound} of at most ${maxTicks} in this run)` : `# Mission Tick ${tickIndex}/${maxTicks}`,
     ...(feedTalkLines.length ? ['', ...feedTalkLines] : []),
     ...pingLines,
     ``,
@@ -9714,7 +9716,7 @@ async function executeMissionRunTicksPhase(context) {
       } else if (tickAtris2Runner) {
         // Build before consuming direction or allocating the guard: a shared
         // process read error must leave operator pings available for retry.
-        const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pendingMissionPings(mission), cwd);
+        const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, cycleTickLimit, frozen, pendingMissionPings(mission), cwd, ticks.length + 1);
         let atris2GitGuard = null;
         try {
           atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
@@ -9798,7 +9800,7 @@ async function executeMissionRunTicksPhase(context) {
           }
         }
       } else {
-        const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pendingMissionPings(mission), cwd);
+        const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, cycleTickLimit, frozen, pendingMissionPings(mission), cwd, ticks.length + 1);
         let sessionMode = sessionId ? 'resume' : 'set';
         let useId = sessionId || pendingSessionId;
         const pingDrain = consumeMissionPings(mission, cwd);
