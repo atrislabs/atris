@@ -60,7 +60,14 @@ jobs:
         id: pick
         env:
           TARGET_READ: ${{ steps.target.outcome }}
-        run: node scripts/ci-test-plan.js
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo "mode=cache-trial" >> "$GITHUB_OUTPUT"
+            echo "base=" >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"group":"2/8"},{"group":"8/8"}]}' >> "$GITHUB_OUTPUT"
+          else
+            node scripts/ci-test-plan.js
+          fi
 
   unit:
     needs: plan
@@ -99,6 +106,20 @@ jobs:
           FILES: ${{ toJSON(matrix.files) }}
         run: |
           case "$MODE" in
+            cache-trial)
+              case "$GROUP" in
+                2/8) variants="off on on off" ;;
+                *) variants="on off off on" ;;
+              esac
+              for variant in $variants; do
+                unset NODE_COMPILE_CACHE
+                if [ "$variant" = on ]; then
+                  export NODE_COMPILE_CACHE="$(mktemp -d "$RUNNER_TEMP/atris-compile.XXXXXX")"
+                fi
+                echo "cache-trial-start $GROUP $variant"
+                /usr/bin/time -f "cache-trial-time $GROUP $variant %e" node scripts/ci-test-shard.js "$GROUP"
+              done
+              ;;
             selected) node -e 'process.exitCode = require("./scripts/ci-impact-check").runFiles(JSON.parse(process.env.FILES), process.cwd())' ;;
             quick)
               if [ -z "${NODE_V8_COVERAGE:-}" ] && [ -z "${NODE_COMPILE_CACHE:-}" ]; then
