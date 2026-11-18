@@ -33,6 +33,7 @@ test/brain-contribution-card-escaping.test.js
 test/brain-count-todo-items.test.js
 test/brief.test.js
 test/builder-pick-fleet.test.js
+test/builder-pick-fleet-steering.test.js
 test/builder-pick.test.js
 test/business-core.test.js
 test/business-create-validation.test.js
@@ -71,6 +72,7 @@ test/file-ops-inbox.test.js
 test/fleet.test.js
 test/front-doors.test.js
 test/gm-bet.test.js
+test/gm-bet-walk.test.js
 test/gm-season.test.js
 test/gm-target.test.js
 test/golden-path-help.test.js
@@ -189,6 +191,7 @@ test/rating-episodes.test.js
 test/ready-merge-credit.test.js
 test/release-reason.test.js
 test/held-for-review.test.js
+test/held-for-review-ship.test.js
 test/task-not-needed.test.js
 test/roster-runs-held.test.js
 test/task-sweep-held.test.js

@@ -3,7 +3,8 @@
 
 // The made-up world the orb walk runs in: a small workspace with a team, a
 // roster, two running jobs, and writers that answer at once. It is the same
-// world test/gm-bet.test.js and test/gm-phone.test.js build, so the walk sees
+// world test/gm-bet.test.js, test/gm-bet-walk.test.js and test/gm-phone.test.js
+// build, so the walk sees
 // what the tests see. Nothing here reads or writes the real home: the walk
 // starts this file as its own process with HOME pointed at a temp folder.
 //

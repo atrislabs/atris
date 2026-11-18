@@ -106,6 +106,8 @@ every one of these files; `atris doc-health --fix-refs` pins old line refs.
 | agent page (browser file for agents to read and operate a web page) | `lib/agent-page.js`, `test/agent-page.test.js`, `test/agent-page-browser.test.js`, `test/fixtures/agent-page/` (`project-settings.html`, `edge-cases.html`, `sandbox.html`, `dropdowns.html`) | `createAgent` snapshot/act/query, the three `agentTools`, and `registerTools`; dropdowns (combobox, menu button) open through the in gate; the real-browser test drives the fixtures in headless Chrome and skips when Chrome is missing |
 | deep map with line refs | `atris/refs/MAP-NOTES.md`, `atris/refs/map/` | one-screen index over one note per area with rg shortcuts and exact `file:line` notes |
 
+Split quick-test fixtures: `test/helpers/gm-bet-fixtures.js`, `test/helpers/held-review-fixtures.js` and `test/helpers/pick-fleet-fixtures.js` serve the paired files listed in [release and tests](refs/map/release-and-tests.md).
+
 ## Load order
 
 1. `atris/now.md` then `atris/brain/STATUS.md`, if present (local files made by `atris brain activate`; a fresh checkout has neither)
