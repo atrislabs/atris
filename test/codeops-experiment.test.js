@@ -224,3 +224,46 @@ test('choice reads one trial once with independent disagreements and recent obse
   };
   await experiment(['choose'], deps);
 });
+
+test('an executed workflow comparison binds to the existing cloud choice and stays distinct from chat trials', async t => {
+  const { deps, root, files, runs } = setup(t);
+  const choice = { execution: 'cloud-choice', proposal: { lesson: 'test the base', metric: 'diagnosis correctness' } };
+  const id = digest(choice);
+  const folder = '/workspace/atris/team/improver/';
+  files.set(folder + 'choice-' + id + '.json', JSON.stringify(choice));
+  for (const source of ['baseline', 'candidate', 'results']) fs.writeFileSync(path.join(root, source), source);
+  const manifest = { scope: 'paired executed repairs', metric: 'correct diagnosis', measured_at: '2026-11-18T04:30:00Z', measured_by: 'independent runner',
+    sources: { baseline:'baseline', candidate:'candidate', results:'results' },
+    cases: [{ id:'red',repo:'owner/backend',baseline:false,candidate:true,gate_before:false,gate_after:false },
+      { id:'green',repo:'owner/cli',baseline:true,candidate:true,gate_before:true,gate_after:true }] };
+  const input = path.join(root, 'report.json');
+  fs.writeFileSync(input, JSON.stringify(manifest));
+  const result = await experiment(['implementation',id,input], deps);
+  assert.equal(result.wins,1);
+  assert.equal(result.gate_changes,0);
+  assert.equal(result.by_repo['owner/backend'].target.baseline.passed,0);
+  assert.equal(result.by_repo['owner/backend'].target.candidate.passed,1);
+  assert.equal(result.sources.candidate,require('node:crypto').createHash('sha256').update('candidate').digest('hex'));
+  assert.equal((await experiment(['implementation',id,input], deps)).implementation,result.implementation);
+  const [entry] = await experiment(['show'],deps);
+  assert.equal(entry.implementation,result.implementation);
+  assert.equal(entry.trial,undefined);
+  assert.equal(entry.reviews.length,1);
+  assert.equal(entry.reviews[0].choice,id);
+  files.set(folder + 'MEMBER.md','Improve work');
+  files.set('/workspace/atris/team/executor/lessons.md','- 2026-11-17 | owner/cli | failed | next time: inspect baseline');
+  deps.start = async message => {
+    const { previous,jobs } = JSON.parse(message.split('\n').at(-1));
+    assert.equal(previous[0].implementation,result.implementation);
+    assert.equal(previous[0].reviews[0].choice,id);
+    assert.equal(previous[0].reviews[0].evidence,'independently reported executed code comparison');
+    assert.equal(previous[0].reviews[0].scope,'paired executed repairs');
+    const exec = randomUUID();
+    runs.set(exec,JSON.stringify({hypothesis:'preserve gains',lesson:'compare',metric:'pass',applies_when:'changing code',evidence:[Object.keys(jobs)[0]]}));
+    return exec;
+  };
+  await experiment(['choose'],deps);
+  manifest.cases.push(manifest.cases[0]);
+  fs.writeFileSync(input,JSON.stringify(manifest));
+  await assert.rejects(experiment(['implementation',id,input],deps),/distinct cases/);
+});
