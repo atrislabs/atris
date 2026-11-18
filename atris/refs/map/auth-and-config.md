@@ -48,7 +48,7 @@ rg "checkForUpdates|autoUpdate|shouldAutoUpdate|helpRequested|help invocations s
 - `commands/auth.js` (`whoamiAtris`): Show auth status via `displayAccountSummary`
 - **Auth (canonical):** `utils/auth.js` + `utils/api.js`: all auth logic consolidated, no inline duplicates
 - **Help:** `bin/atris.js` (`showAuthHelp`) prints login/logout/whoami/switch/use/accounts usage before auth workers can prompt, create state, delete credentials, or touch session/profile dirs
-- **Dispatch:** `bin/atris.js:1205-1239` routes login/logout/whoami/switch/use/accounts `--help`, `-h`, and bare `help` before calling `commands/auth.js`
+- **Dispatch:** `bin/atris.js:1192-1226` routes login/logout/whoami/switch/use/accounts `--help`, `-h`, and bare `help` before calling `commands/auth.js`
 - **Regression:** `test/commands-2.test.js:1438-1483` covers auth/account help without login prompts, status output, `.atris` creation, session/profile dir creation, or credential deletion
 - JWT helpers: `utils/auth.js` (`decodeJwtClaims`), `utils/auth.js` (`shouldRefreshToken`)
 - **Credentials storage:** `~/.atris/credentials.json` (chmod 0o600 on save)
@@ -77,7 +77,7 @@ rg "checkForUpdates|autoUpdate|shouldAutoUpdate|helpRequested|help invocations s
 **Purpose:** Keep packaged installs current without interrupting workflow
 
 - **Entry point:** `utils/update-check.js:1-334`
-- **Dispatch skip:** `bin/atris.js:84-108` skips background update checks for version/update/help and any command whose args request help, so documentation paths cannot create `$HOME/.atris/.update-check`
+- **Dispatch skip:** `bin/atris.js:82-106` skips background update checks for version/update/help and any command whose args request help, so documentation paths cannot create `$HOME/.atris/.update-check`
 - **Logic:**
 - Background check on normal commands except version/update/help/help-flag invocations
 - Fetches latest from npm registry
@@ -121,7 +121,7 @@ rg "checkForUpdates|autoUpdate|shouldAutoUpdate|helpRequested|help invocations s
 **Files:**
 
 - `utils/auth.js` (388 lines): Canonical auth module (modular commands import from here)
-- `utils/auth.js` + `utils/api.js`: Canonical auth modules (DI wrappers at bin/atris.js:63-62)
+- `utils/auth.js` + `utils/api.js`: Canonical auth modules (DI wrappers at bin/atris.js:60-61)
 
 **Key functions (utils/auth.js):**
 
