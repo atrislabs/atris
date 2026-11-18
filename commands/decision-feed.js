@@ -81,7 +81,7 @@ const HELP = [
   '       atris feed waiting list [--json]',
   '       atris feed talk <card> "<message>" [--stream] [--as <member>]   or   atris feed talk <card> --choose <id>',
   '                          (the card\'s member answers at once, one tool-free turn on its model; --stream prints it as it comes)',
-  '       atris feed talk --member <name> [--independent] [--stream] [--json] -- <card> ["<words>"]',
+  '       atris feed talk --member <name> [--independent] [--engine <id>] [--stream] [--json] -- <card> ["<words>"]',
   '                          (any awake member answers on any card, one turn counted like a ping; your words, when given, are saved',
   '                          first as your comment, once; the answer is saved as the member\'s comment. Only a person can ask.',
   '                          --independent: the member reads only your words, not what teammates said, for its own view)',
@@ -90,6 +90,8 @@ const HELP = [
   '       atris feed revise <card> --as <member> [--title ...] [--why ...] [--body ...] [--detail ...] [--visual ...]',
   '       atris feed more                     (wakes up to 3 ON members to look for ideas: a ping with reason scroll)',
   '       atris feed settings [set default-engine <id>]   the one default model for members with none of their own',
+  '       atris feed settings set member-engine <member> <id|none>   the model one member uses in the feed. With no choice the feed',
+  '                          runs on Codex on this computer when it is signed in, else Atris fast; Fable and Claude Code run only when you pick them here.',
   '       atris feed engines                  the models usable on this computer right now',
   '       atris feed members                  the team: on or off, model in effect, last active, what it is doing; [cloud on|off] when the cloud wake switch disagrees',
   '       atris feed member on|off <name>          also sets waking on notes in the cloud, in a business folder',
@@ -244,7 +246,7 @@ function printText(command, out, { streamed = false } = {}) {
     return;
   }
   if (command === 'settings') {
-    console.log(`default model: ${out.engine_in_effect}${out.default_engine ? '' : ' (the workspace default)'}${out.engine_available ? '' : `, cannot run here: ${out.engine_reason}`}`);
+    console.log(`default model: ${out.engine_in_effect}${out.default_engine ? '' : ' (picked for you: Codex on this computer when it is signed in, else Atris fast)'}${out.engine_available ? '' : `, cannot run here: ${out.engine_reason}`}`);
     const standing = out.standing_yes;
     if (standing) {
       const today = standing.count_readable ? `${standing.started_today} of ${standing.per_day} started today` : 'today\'s count cannot be read, so nothing starts';
@@ -422,7 +424,7 @@ async function run(args = [], context = {}) {
           // Any awake member answers on any card; the answer is saved as its comment.
           if (flags.as || flags.choose) throw new feed.FeedError(400, '--member cannot be used with --as or --choose.');
           command = 'ask';
-          out = await team().askMember(root, { member: flags.member, cardId: card, text: flags.text || positional.slice(2).join(' '), independent: flags.independent === true, env, deps, onEvent });
+          out = await team().askMember(root, { member: flags.member, cardId: card, text: flags.text || positional.slice(2).join(' '), independent: flags.independent === true, engine: flags.engine, env, deps, onEvent });
         } else {
           out = await feed.talk(root, card, positional.slice(2).join(' '), { as: flags.as, choose: flags.choose, env, deps, onEvent });
         }
@@ -448,8 +450,9 @@ async function run(args = [], context = {}) {
       out = feed.requestMoreIdeas(root, { env, deps });
     } else if (sub === 'settings') {
       if (positional[1] === 'set') {
-        if (!positional[2] || positional[3] === undefined) throw new feed.FeedError(400, 'usage: atris feed settings set default-engine <id> | local-pings-per-day <n> | cloud-pings-per-day <n> | member-gap-seconds <n> | standing-yes on|off | standing-yes-per-day <n>');
+        if (!positional[2] || positional[3] === undefined) throw new feed.FeedError(400, 'usage: atris feed settings set default-engine <id> | member-engine <member> <id|none> | local-pings-per-day <n> | cloud-pings-per-day <n> | member-gap-seconds <n> | standing-yes on|off | standing-yes-per-day <n>');
         if (positional[2] === 'default-engine') out = team().setDefaultEngine(root, positional[3], { env });
+        else if (positional[2] === 'member-engine') out = team().setMemberEngine(root, positional[3], positional[4], { env });
         else if (['standing-yes', 'standing-yes-per-day'].includes(positional[2])) out = standingYes().setStandingYes(root, positional[2], positional[3], { env });
         else out = team().setLimit(root, positional[2], positional[3], { env });
       } else if (positional[1]) {

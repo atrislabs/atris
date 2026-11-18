@@ -55,13 +55,13 @@ test('settings: one default model, stored in the project atris config; an unavai
   assert.equal(JSON.parse(fs.readFileSync(path.join(ctx.root, 'atris', '.config'), 'utf8')).feed.default_engine, 'codex');
 });
 
-test('settings: a member\'s own roster line, else the feed default, else the workspace default', (t) => {
+test('settings: a member\'s own roster line, else the feed default, else the house pick', (t) => {
   const ctx = project(t, ['scout', 'writer'], { engine: null });
   const workspace = team.memberEngine(ctx.root, 'writer');
-  assert.equal(workspace.source, 'workspace');
+  assert.equal(workspace.source, 'house');
   fs.writeFileSync(path.join(ctx.root, 'atris', '.config'), JSON.stringify({ feed: { default_engine: 'codex' } }));
-  fs.writeFileSync(path.join(ctx.root, 'atris', 'ROSTER.md'), '# roster\n\n## team\n- scout: claude\n');
-  assert.deepEqual([team.memberEngine(ctx.root, 'scout').id, team.memberEngine(ctx.root, 'scout').source], ['claude', 'member']);
+  fs.writeFileSync(path.join(ctx.root, 'atris', 'ROSTER.md'), '# roster\n\n## team\n- scout: haiku\n');
+  assert.deepEqual([team.memberEngine(ctx.root, 'scout').id, team.memberEngine(ctx.root, 'scout').source], ['haiku', 'member']);
   assert.deepEqual([team.memberEngine(ctx.root, 'writer').id, team.memberEngine(ctx.root, 'writer').source], ['codex', 'feed']);
 });
 
