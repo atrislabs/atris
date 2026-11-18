@@ -1515,38 +1515,41 @@ test('browser: the job deck flips one card at a time in the same spot, a yes sen
   assert.equal(out.back.kind, 'team', show);
 });
 
-test('browser: after a lost answer, a tap on the old card does nothing and the page shows the card the Mac has, with one line why', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
-  const out = await trace.staleAnswerTrace({ chromePath: CHROME });
-  const show = JSON.stringify(out, null, 1);
-  // the answer saved and the desk moved on, but the page never heard: the old card is back with a plain line
-  assert.equal(out.after_lost.title, 'who uses the phone page most?', show);
-  assert.equal(out.after_lost.line, 'that did not go through. try again.', show);
-  // both taps name the card the owner saw
-  assert.deepEqual(out.posts, [{ card: 'question:q1', option: 'a2' }, { card: 'question:q1', option: 'a2' }], show);
-  // only the answer to the question on screen is saved; fewer mistakes never is
-  assert.deepEqual(out.saved, [{ question: 'who uses the phone page most?', answer: 'small teams' }], show);
-  // the second tap is refused, and the page lands on the card the Mac has, saying so
-  assert.equal(out.at_end.title, 'what would make a small team pay?', show);
-  assert.equal(out.at_end.line, 'that card changed, so nothing was done. here is the one on screen now.', show);
-});
+test.describe('independent card retries', { concurrency: 2 }, () => {
+  test('browser: after a lost answer, a tap on the old card does nothing and the page shows the card the Mac has, with one line why', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+    const out = await trace.staleAnswerTrace({ chromePath: CHROME });
+    const show = JSON.stringify(out, null, 1);
+    // the answer saved and the desk moved on, but the page never heard: the old card is back with a plain line
+    assert.equal(out.after_lost.title, 'who uses the phone page most?', show);
+    assert.equal(out.after_lost.line, 'that did not go through. try again.', show);
+    // both taps name the card the owner saw
+    assert.deepEqual(out.posts, [{ card: 'question:q1', option: 'a2' }, { card: 'question:q1', option: 'a2' }], show);
+    // only the answer to the question on screen is saved; fewer mistakes never is
+    assert.deepEqual(out.saved, [{ question: 'who uses the phone page most?', answer: 'small teams' }], show);
+    // the second tap is refused, and the page lands on the card the Mac has, saying so
+    assert.equal(out.at_end.title, 'what would make a small team pay?', show);
+    assert.equal(out.at_end.line, 'that card changed, so nothing was done. here is the one on screen now.', show);
+  });
 
-// ---- words that did not send stay in the box ----------------------------------------
+  // ---- words that did not send stay in the box ----------------------------------------
 
-test('browser: say something that does not send comes back on its card with the words and the cursor in the box, and Enter tries again', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
-  const out = await trace.unsentSayTrace({ chromePath: CHROME });
-  const show = JSON.stringify(out, null, 1);
-  const kept = { kind: 'idea', title: 'Write a getting started page for the phone', field_open: true, words: out.words, typing: true };
-  const pick = l => ({ kind: l.kind, title: l.title, field_open: l.field_open, words: l.words, typing: l.typing });
-  // the network is off: the card comes back, the words and the cursor in its box, and a line says so
-  assert.deepEqual(pick(out.offline), kept, show);
-  assert.equal(out.offline.line, 'that did not reach the mac. try again.', show);
-  // Enter again reaches the desk, which could not pass it on: the same, with why
-  assert.deepEqual(pick(out.refused), kept, show);
-  assert.equal(out.refused.line, 'it did not reach them. try again in a minute.', show);
-  // Enter once more goes through: the next card
-  assert.equal(out.sent.title, 'Record a two minute demo video', show);
-  // the desk got the same words twice
-  assert.deepEqual(out.calls, [{ action: 'say', text: out.words }, { action: 'say', text: out.words }], show);
+  test('browser: say something that does not send comes back on its card with the words and the cursor in the box, and Enter tries again', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+    const out = await trace.unsentSayTrace({ chromePath: CHROME });
+    const show = JSON.stringify(out, null, 1);
+    const kept = { kind: 'idea', title: 'Write a getting started page for the phone', field_open: true, words: out.words, typing: true };
+    const pick = l => ({ kind: l.kind, title: l.title, field_open: l.field_open, words: l.words, typing: l.typing });
+    // the network is off: the card comes back, the words and the cursor in its box, and a line says so
+    assert.deepEqual(pick(out.offline), kept, show);
+    assert.equal(out.offline.line, 'that did not reach the mac. try again.', show);
+    // Enter again reaches the desk, which could not pass it on: the same, with why
+    assert.deepEqual(pick(out.refused), kept, show);
+    assert.equal(out.refused.line, 'it did not reach them. try again in a minute.', show);
+    // Enter once more goes through: the next card
+    assert.equal(out.sent.title, 'Record a two minute demo video', show);
+    // the desk got the same words twice
+    assert.deepEqual(out.calls, [{ action: 'say', text: out.words }, { action: 'say', text: out.words }], show);
+  });
+
 });
 
 test('browser: words no model heard come back in their box on the card that says so, and Enter sends them again', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
@@ -1634,57 +1637,59 @@ test('over http: a typed send carries its own id; a repeat of one that went thro
   }
 });
 
-test('browser: a send whose answer was lost goes again with the same id and reaches the desk once; new words get a new id', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
-  const out = await trace.lostReplyTrace({ chromePath: CHROME });
-  const show = JSON.stringify(out, null, 1);
-  // the answer was lost: the words came back in the box for Enter
-  assert.equal(out.kept, out.words, show);
-  assert.equal(out.posts.length, 3, show);
-  const [first, retry, fresh] = out.posts;
-  assert.match(String(first.send), /^[a-z0-9]{8,32}$/, show);
-  assert.equal(retry.send, first.send, show);
-  assert.notEqual(fresh.send, first.send, show);
-  // the desk took each set of words once
-  assert.deepEqual(out.took, [out.words, out.new_words], show);
-});
+test.describe('independent teammate send and retry flows', { concurrency: 2 }, () => {
+  test('browser: a send whose answer was lost goes again with the same id and reaches the desk once; new words get a new id', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+    const out = await trace.lostReplyTrace({ chromePath: CHROME });
+    const show = JSON.stringify(out, null, 1);
+    // the answer was lost: the words came back in the box for Enter
+    assert.equal(out.kept, out.words, show);
+    assert.equal(out.posts.length, 3, show);
+    const [first, retry, fresh] = out.posts;
+    assert.match(String(first.send), /^[a-z0-9]{8,32}$/, show);
+    assert.equal(retry.send, first.send, show);
+    assert.notEqual(fresh.send, first.send, show);
+    // the desk took each set of words once
+    assert.deepEqual(out.took, [out.words, out.new_words], show);
+  });
 
-// ---- a word to a teammate that did not send comes back, ready to send again ----------
+  // ---- a word to a teammate that did not send comes back, ready to send again ----------
 
-test('browser: a word to a teammate that did not send comes back in its box, a line says so, and a retry reaches them once', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
-  const out = await trace.talkFailTrace({ chromePath: CHROME });
-  const show = JSON.stringify(out, null, 1);
-  for (const l of [out.offline, out.lost]) {
-    // nothing left the phone, or the answer was lost: the talk card, the words in its box, one line
-    assert.deepEqual([l.kind, l.field_open, l.words, l.typing, l.line], ['member', true, out.words, true, 'that did not reach the mac. try again.'], show);
-  }
-  // Enter once more: the first answer comes back, and builder is not told twice
-  assert.equal(out.sent.said, 'builder has it.', show);
-  assert.deepEqual(out.took, [out.words], show);
-  // every try of the same words carried the same id
-  assert.equal(out.posts.length, 3, show);
-  assert.match(String(out.posts[0].send), /^[a-z0-9]{8,32}$/, show);
-  for (const post of out.posts) assert.deepEqual([post.text, post.send], [out.words, out.posts[0].send], show);
-});
+  test('browser: a word to a teammate that did not send comes back in its box, a line says so, and a retry reaches them once', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+    const out = await trace.talkFailTrace({ chromePath: CHROME });
+    const show = JSON.stringify(out, null, 1);
+    for (const l of [out.offline, out.lost]) {
+      // nothing left the phone, or the answer was lost: the talk card, the words in its box, one line
+      assert.deepEqual([l.kind, l.field_open, l.words, l.typing, l.line], ['member', true, out.words, true, 'that did not reach the mac. try again.'], show);
+    }
+    // Enter once more: the first answer comes back, and builder is not told twice
+    assert.equal(out.sent.said, 'builder has it.', show);
+    assert.deepEqual(out.took, [out.words], show);
+    // every try of the same words carried the same id
+    assert.equal(out.posts.length, 3, show);
+    assert.match(String(out.posts[0].send), /^[a-z0-9]{8,32}$/, show);
+    for (const post of out.posts) assert.deepEqual([post.text, post.send], [out.words, out.posts[0].send], show);
+  });
 
-// ---- a start that did not get going comes back to do it ----------------------------
+  // ---- a start that did not get going comes back to do it ----------------------------
 
-test('browser: after an explanation, a do it that did not get going comes back with do it and one line, and a retry starts', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
-  const out = await trace.startFailTrace({ chromePath: CHROME });
-  const show = JSON.stringify(out, null, 1);
-  // never stuck: the card it was on is back, do it and all, with why
-  assert.ok(out.failed.buttons.includes('do it'), show);
-  assert.equal(out.failed.line, 'it did not get going. try again in a minute.', show);
-  // two taps on do it again reach the desk again, and who has it shows under the orb before the next card
-  assert.equal(out.error, null, show);
-  assert.equal(out.starts, 2, show);
-  assert.equal(out.under, 'builder has it and is starting now.', show);
-});
+  test('browser: after an explanation, a do it that did not get going comes back with do it and one line, and a retry starts', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+    const out = await trace.startFailTrace({ chromePath: CHROME });
+    const show = JSON.stringify(out, null, 1);
+    // never stuck: the card it was on is back, do it and all, with why
+    assert.ok(out.failed.buttons.includes('do it'), show);
+    assert.equal(out.failed.line, 'it did not get going. try again in a minute.', show);
+    // two taps on do it again reach the desk again, and who has it shows under the orb before the next card
+    assert.equal(out.error, null, show);
+    assert.equal(out.starts, 2, show);
+    assert.equal(out.under, 'builder has it and is starting now.', show);
+  });
 
-// ---- the small orb on a card goes back to the big one ------------------------------
+  // ---- the small orb on a card goes back to the big one ------------------------------
 
-test('browser: the same words to two members are two sends, and each member hears them', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
-  const out = await trace.twoMembersTrace({ chromePath: CHROME });
-  assert.deepEqual(out.took, [{ member: 'builder', text: 'pause this' }, { member: 'launcher', text: 'pause this' }], JSON.stringify(out));
+  test('browser: the same words to two members are two sends, and each member hears them', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
+    const out = await trace.twoMembersTrace({ chromePath: CHROME });
+    assert.deepEqual(out.took, [{ member: 'builder', text: 'pause this' }, { member: 'launcher', text: 'pause this' }], JSON.stringify(out));
+  });
 });
 
 test('browser: the team opened from the big orb closes back to the big orb, and opened from a card closes back to the card', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
