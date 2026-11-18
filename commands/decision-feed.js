@@ -149,7 +149,12 @@ function textCard(card) {
   const social = [(card.reactions || []).map((r) => `${r.emoji} ${r.count}`).join(' '), count ? `${count} repl${count === 1 ? 'y' : 'ies'}` : '']
     .filter(Boolean).join(' · ');
   if (social) lines.push(`        ${social}`);
-  for (const reply of card.replies || []) lines.push(`          ${reply.author.name}: ${reply.text}`);
+  for (const reply of card.replies || []) lines.push(`          ${reply.author.name}${reply.kind ? ` (${reply.kind})` : ''}: ${reply.text}`);
+  if (card.outcome) {
+    lines.push(`        outcome: ${card.outcome.answer}`);
+    lines.push(`        next: ${card.outcome.next} (${card.outcome.owner.type === 'user' ? 'yours' : `${card.outcome.owner.name} has it next`})`);
+    if (card.outcome.needs_you) lines.push(`        needs you: ${card.outcome.needs_you.question}${card.outcome.needs_you.choices.length ? ` [${card.outcome.needs_you.choices.join(' | ')}]` : ''}`);
+  }
   return lines.join('\n');
 }
 
