@@ -14,6 +14,8 @@ rg "releaseAtris|releasePreflight|release preflight" commands/release.js bin/atr
 
 The static phone layout checks share Chrome renders when the card and viewport match. Each assertion keeps its original cards and screen sizes.
 
+Independent phone card flows, hands and recovery flows, and full motion paths run in separate test files so CI can start them together. Each Chrome case keeps its original route, checks and timing.
+
 ## Feature: Release (`atris release`)
 
 **Purpose:** Tag a release, bump version, create GitHub release, draft /launch post
