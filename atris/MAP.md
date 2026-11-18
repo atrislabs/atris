@@ -17,6 +17,7 @@ every one of these files; `atris doc-health --fix-refs` pins old line refs.
 
 | Task | Primary path | Notes |
 |------|--------------|-------|
+| endpoint performance and weekly speed reports | `commands/perf.js`, `lib/perf.js`, `lib/perf-html.js`, `docs/perf.md` | targets, fresh-connection samples, weighted ranking and self-contained dashboard |
 | cli entrypoint and command router | `bin/atris.js` | dispatch chain, knownCommands, help |
 | known commands list | `lib/known-commands.js` | command names and typo suggestions defined via `suggestCommands` |
 | plain english to a command | `lib/intents.js`, `commands/guide.js` | `atris guide`; maps natural phrases to CLI commands |
