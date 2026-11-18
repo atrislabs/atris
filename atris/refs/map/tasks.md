@@ -38,7 +38,7 @@ rg "appendMemberDailyEntry|appendMasterDailyEntry|appendDailyEntry|MASTER_NOTE|m
 
 - **Meaningful certification:** `commands/task.js` (`certifyVerifyCandidate`) reuses `lib/accept-verify-gate.js` (`nonFalsifyingIssue`) to refuse solo whitespace proof and retain chains containing a real check. Regression: `test/task-review-autoaccept.test.js:262`.
 
-- **Meaningful automatic approval:** `lib/auto-accept-certified.js:1222` and `commands/task/audit/audit.js:84` refuse stored solo whitespace commands with `non_falsifying_verify`; `commands/task/audit/audit.js:158` diagnoses legacy proof-only commands after meaningful candidates are exhausted. Regressions: `test/auto-accept-certified.test.js:75`, `test/task-sweep-auto-accept.test.js:344`.
+- **Meaningful automatic approval:** `lib/auto-accept-certified.js:1218` and `commands/task/audit/audit.js:84` refuse stored solo whitespace commands with `non_falsifying_verify`; `commands/task/audit/audit.js:158` diagnoses legacy proof-only commands after meaningful candidates are exhausted. Regressions: `test/auto-accept-certified.test.js:75`, `test/task-sweep-auto-accept.test.js:344`.
 
 - **Agent sweep refusal:** `commands/task.js` (`cmdSweep`) applies `agentProofOnlyMode` before any database write, including when an unsupported dry-run flag is supplied. Regression: `test/agent-proof-only.test.js:104` checks agent markers, unchanged events, and the explicit human override.
 
