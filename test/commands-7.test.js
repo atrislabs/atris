@@ -20,6 +20,7 @@ const {
   makeTempDir,
   cleanupTempDir,
   runCli,
+  runCliAsync,
   hasNodeSqlite,
   waitForOutput,
   runGit,
@@ -1631,7 +1632,7 @@ test('fresh workspace prompt gives one primary first command plus local fallback
   }
 });
 
-test('workspace-free help smoke sweep covers common entrypoints', () => {
+test('workspace-free help smoke sweep covers common entrypoints', async () => {
   const cases = [
     ['--help'],
     ['status', '--help'],
@@ -1694,11 +1695,11 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     ['cr', '--help'],
   ];
 
-  for (const args of cases) {
+  const check = async (args) => {
     const dir = makeTempDir();
     try {
       const home = path.join(dir, 'home');
-      const res = runCli(args, { cwd: dir, env: { HOME: home } });
+      const res = await runCliAsync(args, { cwd: dir, env: { HOME: home } });
       const label = args.join(' ');
       assert.equal(res.status, 0, `${label}: ${res.stderr || res.stdout}`);
       assert.ok((res.stdout + res.stderr).trim().length > 0, `${label} printed no help`);
@@ -1708,6 +1709,11 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     } finally {
       cleanupTempDir(dir);
     }
+  };
+  for (let i = 0; i < cases.length; i += 2) {
+    const results = await Promise.allSettled(cases.slice(i, i + 2).map(check));
+    const failed = results.find(result => result.status === 'rejected');
+    if (failed) throw failed.reason;
   }
 });
 
