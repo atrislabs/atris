@@ -30,6 +30,6 @@ The short routing table is `atris/MAP.md`. This page points to one note per area
 - Slop checks, voice, design checks, outbound gates, local HTTP server safety and the sentinel security audit. Open [quality-and-security.md](map/quality-and-security.md) when you change a quality gate or review security.
 - Init, update, workflow, wiki, skills, doc health, the map tools and the hourly map note fold. Open [workspace-docs-and-maps.md](map/workspace-docs-and-maps.md) when you change workspace setup, docs, skills or these map notes.
 - Daily logs, status, launchpad, analytics, briefs, recaps and visualize. Open [journals-and-briefs.md](map/journals-and-briefs.md) when you change journals, status views or summaries.
-- Map notes from member changes that no area has claimed yet. Open [member-notes.md](map/member-notes.md) when no note above fits.
+- Nexus people commands and map notes from member changes that no area has claimed yet. Open [member-notes.md](map/member-notes.md) for Today pagination or when no note above fits.
 
 New notes go in the area note that owns the code. Write a ref as the file and the function it points at, like `lib/map-refs.js` (`fixMapDocs`), with no line number. Line numbers move with every change. Each rewrite of a shared map line used to be a merge conflict for the next branch.
