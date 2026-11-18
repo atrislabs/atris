@@ -100,7 +100,12 @@ jobs:
         run: |
           case "$MODE" in
             selected) node -e 'process.exitCode = require("./scripts/ci-impact-check").runFiles(JSON.parse(process.env.FILES), process.cwd())' ;;
-            quick) node scripts/ci-quick-check.js "$BASE" "$GROUP" ;;
+            quick)
+              if [ -z "${NODE_V8_COVERAGE:-}" ] && [ -z "${NODE_COMPILE_CACHE:-}" ]; then
+                export NODE_COMPILE_CACHE="$RUNNER_TEMP/atris-node-compile-cache"
+              fi
+              node scripts/ci-quick-check.js "$BASE" "$GROUP"
+              ;;
             full) ATRIS_TEST_SPLIT=1 node scripts/ci-test-shard.js "$GROUP" ;;
             *) exit 1 ;;
           esac
