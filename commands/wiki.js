@@ -5,7 +5,6 @@ const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses } = require('./business');
 const {
-  WIKI_ROOT,
   PRIVATE_WIKI_ROOT,
   getWikiRoot,
   ensureWikiScaffold,

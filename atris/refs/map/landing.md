@@ -16,6 +16,10 @@ rg "requireAccountBound|refuseAccountGlobal|ACCOUNT_GLOBAL_MESSAGE|isBoundBusine
 
 - **Implementation:** `commands/autoland.js` (status/on/off/tick/digest) + `lib/autoland.js` (policy, heartbeat cron, digest/alarm composition)
 
+- `lib/merge-queue-outcome.js` reads queue membership and the latest removal. It matches the tested merge commit to the pull request head and reads the failed checks and their links. `followQueuedLandings` in `lib/land-green.js` uses this result to report whether the change is still queued.
+
+- `requeueOne` in `lib/member-autoland.js` sends a verified failure to a builder with the failed run. It waits when GitHub cannot confirm the result and catches up an older branch when required checks never started and the base has advanced. See `test/merge-queue-outcome.test.js` and `test/autoland-queue-group.test.js`.
+
 - **Daily experiment hook:** `commands/autoland.js` (`runOwnCli` resolves the local CLI), `commands/autoland.js:1221` (`autoland tick` daily experiment block), `commands/autoland.js` (`daily_experiment` policy gate), `commands/autoland.js:1224` (`experiments daily --json`)
 
 - **Policy file:** `.atris/policy/autoland.json`; state (alarm dedupe, digest date): `.atris/state/autoland.json`
