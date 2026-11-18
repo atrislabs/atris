@@ -12,6 +12,8 @@ rg "releaseAtris|releasePreflight|release preflight" commands/release.js bin/atr
 
 `scripts/ci-test-plan.js` (`comparisonBase`, `buildMatrix`) finds the changes in the queued commit and divides the selected files among workers. `scripts/ci-impact-check.js` (`plan`) maps changed files to tests and explains when the full suite is needed. `.github/workflows/ci.yml` requires planning, tests and deck lint to pass. Scheduled and manual runs use all eight full-suite groups.
 
+Phone changes select both `test/gm-phone.test.js` and `test/gm-phone-journey.test.js`. The journey file runs the orb, calm line and follow-up conversations in real Chrome on a separate worker.
+
 ## Feature: Release (`atris release`)
 
 **Purpose:** Tag a release, bump version, create GitHub release, draft /launch post
