@@ -16,6 +16,8 @@ The slow-answer and lost-answer retry checks in `test/gm-phone-hands.test.js` an
 
 `test/gm-phone-layout.test.js` measures card line wrapping and footer geometry in the same Chrome render where the card and viewport match. Each assertion still covers its original cards and screen sizes.
 
+`test/engine-resource.test.js` counts bytes as it fills large log fixtures. The archive checks in `test/commands-6.test.js` make the first task through the CLI and add the rest through the task store.
+
 ## Feature: Release (`atris release`)
 
 **Purpose:** Tag a release, bump version, create GitHub release, draft /launch post

@@ -1391,13 +1391,18 @@ test('task render archives old completed records from TODO view', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    for (let i = 0; i < 12; i += 1) {
-      const created = runCli(['task', 'new', `Completed task ${i}`, '--tag', 'agent', '--json'], { cwd: dir, env });
-      assert.equal(created.status, 0, created.stderr);
-      const id = JSON.parse(created.stdout).task_id;
-      const done = runCli(['task', 'done', id, '--proof', `node --test test/commands.test.js passed for archive ${i}`, '--json'], { cwd: dir, env });
-      assert.equal(done.status, 0, done.stderr);
-    }
+    const proof = i => `node --test test/commands.test.js passed for archive ${i}`;
+    const created = runCli(['task', 'new', 'Completed task 0', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const first = JSON.parse(created.stdout).task_id;
+    const done = runCli(['task', 'done', first, '--proof', proof(0), '--json'], { cwd: dir, env });
+    assert.equal(done.status, 0, done.stderr);
+    seedTaskRows(dir, dbPath, (db, workspaceRoot) => {
+      for (let i = 1; i < 12; i += 1) {
+        const { id } = taskStore.addTask(db, { title: `Completed task ${i}`, tag: 'agent', workspaceRoot });
+        assert.equal(taskStore.doneTask(db, { id, status: 'done', proof: proof(i) }).updated, true);
+      }
+    });
 
     const render = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
     assert.equal(render.status, 0, render.stderr);
