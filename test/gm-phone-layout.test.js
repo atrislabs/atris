@@ -284,13 +284,21 @@ function measurePhoneCards() {
 
 let otherCardRows;
 async function measureAllCards() {
-  const phone = await measurePhoneCards();
-  otherCardRows ??= layout({
+  const measure = viewports => layout({
     chromePath: CHROME,
-    viewports: [...new Set([...WORD_VIEWPORTS, ...FOOTER_VIEWPORTS])].filter(v => v !== 'phone'),
+    viewports,
     probe: `({ footer: ${FOOTER_BOX}, lastLines: ${LAST_LINES} })`,
   });
-  return [...phone, ...await otherCardRows];
+  otherCardRows ??= (async () => {
+    const viewports = [...new Set([...WORD_VIEWPORTS, ...FOOTER_VIEWPORTS])].filter(v => v !== 'phone');
+    const middle = Math.ceil(viewports.length / 2);
+    const [first, last] = await Promise.all([
+      measurePhoneCards().then(async phone => [...phone, ...await measure(viewports.slice(0, middle))]),
+      measure(viewports.slice(middle)),
+    ]);
+    return [...first, ...last];
+  })();
+  return otherCardRows;
 }
 
 test('layout: no title, body, or label leaves one word alone on its last line, on any card at any size', { skip, timeout: 180000 }, async () => {
