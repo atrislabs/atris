@@ -10214,12 +10214,7 @@ async function executeMissionRunTicksPhase(context) {
 
       // Sleep until next tick
       let sleepMs = 0;
-      const errored = result.status === 'errored' && result.reason !== 'claude-session-busy';
-      const replacement = errored && autoRunner && ticks.length < cycleTickLimit &&
-        tickEngineId && rateLimitedEngineId === tickEngineId && result.engine_health?.status === 'credit_out'
-        ? resolveMissionTickRunner(runtimeView(mission), cwd, { explain: false }).engine_id
-        : null;
-      if (errored && (!replacement || replacement === tickEngineId)) {
+      if (result.status === 'errored' && result.reason !== 'claude-session-busy') {
         sleepMs = computeBackoff(MISSION_RUN_DEFAULTS.backoff, backoffAttempt);
       } else if (cadenceSeconds > 0) {
         sleepMs = cadenceSeconds * 1000;
