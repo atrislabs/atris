@@ -32,7 +32,7 @@ test('invalid route configuration does not block url checks or target management
   const dir = path.join(root, 'atris/perf');
   fs.mkdirSync(dir, { recursive: true });
   const url = `http://127.0.0.1:${server.address().port}`;
-  const badSource = { name: 'local', type: 'routes', url: 'invalid-source' };
+  const badSource = { name: 'routes', type: 'routes', url: 'invalid-source' };
   fs.writeFileSync(path.join(dir, 'targets.json'), JSON.stringify([{ name: 'local', url }, badSource]));
   await perfCommand(['run', '--target', 'local', '--samples', '1'], root);
   assert.equal(hits, 1);
@@ -49,6 +49,24 @@ test('invalid route configuration does not block url checks or target management
   await perfCommand(['routes'], root);
   assert.equal(output.length, 1);
   assert.match(output[0], /route source must be/);
+});
+
+test('target management rejects names shared by urls and route sources', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-perf-names-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  await assert.rejects(perfCommand(['add', 'routes', 'http://localhost'], root), /reserved/);
+  const dir = path.join(root, 'atris/perf');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'targets.json');
+  const source = { name: 'backend', type: 'routes', url: 'http://localhost/internal/perf/routes' };
+  fs.writeFileSync(file, JSON.stringify([source]));
+  await assert.rejects(perfCommand(['add', 'backend', 'http://localhost'], root), /already exists/);
+  const duplicates = JSON.stringify([source, { name: 'backend', url: 'http://localhost/health' }]);
+  fs.writeFileSync(file, duplicates);
+  for (const args of [['list'], ['remove', 'backend'], ['add', 'other', 'http://localhost']]) {
+    await assert.rejects(perfCommand(args, root), /names must be unique/);
+    assert.equal(fs.readFileSync(file, 'utf8'), duplicates);
+  }
 });
 
 test('reports skip corrupt route history and keep the latest valid snapshot', async t => {

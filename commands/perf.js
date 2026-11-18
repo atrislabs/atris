@@ -18,8 +18,7 @@ async function perfCommand(args = [], root = process.cwd()) {
     const targets = fs.existsSync(targetsFile) ? JSON.parse(fs.readFileSync(targetsFile, 'utf8')) : [];
     if (!Array.isArray(targets)) throw new Error('targets must be a list');
     const valid = targets.map(t => t.type === 'routes' ? t : validateTarget(t));
-    const urls = valid.filter(t => t.type !== 'routes');
-    if (new Set(urls.map(t => t.name)).size !== urls.length) throw new Error('target names must be unique');
+    if (new Set(valid.map(t => t.name)).size !== valid.length) throw new Error('target names must be unique');
     return valid;
   };
   const readTargets = () => readEntries().filter(t => t.type !== 'routes');
@@ -37,6 +36,7 @@ async function perfCommand(args = [], root = process.cwd()) {
   if (action === 'add') {
     const targets = readEntries();
     const target = validateTarget({ name: args[1], url: args[2], weight: Number(option('--weight', 1)) });
+    if (target.name === defaultRouteSource.name) throw new Error('routes is reserved for the backend route source');
     if (targets.some(t => t.name === target.name)) throw new Error('target already exists; remove it before adding it again');
     saveTargets([...targets, target]);
     console.log(`added ${target.name}`);
