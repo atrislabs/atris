@@ -10,6 +10,45 @@ const { perfCommand } = require('../commands/perf');
 const { renderHtml } = require('../lib/perf-html');
 const { rankRoutes } = require('../lib/perf-routes');
 
+test('invalid route configuration does not block url checks or target management', async t => {
+  const originalSecret = process.env.ATRIS_INTERNAL_SECRET;
+  const originalLog = console.log;
+  const output = [];
+  console.log = (...args) => output.push(args.join(' '));
+  process.env.ATRIS_INTERNAL_SECRET = 'config-test-secret';
+  t.after(() => {
+    console.log = originalLog;
+    if (originalSecret === undefined) delete process.env.ATRIS_INTERNAL_SECRET;
+    else process.env.ATRIS_INTERNAL_SECRET = originalSecret;
+  });
+  let hits = 0;
+  const server = http.createServer((req, res) => { hits++; res.end('ok'); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-perf-config-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const dir = path.join(root, 'atris/perf');
+  fs.mkdirSync(dir, { recursive: true });
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const badSource = { name: 'local', type: 'routes', url: 'invalid-source' };
+  fs.writeFileSync(path.join(dir, 'targets.json'), JSON.stringify([{ name: 'local', url }, badSource]));
+  await perfCommand(['run', '--target', 'local', '--samples', '1'], root);
+  assert.equal(hits, 1);
+  await perfCommand(['add', 'another', url], root);
+  await perfCommand(['list'], root);
+  await perfCommand(['remove', 'another'], root);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'targets.json'), 'utf8')).find(t => t.type === 'routes'), badSource);
+  output.length = 0;
+  await perfCommand(['--samples', '1'], root);
+  assert.equal(hits, 2);
+  assert.equal(output.filter(line => line.startsWith('route source must be')).length, 1);
+  assert.ok(output.some(line => line.startsWith('performance ranked')));
+  output.length = 0;
+  await perfCommand(['routes'], root);
+  assert.equal(output.length, 1);
+  assert.match(output[0], /route source must be/);
+});
+
 test('backend routes authenticate, rank, record and survive missing or wrong secrets', async t => {
   const originalSecret = process.env.ATRIS_INTERNAL_SECRET;
   const originalLog = console.log;

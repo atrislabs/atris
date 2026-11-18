@@ -17,8 +17,9 @@ async function perfCommand(args = [], root = process.cwd()) {
   const readEntries = () => {
     const targets = fs.existsSync(targetsFile) ? JSON.parse(fs.readFileSync(targetsFile, 'utf8')) : [];
     if (!Array.isArray(targets)) throw new Error('targets must be a list');
-    const valid = targets.map(t => t.type === 'routes' ? validateRouteSource(t) : validateTarget(t));
-    if (new Set(valid.map(t => t.name)).size !== valid.length) throw new Error('target names must be unique');
+    const valid = targets.map(t => t.type === 'routes' ? t : validateTarget(t));
+    const urls = valid.filter(t => t.type !== 'routes');
+    if (new Set(urls.map(t => t.name)).size !== urls.length) throw new Error('target names must be unique');
     return valid;
   };
   const readTargets = () => readEntries().filter(t => t.type !== 'routes');
@@ -61,8 +62,8 @@ async function perfCommand(args = [], root = process.cwd()) {
       console.log('set the atris_internal_secret environment variable (uppercase) to enable backend route rankings');
       return;
     }
-    const source = readEntries().find(t => t.type === 'routes') || defaultRouteSource;
     try {
+      const source = validateRouteSource(readEntries().find(t => t.type === 'routes') || defaultRouteSource);
       const snapshot = await fetchRoutes(source, process.env.ATRIS_INTERNAL_SECRET);
       fs.mkdirSync(dir, { recursive: true });
       ensurePerfIgnore(root);
