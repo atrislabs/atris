@@ -14,6 +14,10 @@ function room() {
   return require('../lib/feed-room');
 }
 
+function standingYes() {
+  return require('../lib/feed-standing-yes');
+}
+
 const VALUE_FLAGS = new Set([
   '--filter', '--limit', '--cursor', '--since', '--as', '--title', '--why', '--body', '--detail',
   '--visual', '--kind', '--lane', '--note', '--story', '--reason', '--card', '--proof', '--text', '--engine', '--choose', '--member', '--wait', '--cards', '--goal',
@@ -92,6 +96,9 @@ const HELP = [
   '       atris feed ping [<member>] [--reason scroll|heartbeat|event|refresh] [--stream]',
   '                          (members think up ideas in one fast turn each, up to 3 at once; --stream prints cards as they are written)',
   '       atris feed settings set local-pings-per-day <n> | cloud-pings-per-day <n> | member-gap-seconds <n>',
+  '       atris feed settings set standing-yes on|off | standing-yes-per-day <n>   (off by default; when on, a proposal',
+  '                          a teammate backs, with no guarded lane, you never talked on or scrolled past, starts by',
+  '                          itself as if you approved it, at most <n> a day, default 3; 0 turns it off)',
   '       atris feed emit --as <member> idea|question --title "..." --why "..." | progress --card <card> "<line>"',
   '                          | result --card <card> --proof "<what you ran and what it showed>" ["<plain line>"]',
   '       atris feed events [--limit N]        the stream of what members put in the feed',
@@ -236,6 +243,11 @@ function printText(command, out, { streamed = false } = {}) {
   }
   if (command === 'settings') {
     console.log(`default model: ${out.engine_in_effect}${out.default_engine ? '' : ' (the workspace default)'}${out.engine_available ? '' : `, cannot run here: ${out.engine_reason}`}`);
+    const standing = out.standing_yes;
+    if (standing) {
+      const today = standing.count_readable ? `${standing.started_today} of ${standing.per_day} started today` : 'today\'s count cannot be read, so nothing starts';
+      console.log(standing.on ? `standing yes: on, ${today}` : `standing yes: off (turn on with: atris feed settings set standing-yes on)`);
+    }
     return;
   }
   if (command === 'ping') {
@@ -382,6 +394,8 @@ async function run(args = [], context = {}) {
         as: flags.as, title: flags.title, why: flags.why, body: flags.body, detail: flags.detail,
         visual: visualFlag(flags.visual), kind: flags.kind, lane: flags.lane, story: flags.story, env,
       });
+      // A teammate backing an idea can make it able to start by the standing yes.
+      if (out.merged) standingYes().standingYesQuietly(root, { env, deps });
     } else if (sub === 'decide') {
       const [, card, choice] = positional;
       if (!card || !choice) throw new feed.FeedError(400, 'usage: atris feed decide <card> approve|dismiss [--note "<text>"]');
@@ -432,10 +446,10 @@ async function run(args = [], context = {}) {
       out = feed.requestMoreIdeas(root, { env, deps });
     } else if (sub === 'settings') {
       if (positional[1] === 'set') {
-        if (!positional[2] || positional[3] === undefined) throw new feed.FeedError(400, 'usage: atris feed settings set default-engine <id> | local-pings-per-day <n> | cloud-pings-per-day <n> | member-gap-seconds <n>');
-        out = positional[2] === 'default-engine'
-          ? team().setDefaultEngine(root, positional[3], { env })
-          : team().setLimit(root, positional[2], positional[3], { env });
+        if (!positional[2] || positional[3] === undefined) throw new feed.FeedError(400, 'usage: atris feed settings set default-engine <id> | local-pings-per-day <n> | cloud-pings-per-day <n> | member-gap-seconds <n> | standing-yes on|off | standing-yes-per-day <n>');
+        if (positional[2] === 'default-engine') out = team().setDefaultEngine(root, positional[3], { env });
+        else if (['standing-yes', 'standing-yes-per-day'].includes(positional[2])) out = standingYes().setStandingYes(root, positional[2], positional[3], { env });
+        else out = team().setLimit(root, positional[2], positional[3], { env });
       } else if (positional[1]) {
         throw new feed.FeedError(400, `unknown settings command: ${positional[1]}`);
       } else {
