@@ -14,6 +14,8 @@ rg "releaseAtris|releasePreflight|release preflight" commands/release.js bin/atr
 
 The slow-answer check in `test/gm-phone-hands.test.js` and the team-table viewport check in `test/gm-phone.test.js` run at most two independent Chrome sessions at a time. Each case still uses its own browser and local test server.
 
+`test/gm-phone-layout.test.js` measures card line wrapping and footer geometry in the same Chrome render where the card and viewport match. Each assertion still covers its original cards and screen sizes.
+
 ## Feature: Release (`atris release`)
 
 **Purpose:** Tag a release, bump version, create GitHub release, draft /launch post
