@@ -16,7 +16,6 @@ const {
   resolveDesignKey,
   designRequest,
   pollDesignJob,
-  billingOf,
   creditLine,
 } = require('../lib/design-api');
 

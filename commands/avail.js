@@ -536,11 +536,6 @@ function addDays(dateStr, days) {
   return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`;
 }
 
-function weekdayOf(dateStr) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  return (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; // Mon = 0
-}
-
 /** ISO string with the zone's offset for a wall-clock time on a date. */
 function zonedIso(dateStr, decimalHour, timeZone) {
   const [y, m, d] = dateStr.split('-').map(Number);

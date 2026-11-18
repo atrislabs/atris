@@ -853,8 +853,6 @@ async function computerOnboard(token, businessSlug) {
     process.exit(1);
   }
 
-  const fs = require('fs');
-  const path = require('path');
 
   console.log(`\nOnboarding "${businessSlug}"...`);
 
@@ -2747,7 +2745,6 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
         process.exitCode = 1;
         return;
     }
-    return;
   }
 
   if (sub === '--cloud' || sub === 'cloud') {

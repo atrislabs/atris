@@ -144,12 +144,16 @@ test('two real member windows catch up a dropped change only once', async (t) =>
       number: 7, state: 'OPEN', headRefName: branch, baseRefName: 'master',
       headRefOid: pushed, isCrossRepository: false, autoMergeRequest: null,
     };
+    const history = { data: { repository: { pullRequest: {
+      ...view, isInMergeQueue: false, timelineItems: { nodes: [] },
+    } } } };
     fs.writeFileSync(path.join(bin, 'gh'), [
       '#!/usr/bin/env node',
       "const fs = require('fs');",
       `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');`,
       "const [a, b] = process.argv.slice(2);",
       `if (a === 'pr' && b === 'view') console.log(${JSON.stringify(JSON.stringify(view))});`,
+      `if (a === 'api' && b === 'graphql') console.log(${JSON.stringify(JSON.stringify(history))});`,
     ].join('\n'), { mode: 0o755 });
 
     const home = path.join(base, 'home');

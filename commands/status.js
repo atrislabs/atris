@@ -16,7 +16,6 @@ const {
 
 // Box drawing helpers
 const W = 64; // inner width
-const line = (char = '─') => char.repeat(W);
 const pad = (str, w = W) => {
   const visible = str.replace(/[\u{1F4CB}\u{1F528}\u{2705}\u{1F4E5}\u{1F4DA}\u{26A1}\u{1F916}\u{1F4DD}]/gu, 'XX'); // emoji = ~2 chars
   const len = visible.length;

@@ -19,7 +19,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 ## By-Feature Map
 
-Design/MCP test isolation: `test/mcp.test.js:66` starts the CLI from its disposable directory. `commands/design.js:360` and `lib/design-api.js:124` export only consumed entry points; `test/repo-hygiene.test.js` guards both boundaries.
+Design/MCP test isolation: `test/mcp.test.js:66` starts the CLI from its disposable directory. `commands/design.js:359` and `lib/design-api.js:124` export only consumed entry points; `test/repo-hygiene.test.js` guards both boundaries.
 
 - **atris design + mcp:** `commands/design.js` runs `design extract <url> [--json] [--sections a,b]` (POST `/design/extractions` then polls `GET /design/extractions/{id}` every 3s up to 3m), `design check <url> --against <brand-url>` (`/design/adherence`), and `design search "<words>" [--limit n]` (`/design/search`); `lib/design-api.js` resolves the key (ATRIS_API_KEY, then login token, then `~/.atris/design-api-key`), wraps `utils/api.js` `httpRequest` against `getApiBaseUrl()`, and owns `pollDesignJob` plus the credits/balance line. `mcp/atris-mcp/index.mjs` uses built-in stdio JSON-RPC, no dependencies, to expose `design_extract`, `design_check`, `design_search` through `atris mcp` and the `atris-mcp` bin; `bin/atris.js` skips the update check for `mcp` so stdout stays clean JSON-RPC. Dispatch: `bin/atris.js` `command === 'design'` and `command === 'mcp'`. Registry: `lib/known-commands.js`. Tests: `test/design.test.js` (mocked HTTP, three commands plus polling), `test/mcp.test.js` (stdio handshake, tools, and errors). Docs: `docs/MCP.md`.
 
