@@ -8,6 +8,102 @@ const { execFileSync } = require('node:child_process');
 const { measure, percentile, summarize, rankRuns, provider } = require('../lib/perf');
 const { perfCommand } = require('../commands/perf');
 const { renderHtml } = require('../lib/perf-html');
+const { rankRoutes } = require('../lib/perf-routes');
+
+test('backend routes authenticate, rank, record and survive missing or wrong secrets', async t => {
+  const originalSecret = process.env.ATRIS_INTERNAL_SECRET;
+  const originalLog = console.log;
+  const output = [];
+  console.log = (...args) => output.push(args.join(' '));
+  t.after(() => {
+    console.log = originalLog;
+    if (originalSecret === undefined) delete process.env.ATRIS_INTERNAL_SECRET;
+    else process.env.ATRIS_INTERNAL_SECRET = originalSecret;
+  });
+  let status = 200, hits = 0, urlHits = 0;
+  let snapshot = { since: '2026-11-18T00:00:00Z', routes: [
+    { method: 'GET', route: '/fast/{id}', count: 20, errors: 2, p50: 1, p95: 2, p99: 3, max: 4, score: 9999 },
+    { method: 'POST', route: '/slow/<id>', count: 10, errors: 0, p50: 4, p95: 8, p99: 10, max: 12, score: 0 }
+  ] };
+  const secret = 'runtime-test-secret';
+  const server = http.createServer((req, res) => {
+    if (req.url === '/health') { urlHits++; res.end('ok'); return; }
+    hits++;
+    assert.equal(req.url, '/internal/perf/routes');
+    const code = req.headers.authorization === `Bearer ${secret}` ? status : 401;
+    res.writeHead(code, { 'content-type': 'application/json' });
+    res.end(code === 200 ? JSON.stringify(snapshot) : secret);
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-perf-routes-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  const dir = path.join(root, 'atris/perf');
+  fs.mkdirSync(dir, { recursive: true });
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const config = [{ name: 'local', url: url + '/health' }, { name: 'routes', type: 'routes', url: url + '/internal/perf/routes' }];
+  fs.writeFileSync(path.join(dir, 'targets.json'), JSON.stringify(config));
+  delete process.env.ATRIS_INTERNAL_SECRET;
+  await perfCommand(['routes'], root);
+  assert.equal(hits, 0);
+  assert.equal(output.length, 1);
+  assert.match(output[0], /atris_internal_secret.*uppercase/);
+  assert.equal(output[0], output[0].toLowerCase());
+  await perfCommand(['--samples', '1'], root);
+  assert.equal(urlHits, 1);
+  assert.equal(hits, 0);
+  process.env.ATRIS_INTERNAL_SECRET = secret;
+  output.length = 0;
+  await perfCommand(['routes', '--top', '1'], root);
+  assert.equal(hits, 1);
+  assert.match(output.join('\n'), /since 2026-11-18.*per worker; reset on deploy/);
+  assert.match(output.join('\n'), /POST \/slow\/<id>.*score 80.0/);
+  assert.ok(!output.some(line => line.includes('/fast/')));
+  const history = path.join(dir, 'routes.jsonl');
+  const saved = fs.readFileSync(history, 'utf8');
+  const record = JSON.parse(saved);
+  assert.equal(record.routes.length, 2);
+  assert.deepEqual(record.routes.map(r => r.score), [80, 40]);
+  assert.equal(record.routes[1].errorRate, .1);
+  assert.equal(execFileSync('git', ['check-ignore', 'atris/perf/routes.jsonl'], { cwd: root, encoding: 'utf8' }), 'atris/perf/routes.jsonl\n');
+  await perfCommand(['report', '--html'], root);
+  const html = fs.readFileSync(path.join(dir, 'report.html'), 'utf8');
+  assert.match(html, /backend routes/);
+  assert.match(html, /\/slow\/&lt;id&gt;/);
+  assert.ok(html.indexOf('/slow/') < html.indexOf('/fast/'));
+  assert.doesNotMatch(html, /<(script|link|img)[^>]+(?:src|href)=/i);
+  process.env.ATRIS_INTERNAL_SECRET = 'wrong-secret';
+  await perfCommand(['routes'], root);
+  assert.match(output.at(-1), /secret is wrong \(401\)/);
+  process.env.ATRIS_INTERNAL_SECRET = secret;
+  status = 404;
+  await perfCommand(['routes'], root);
+  assert.match(output.at(-1), /not deployed yet \(404\)/);
+  status = 503;
+  await perfCommand(['routes'], root);
+  assert.match(output.at(-1), /request failed/);
+  assert.equal(fs.readFileSync(history, 'utf8'), saved);
+  assert.ok(!output.join('\n').includes(secret));
+  assert.ok(!saved.includes(secret));
+  assert.ok(!html.includes(secret));
+  assert.ok(!fs.readFileSync(path.join(dir, 'targets.json'), 'utf8').includes(secret));
+  status = 200;
+  snapshot = { since: snapshot.since, routes: [] };
+  await perfCommand(['--samples', '1'], root);
+  assert.equal(urlHits, 2);
+  assert.equal(fs.readFileSync(history, 'utf8').trim().split('\n').length, 2);
+  assert.ok(output.some(line => line === 'no backend route requests yet'));
+  snapshot = { invalid: secret };
+  await perfCommand(['routes'], root);
+  assert.match(output.at(-1), /invalid snapshot/);
+  await assert.rejects(perfCommand(['routes', '--top', '0'], root), /top/);
+  assert.throws(() => rankRoutes({ since: 'bad', routes: [] }), /invalid/);
+  assert.throws(() => rankRoutes({ since: '2026-11-18', routes: [{ count: -1 }] }), /invalid/);
+  await perfCommand(['add', 'another', url], root);
+  await perfCommand(['remove', 'another'], root);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'targets.json'), 'utf8')).find(t => t.type === 'routes').url, config[1].url);
+});
 
 test('nearest rank percentiles, provider detection and empty reports', () => {
   assert.equal(percentile([], .95), null);
