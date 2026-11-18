@@ -17,6 +17,8 @@ function setup(t, hookBody) {
   const work = path.join(root, 'work');
   const pidFile = path.join(root, 'hook.pid');
   const finished = path.join(root, 'hook.finished');
+  const pushTimeout = path.join(root, 'push-timeout.json');
+  const observePush = path.join(root, 'observe-push.cjs');
   t.after(() => {
     if (fs.existsSync(pidFile) && !fs.existsSync(finished)) {
       try { process.kill(Number(fs.readFileSync(pidFile, 'utf8')), 'SIGTERM'); } catch {}
@@ -49,18 +51,31 @@ function setup(t, hookBody) {
   fs.writeFileSync(path.join(work, 'app.js'), 'module.exports = 2;\n');
   const body = typeof hookBody === 'function' ? hookBody({ finished }) : hookBody;
   fs.writeFileSync(path.join(primary, '.git', 'hooks', 'pre-push'), `#!${process.execPath}\nconst fs = require('node:fs');\nfs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));\n${body}\n`, { mode: 0o755 });
+  // Inspect the real CLI's push budget without waiting for it to elapse.
+  fs.writeFileSync(observePush, `
+    const childProcess = require('node:child_process');
+    const { spawnSync } = childProcess;
+    childProcess.spawnSync = (command, args, options) => {
+      if (command === 'git' && args[0] === 'push') {
+        require('node:fs').writeFileSync(${JSON.stringify(pushTimeout)}, JSON.stringify(options?.timeout ?? null));
+      }
+      return spawnSync(command, args, options);
+    };
+  `);
   return {
-    git, remote, work, finished,
-    ship: () => spawnSync(process.execPath, [CLI, 'worktree', 'ship', '--message', 'Keep the required checks', '--verify', `${process.execPath} --check app.js`, '--no-pr', '--no-map-refresh'], {
+    git, remote, work, finished, pushTimeout,
+    ship: () => spawnSync(process.execPath, ['--require', observePush, CLI, 'worktree', 'ship', '--message', 'Keep the required checks', '--verify', `${process.execPath} --check app.js`, '--no-pr', '--no-map-refresh'], {
       cwd: work, env, encoding: 'utf8', timeout: 50000,
     }),
   };
 }
 
-test('a real pre-push hook can finish after the old thirty-second network cap', (t) => {
-  const fixture = setup(t, ({ finished }) => `setTimeout(() => { fs.writeFileSync(${JSON.stringify(finished)}, "passed"); process.exit(0); }, 31000);`);
+test('a real pre-push hook runs under a budget beyond the old thirty-second network cap', (t) => {
+  const fixture = setup(t, ({ finished }) => `fs.writeFileSync(${JSON.stringify(finished)}, "passed");`);
   const run = fixture.ship();
   assert.equal(run.status, 0, run.stderr || run.stdout);
+  const timeout = JSON.parse(fs.readFileSync(fixture.pushTimeout, 'utf8'));
+  assert.ok(Number.isFinite(timeout) && timeout > 31000, `expected a bounded push budget above 31 seconds, got ${timeout}ms`);
   assert.equal(fs.readFileSync(fixture.finished, 'utf8'), 'passed');
   assert.equal(fixture.git(['--git-dir', fixture.remote, 'show-ref', '--verify', '--quiet', 'refs/heads/hook-change']).status, 0);
   const head = fixture.git(['rev-parse', 'HEAD'], fixture.work).stdout.trim();
