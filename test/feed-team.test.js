@@ -274,7 +274,7 @@ test('emit: the same stream reads from atris channel feed when there is no hoste
 
 // ------------------------------------------------------------ more on scroll
 
-test('more: a scroll ping to up to three ON members, with the person\'s taste in their brief', async (t) => {
+test('more: the person asks up to three ON members for more, with the person\'s taste in their brief', async (t) => {
   const ctx = project(t, ['scout', 'writer', 'closer', 'extra']);
   const yes = propose(ctx, { title: 'Call the warm leads today' }).card;
   feed.decide(ctx.root, yes.id, 'approve', { note: 'more like this', env: ctx.env, deps: ctx.deps });
@@ -286,7 +286,7 @@ test('more: a scroll ping to up to three ON members, with the person\'s taste in
   ctx.spawned.length = 0;
   const out = feed.requestMoreIdeas(ctx.root, { env: ctx.env, deps: ctx.deps });
   assert.ok(out.requested >= 1 && out.requested <= 3);
-  assert.ok(ctx.thinkers.length === 1 && ctx.thinkers[0].names.length <= 3 && ctx.thinkers[0].reason === 'scroll');
+  assert.ok(ctx.thinkers.length === 1 && ctx.thinkers[0].names.length <= 3 && ctx.thinkers[0].reason === 'more', 'a person asking for more, never held to what the feed may start by itself');
   assert.equal(feed.readRuns(ctx.root).filter((e) => e.kind === 'ping').length, 0, 'thinking never uses the work queue');
   const brief = team.pingBrief(ctx.root, 'extra', 'scroll');
   assert.match(brief, /said yes to these[\s\S]*Call the warm leads today \(owner said: more like this\)/);

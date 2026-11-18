@@ -298,7 +298,9 @@ test('by itself the feed asks once, then stays quiet until the person acts or th
   const capped = auto();
   assert.equal(capped.pinged, 0);
   assert.match(capped.reason, /brought in 6 times in the last hour without being asked, the most/);
-  // A person asking is never held to it: refresh, or a member by name.
+  // A person asking is never held to it: a tap for more, refresh, or a member by name.
+  assert.equal(team.ping(ctx.root, { reason: 'more', env, deps: ctx.deps }).pinged, 3);
+  assert.equal(feed.requestMoreIdeas(ctx.root, { env, deps: ctx.deps }).requested, 3);
   assert.equal(team.ping(ctx.root, { reason: 'refresh', env, deps: ctx.deps }).pinged, 3);
   assert.equal(team.ping(ctx.root, { member: 'scout', reason: 'scroll', env, deps: ctx.deps }).pinged, 1);
 });
