@@ -226,21 +226,18 @@ test('ax headless turn surfaces the backend result event as output, not leftover
 });
 
 test('ax returns the prompt when the result event lands, without waiting for the stream to close', async () => {
-  let releaseResponse = () => {};
+  let response;
+  let watchdog;
   const server = http.createServer((req, res) => {
+    response = res;
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     res.write('data: ' + JSON.stringify({ type: 'text_delta', content: 'Hi.' }) + '\n\n');
     res.write('data: ' + JSON.stringify({ type: 'result', result: 'Hi.' }) + '\n\n');
-    const responseTimer = setTimeout(() => res.end(), 1500);
-    releaseResponse = () => {
-      clearTimeout(responseTimer);
-      if (!res.writableEnded) res.end();
-    };
+    watchdog = setTimeout(() => res.end(), 15_000);
   });
   const port = await listenLocal(server);
   const previousBackendUrl = process.env.AX_BACKEND_URL;
   process.env.AX_BACKEND_URL = `http://127.0.0.1:${port}/api/atris2/turn`;
-  const started = Date.now();
   try {
     const payload = await ax.runHeadlessTurn('hi', {
       mode: 'rapid',
@@ -249,11 +246,12 @@ test('ax returns the prompt when the result event lands, without waiting for the
     });
     assert.equal(payload.ok, true);
     assert.equal(payload.output, 'Hi.');
-    assert.ok(Date.now() - started < 800, `waited ${Date.now() - started}ms for a finished result`);
+    assert.equal(response?.writableEnded, false, 'the client must return before the server ends its response');
   } finally {
     if (previousBackendUrl === undefined) delete process.env.AX_BACKEND_URL;
     else process.env.AX_BACKEND_URL = previousBackendUrl;
-    releaseResponse();
+    clearTimeout(watchdog);
+    if (response && !response.writableEnded) response.end();
     await closeServer(server);
   }
 });
