@@ -25,9 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          # Enough history to compare stacked groups. A missing ancestor
-          # selects the full suite instead of an incomplete change list.
-          fetch-depth: 32
+          # Pull requests only need the merge commit's two parents. Other
+          # events keep enough history to compare stacked groups safely.
+          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 32 }}
 
       - name: Read the merge queue target
         id: target
