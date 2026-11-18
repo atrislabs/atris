@@ -1845,33 +1845,49 @@ test('browser: on the calm line the owner types, the idea lands and waits; words
 
 // ---- the wait, frame by frame: no frozen moment and no jump ------------------------------
 
-test('browser: after a typed answer the dots never stop: got it, the calm line with its box open, a note folded in, and the idea grows out of the dots, with no frozen moment and no jump', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
-  const r = await trace.waitTrace({ chromePath: CHROME });
-  const show = JSON.stringify(r, null, 1);
-  assert.equal(r.reached_idea, true, show);
-  // the only still moment is the beat the chosen answer holds; while the owner waits, never
-  assert.ok(r.longest_still_ms <= 250, show);
-  assert.ok(r.longest_still_waiting_ms <= 150, show);
-  // the dots move through the wait: 200 frames at 60fps, as time, so a slower machine reads the same
-  assert.ok(r.dots_moving_ms > 200 * 16.7, show);
-  // the got it line under the moving sphere, then the calm line's live words, its open box, the note
-  assert.ok(r.lines.includes('got it: paying schools.'), show);
-  assert.equal(r.calm_box_open, true, show);
-  assert.ok(r.calm_steps.length >= 2 && r.calm_steps.every(x => trace.CALM_LINES.includes(x)), show);
-  assert.deepEqual(r.calm_notes, ['make it about schools', 'got it, i\'ll fold that in.'], show);
-  // the note is a post on the calm line's own id, and the idea comes when asked for from it
-  assert.deepEqual(r.posts.map(x => [x.action, x.card]), [['say', 'question:focus'], ['say', 'wait:7'], ['orb', 'wait:7']], show);
-  // no jump: nothing leaps in a frame or changes speed in one (per 60fps frame, css pixels,
-  // read on the clock each part moves by, so a slower machine reads the same)
-  assert.ok(r.lava_max_step_px <= 45, show);
-  assert.ok(r.lava_max_size_step_px <= 45, show);
-  assert.ok(r.lava_max_speed_change_px <= 15, show);
-  assert.ok(r.sphere_max_step_px <= 10, show);
-  assert.ok(r.dots_max_speed_change_px <= 10, show);
-  assert.ok(r.title_max_step_px <= 5, show);
-  assert.equal(r.footer_seen_jump_px, 0, show);
-  // the idea is born where the dots were
-  assert.ok(r.bloom_from_dots_px <= 3, show);
+test.describe('independent phone wait traces', { concurrency: 2 }, () => {
+  test('browser: after a typed answer the dots never stop: got it, the calm line with its box open, a note folded in, and the idea grows out of the dots, with no frozen moment and no jump', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+    const r = await trace.waitTrace({ chromePath: CHROME });
+    const show = JSON.stringify(r, null, 1);
+    assert.equal(r.reached_idea, true, show);
+    // the only still moment is the beat the chosen answer holds; while the owner waits, never
+    assert.ok(r.longest_still_ms <= 250, show);
+    assert.ok(r.longest_still_waiting_ms <= 150, show);
+    // the dots move through the wait: 200 frames at 60fps, as time, so a slower machine reads the same
+    assert.ok(r.dots_moving_ms > 200 * 16.7, show);
+    // the got it line under the moving sphere, then the calm line's live words, its open box, the note
+    assert.ok(r.lines.includes('got it: paying schools.'), show);
+    assert.equal(r.calm_box_open, true, show);
+    assert.ok(r.calm_steps.length >= 2 && r.calm_steps.every(x => trace.CALM_LINES.includes(x)), show);
+    assert.deepEqual(r.calm_notes, ['make it about schools', 'got it, i\'ll fold that in.'], show);
+    // the note is a post on the calm line's own id, and the idea comes when asked for from it
+    assert.deepEqual(r.posts.map(x => [x.action, x.card]), [['say', 'question:focus'], ['say', 'wait:7'], ['orb', 'wait:7']], show);
+    // no jump: nothing leaps in a frame or changes speed in one (per 60fps frame, css pixels,
+    // read on the clock each part moves by, so a slower machine reads the same)
+    assert.ok(r.lava_max_step_px <= 45, show);
+    assert.ok(r.lava_max_size_step_px <= 45, show);
+    assert.ok(r.lava_max_speed_change_px <= 15, show);
+    assert.ok(r.sphere_max_step_px <= 10, show);
+    assert.ok(r.dots_max_speed_change_px <= 10, show);
+    assert.ok(r.title_max_step_px <= 5, show);
+    assert.equal(r.footer_seen_jump_px, 0, show);
+    // the idea is born where the dots were
+    assert.ok(r.bloom_from_dots_px <= 3, show);
+  });
+  test('browser: under reduced motion the same wait has no swarm and no travel, only plain fades, and the calm line still takes a note', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+    const r = await trace.waitTrace({ chromePath: CHROME, reduced: true });
+    const show = JSON.stringify(r, null, 1);
+    assert.equal(r.reached_idea, true, show);
+    // the dots are drawn when the sphere changes, and hold: a redraw or two, never a swarm
+    assert.ok(r.orb_frames_drawn <= 6, show);
+    assert.ok(r.dot_frames <= 2, show);
+    // nothing travels: not the lava, not the sphere, not the footer
+    assert.deepEqual([r.lava_max_step_px, r.sphere_max_step_px, r.footer_seen_jump_px], [0, 0, 0], show);
+    // every card change is a fade
+    assert.ok(r.fading_frames >= 6, show);
+    assert.equal(r.calm_box_open, true, show);
+    assert.deepEqual(r.calm_notes, ['make it about schools', 'got it, i\'ll fold that in.'], show);
+  });
 });
 
 test('trace: a few stalls cannot hide a jump in the wait, and a slow machine reads the same as a fast one', () => {
@@ -1920,21 +1936,6 @@ test('browser: the calm line fits every screen: its box is inside the edges with
     // the box sits above the footer
     assert.ok(r.field.bottom < r.foot.top, show);
   }
-});
-
-test('browser: under reduced motion the same wait has no swarm and no travel, only plain fades, and the calm line still takes a note',{ skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
-  const r = await trace.waitTrace({ chromePath: CHROME, reduced: true });
-  const show = JSON.stringify(r, null, 1);
-  assert.equal(r.reached_idea, true, show);
-  // the dots are drawn when the sphere changes, and hold: a redraw or two, never a swarm
-  assert.ok(r.orb_frames_drawn <= 6, show);
-  assert.ok(r.dot_frames <= 2, show);
-  // nothing travels: not the lava, not the sphere, not the footer
-  assert.deepEqual([r.lava_max_step_px, r.sphere_max_step_px, r.footer_seen_jump_px], [0, 0, 0], show);
-  // every card change is a fade
-  assert.ok(r.fading_frames >= 6, show);
-  assert.equal(r.calm_box_open, true, show);
-  assert.deepEqual(r.calm_notes, ['make it about schools', 'got it, i\'ll fold that in.'], show);
 });
 
 // ---- the number question and the weekly number card read first ---------------------
