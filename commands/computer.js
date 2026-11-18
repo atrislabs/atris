@@ -853,8 +853,6 @@ async function computerOnboard(token, businessSlug) {
     process.exit(1);
   }
 
-  const fs = require('fs');
-  const path = require('path');
 
   console.log(`\nOnboarding "${businessSlug}"...`);
 
