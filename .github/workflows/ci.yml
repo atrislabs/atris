@@ -78,6 +78,9 @@ jobs:
           GROUP: ${{ matrix.group }}
           FILES: ${{ toJSON(matrix.files) }}
         run: |
+          if [ -z "${NODE_V8_COVERAGE:-}" ]; then
+            export NODE_COMPILE_CACHE="$RUNNER_TEMP/atris-node-compile-cache"
+          fi
           case "$MODE" in
             selected) node -e 'process.exitCode = require("./scripts/ci-impact-check").runFiles(JSON.parse(process.env.FILES), process.cwd())' ;;
             quick) node scripts/ci-quick-check.js "$BASE" "$GROUP" ;;
