@@ -990,9 +990,16 @@ test('task events defaults to a recent compact view', () => {
     const created = runCli(['task', 'new', 'Keep the ledger behind the cockpit', '--json'], { cwd: dir, env });
     assert.equal(created.status, 0, created.stderr);
     const id = JSON.parse(created.stdout).task_id;
-    for (let i = 0; i < 30; i += 1) {
-      const note = runCli(['task', 'say', id, `status note ${i}`, '--as', 'codex'], { cwd: dir, env });
-      assert.equal(note.status, 0, note.stderr);
+    const note = runCli(['task', 'say', id, 'status note 0', '--as', 'codex'], { cwd: dir, env });
+    assert.equal(note.status, 0, note.stderr);
+    const db = taskStore.open(dbPath);
+    try {
+      for (let i = 1; i < 30; i += 1) {
+        const result = taskStore.noteTask(db, { id, actor: 'codex', content: `status note ${i}` });
+        assert.equal(result.noted, true, result.reason);
+      }
+    } finally {
+      taskStore.close();
     }
 
     const recent = runCli(['task', 'events'], { cwd: dir, env });

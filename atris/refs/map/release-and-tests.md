@@ -18,7 +18,7 @@ The sleep and lost-look checks in `test/gm-phone-health.test.js` also overlap up
 
 `test/gm-phone-layout.test.js` measures card line wrapping and footer geometry in the same Chrome render where the card and viewport match. Each assertion still covers its original cards and screen sizes.
 
-`test/engine-resource.test.js` counts bytes as it fills large log fixtures. The archive checks in `test/commands-6.test.js` make the first task through the CLI and add the rest through the task store.
+`test/engine-resource.test.js` counts bytes as it fills large log fixtures. The task history and archive checks in `test/commands-4.test.js` and `test/commands-6.test.js` make the first entry through the CLI and add the rest through the task store.
 
 ## Feature: Release (`atris release`)
 
