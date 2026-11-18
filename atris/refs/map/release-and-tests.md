@@ -12,6 +12,10 @@ rg "releaseAtris|releasePreflight|release preflight" commands/release.js bin/atr
 
 `scripts/ci-test-plan.js` (`comparisonBase`, `buildMatrix`) finds the changes in the queued commit and divides the selected files among workers. `scripts/ci-impact-check.js` (`plan`) maps changed files to tests and explains when the full suite is needed. `.github/workflows/ci.yml` requires planning, tests and deck lint to pass. Scheduled and manual runs use all eight full-suite groups.
 
+The slow-answer check in `test/gm-phone-hands.test.js` and the team-table viewport check in `test/gm-phone.test.js` run at most two independent Chrome sessions at a time. Each case still uses its own browser and local test server.
+
+`test/gm-phone-layout.test.js` measures card line wrapping and footer geometry in the same Chrome render where the card and viewport match. Each assertion still covers its original cards and screen sizes.
+
 ## Feature: Release (`atris release`)
 
 **Purpose:** Tag a release, bump version, create GitHub release, draft /launch post
@@ -54,6 +58,8 @@ npm run publish:release
 ## Revision reports across out-of-order commit dates
 
 Raw temporary-folder test setup: `test/helpers/task-help-fixture.js:43` supplies the unchanged folder functions to version-cmd, confidence-gate, unknowns, console-packet-shape and agent-proof-only tests. Their local no-argument wrappers retain each exact prefix and raw temporary path; CLI helpers, options and behavior checks remain local. Check: `node --test test/version-cmd.test.js test/confidence-gate.test.js test/unknowns.test.js test/console-packet-shape.test.js test/agent-proof-only.test.js`. The same unchanged folder functions also serve agents, config-guard, dream and router-brain tests; their local files, injected callbacks and availability checks stay local. Check: `node --test test/agents.test.js test/config-guard.test.js test/dream.test.js test/router-brain.test.js`.
+
+The task list limit cases in `test/commands-6.test.js` create the first row through the CLI and populate the other rows through the task store. The auto-accept scan, grouped reviews and blocked-task archive checks still run through the CLI at their original row counts.
 
 ## Balanced GitHub test groups and review resilience
 

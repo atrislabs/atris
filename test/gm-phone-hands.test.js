@@ -635,11 +635,10 @@ test('browser: a tap shows no system flash box, a double tap never zooms, and a 
   assert.match(phonePage('N'), /button, \.lava, \.stage canvas \{ -webkit-touch-callout: none;/);
 });
 
-test('browser: while the sphere waits on a slow answer its line never says tap to think, and past eight seconds it says the Mac is still at it', { skip, timeout: 120000 }, async () => {
-  const runs = [];
-  for (const from of ['card', 'big orb']) {
+test('browser: while the sphere waits on a slow answer its line never says tap to think, and past eight seconds it says the Mac is still at it', { skip, timeout: 120000, concurrency: 2 }, async t => {
+  await Promise.all(['card', 'big orb'].map(from => t.test(from, async () => {
     const desk = trace.cardDesk(from === 'card' ? CARDS.b1 : null, async () => { await wait(10500); return { card: CARDS.b2 }; });
-    runs.push(await trace.onPhone(desk, CHROME, async (p, send) => {
+    const out = await trace.onPhone(desk, CHROME, async (p, send) => {
       if (from === 'card') await tapText(p, send, 'not now');
       else { await p.until("document.getElementById('line').textContent === 'tap to think'", 'the big orb', 8000); await p.tap('#orb'); }
       await wait(1500);
@@ -647,15 +646,13 @@ test('browser: while the sphere waits on a slow answer its line never says tap t
       await wait(7500);
       const late = await look(p);
       await p.until(titled(CARDS.b2.title), 'the card', 8000).catch(() => {});
-      return { from, soon, late, after: await look(p) };
-    }, trace.PHONE, { firstCard: from === 'card' }));
-  }
-  const show = JSON.stringify(runs, null, 1);
-  for (const r of runs) {
-    assert.deepEqual([r.soon.has_card, r.soon.busy, r.soon.line], [false, true, ''], show);
-    assert.equal(r.late.line, 'still waiting on the mac', show);
-    assert.equal(r.after.title, CARDS.b2.title, show);
-  }
+      return { soon, late, after: await look(p) };
+    }, trace.PHONE, { firstCard: from === 'card' });
+    const show = JSON.stringify(out, null, 1);
+    assert.deepEqual([out.soon.has_card, out.soon.busy, out.soon.line], [false, true, ''], show);
+    assert.equal(out.late.line, 'still waiting on the mac', show);
+    assert.equal(out.after.title, CARDS.b2.title, show);
+  })));
 });
 
 test('browser: a note on the calm line that takes a while reads sending in place of send until the Mac has it', { skip, timeout: 90000 }, async () => {
