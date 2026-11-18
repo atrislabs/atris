@@ -12,11 +12,16 @@ const { listVaultSnapshots, restoreFromVault } = require('../lib/hygiene-vault')
 
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-sync-checkout-cmd-'));
 const fakeHome = path.join(sandbox, 'home');
+const fakeTemp = path.join(sandbox, 'tmp');
 fs.mkdirSync(fakeHome);
+fs.mkdirSync(fakeTemp);
 
 const savedEnv = {};
 const envOverrides = {
   HOME: fakeHome,
+  TMPDIR: fakeTemp,
+  TMP: fakeTemp,
+  TEMP: fakeTemp,
   GIT_CONFIG_GLOBAL: path.join(fakeHome, '.gitconfig'),
   GIT_CONFIG_NOSYSTEM: '1',
   GIT_CEILING_DIRECTORIES: sandbox,
@@ -440,7 +445,6 @@ test('--vault option validation rejects conflicting or malformed flags', () => {
 
 test('--vault vaults untracked and tracked files before fast-forwarding when behind upstream', () => {
   const { seed, checkout } = createRepos();
-  const tempsBefore = new Set(listVaultIndexTemps());
 
   // Tracked unstaged edit + staged new file + stale untracked code/scratch + secret
   fs.writeFileSync(path.join(checkout, 'tracked.txt'), 'local tracked edit\n');
@@ -500,8 +504,7 @@ test('--vault vaults untracked and tracked files before fast-forwarding when beh
   );
 
   // No leftover temp index, WAL, or lock files
-  const tempsAfter = listVaultIndexTemps().filter((name) => !tempsBefore.has(name));
-  assert.deepStrictEqual(tempsAfter, []);
+  assert.deepStrictEqual(listVaultIndexTemps(), []);
   const walDir = path.join(checkout, '.atris', 'vault');
   assert.deepStrictEqual(fs.existsSync(walDir) ? fs.readdirSync(walDir) : [], []);
   assert.strictEqual(fs.existsSync(path.join(checkout, '.git', 'atris-clean.lock')), false);
