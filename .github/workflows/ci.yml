@@ -43,9 +43,10 @@ jobs:
           ATRIS_TEST_SPLIT: '1'
         run: node scripts/ci-test-shard.js ${{ matrix.shard }}/8
 
-  # The per change check on a pull request: the quick list plus every test
-  # file the pull request adds or edits, split three ways by recorded run
-  # time. The merge queue runs the full set.
+  # The per change check on a pull request: the quick list, every test file
+  # the pull request adds or edits, and the tests that require the source files
+  # it changes, split three ways by recorded run time. The merge queue runs the
+  # full set.
   quick:
     name: quick (${{ matrix.group }}/3)
     if: github.event_name == 'pull_request'
@@ -68,7 +69,7 @@ jobs:
 
       - run: npm ci
 
-      - name: Quick tests and the tests this pull request touches
+      - name: Quick tests, the tests this pull request touches, and the tests that cover its source
         run: |
           git rev-parse --verify --quiet 'HEAD^2' > /dev/null || {
             echo 'expected the pull request merge commit; nothing to compare with.'
