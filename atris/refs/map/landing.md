@@ -86,6 +86,8 @@ rg "requireAccountBound|refuseAccountGlobal|ACCOUNT_GLOBAL_MESSAGE|isBoundBusine
 
 **Purpose:** Work is merged or reaped, never limbo: the board shows every unlanded branch/worktree; `--reap` salvages then deletes anything landed or past TTL
 
+The process scan resolves repeated paths once per scan. Cleanup still takes a fresh scan before removal and keeps the folder if a scan fails.
+
 - **Implementation:** `commands/land.js` (collectBoard, printBoard, reap, landSummary, printEmptyLand); the board orders overdue, active, then landed residue, labels aging active rows `stale`, and keeps fresh rows `in the air`; counts separate tracked, stale, overdue, and landed work
 - **Empty / unborn repo:** `printEmptyLand` (`commands/land.js`) prints one human sentence on stdout and exits 2; `--json` is a compact refuse receipt; never a stack or wizard. `landSummary` returns null when there is no git history.
 - **Router:** `bin/atris.js` (`command === 'land'` dispatch); leftover throws print one line and exit 2
