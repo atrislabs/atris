@@ -42,7 +42,7 @@ rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggested
 
 **Purpose:** Named explore command. Capture one idea locally, then exit.
 
-- **Entry point:** `bin/atris.js:2477` (command routing)
+- **Entry point:** `bin/atris.js:2479` (command routing)
 - **Handler:** `commands/brainstorm.js:71-101` (brainstormAtris function)
 - **Help:** `commands/brainstorm.js:11-24` short-circuits before workspace/log setup; regression: `test/commands-7.test.js:2196-2211`
 - **How it works:**
@@ -104,7 +104,7 @@ rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggested
 
 - **Entry point:** `commands/setup.js` (`setupAtris`)
 - **Help:** `bin/atris.js` (`showSetupHelp`) prints setup usage without entering setup
-- **Dispatch:** `bin/atris.js:1455-1456` routes `setup --help`, `setup -h`, and `setup help` before login, business fetch, or pull flow
+- **Dispatch:** `bin/atris.js:1457-1458` routes `setup --help`, `setup -h`, and `setup help` before login, business fetch, or pull flow
 - **Regression:** `test/commands-2.test.js:1468-1479` covers setup help without setup banner, login prompt, or `.atris` creation
 - **Value:** Gives first-run guidance while keeping help safe in temp homes and automation.
 
@@ -115,7 +115,7 @@ rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggested
 **Purpose:** Load Atris context - MAP.md, journal, tasks - and display system status
 
 - **Entry point:** `commands/activate.js:158-306` (activateAtris function)
-- **Routing:** `bin/atris.js:1144-1145`
+- **Routing:** `bin/atris.js:1146-1147`
 - **Help:** `bin/atris.js` (`showActivateHelp`) prints usage before context loading or journal creation
 - **Regression:** `test/commands-2.test.js:1499-1513` covers activate help without context panels or temp state creation; `test/activate-boot.test.js` covers the boot brief + sync-status line
 - **Logic:**

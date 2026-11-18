@@ -14,7 +14,7 @@ rg "releaseAtris|releasePreflight|release preflight" commands/release.js bin/atr
 
 - **Entry point:** `commands/release.js:16` (releaseAtris function)
 - **Preflight:** `commands/release.js` (`releasePreflight`) checks master, a clean tree, local master vs origin/master, no existing `v<version>` tag, then `npm test` with `CI=true`; git failures skip the suite
-- **Dispatch/help:** `bin/atris.js:2754` routes `release`, `bin/atris.js:2760` routes `release preflight`, `bin/atris.js` (`showReleaseHelp`) and `bin/atris.js:599` list the preflight command
+- **Dispatch/help:** `bin/atris.js:2761` routes `release`, `bin/atris.js:2767` routes `release preflight`, `bin/atris.js` (`showReleaseHelp`) and `bin/atris.js:600` list the preflight command
 - **Flags:** `--dry-run` prints the draft without mutating
 - **Steps:** git log since last tag → determine bump (minor if scorecard reward≥5, else patch) → run `npm version --no-git-tag-version` so package.json and package-lock.json move together → commit both files → tag → push → `gh release create` → print launch post
 - **Helpers:**
