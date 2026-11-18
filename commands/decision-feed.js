@@ -110,6 +110,12 @@ const HELP = [
   '                          comment; --retry starts it again only after it failed. A comment that is only "@member do it" does the same.)',
   '       atris feed start <folder> [--engine <id>] [--goal "<one plain sentence>"]',
   '                          (set up a folder of projects, add a starter team when it has none, turn it on, set the goal, first ping)',
+  '       atris feed setup [--stream] [--json] [--engine <id>]',
+  '                          (set up this project while you watch: the starter team joins one card at a time, the project is read',
+  '                          by plain rules into a few cards of what was found, then at most three questions, one at a time.',
+  '                          A reply on a question is saved in the project lessons; no model is used. Safe to run again.',
+  '                          --stream --json prints one line per step, then {"type":"done",...})',
+  '       atris feed setup skip [<card>]      skip the setup question waiting for you; nothing is saved',
   '       atris feed doctor [--no-call]       before a demo: what is ready, what is not, and the one thing to do (exits 1 when not ready)',
   '       atris feed repair                   put right runs, replies and approvals left half done; says what it fixed',
   '       atris feed notes [--member <name>]  what the owner taught the team in card conversations; notes forget <id> removes one',
@@ -136,7 +142,13 @@ function textCard(card) {
   return lines.join('\n');
 }
 
-function printText(command, out) {
+function printText(command, out, { streamed = false } = {}) {
+  if (command === 'setup') {
+    if (!streamed) for (const entry of out.steps) console.log(entry.text);
+    const waiting = out.asks.waiting;
+    console.log(waiting ? `set up. waiting on your answer: ${waiting.text}` : 'set up. nothing is waiting on you.');
+    return;
+  }
   if (command === 'clear') {
     console.log('Feed cleared. Project tasks and activity records remain.');
     return;
@@ -299,6 +311,36 @@ async function run(args = [], context = {}) {
       if (json) console.log(JSON.stringify(out, null, 2));
       else printText('doctor', out);
       return out.ready ? 0 : 1;
+    }
+    if (sub === 'setup') {
+      // Set the project up while the feed watches: team, a read, then questions.
+      // --stream --json: one JSON line per step as it happens, then the summary.
+      const setupLib = require('../lib/feed-setup');
+      if (positional[1] === 'skip') {
+        const skipped = setupLib.skip(feed.projectRoot(context.cwd || process.cwd()), positional[2] || flags.card || null, { env, deps });
+        if (json) console.log(JSON.stringify(skipped, null, 2));
+        else console.log(`skipped.${skipped.next ? ` next question: ${skipped.next.text}` : ' no more questions.'}`);
+        return 0;
+      }
+      if (positional[1]) throw new feed.FeedError(400, `unknown setup command: ${positional[1]}`);
+      const onStep = !flags.stream ? null : json
+        ? (event) => write(`${JSON.stringify(event)}\n`)
+        : (event) => write(`${event.text}\n`);
+      let out;
+      try {
+        out = await setupLib.setup(context.cwd || process.cwd(), { env, deps, engine: flags.engine, onStep });
+      } catch (error) {
+        const known = feed.asFeedError(error);
+        if (flags.stream && json && known) {
+          write(`${JSON.stringify({ type: 'error', ok: false, error: known.toJSON() })}\n`);
+          return 1;
+        }
+        throw error;
+      }
+      if (flags.stream && json) write(`${JSON.stringify({ type: 'done', ...out })}\n`);
+      else if (json) console.log(JSON.stringify(out, null, 2));
+      else printText('setup', out, { streamed: Boolean(flags.stream) });
+      return 0;
     }
     if (sub === 'start') {
       const out = await team().start(positional[1] || context.cwd || process.cwd(), { env, deps, engine: flags.engine, goal: flags.goal });
@@ -495,7 +537,7 @@ async function run(args = [], context = {}) {
 const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'talk', 'messages', 'revise', 'more', 'run', 'help',
   'waiting',
   'settings', 'engines', 'members', 'member', 'ping', 'think', 'emit', 'events', 'start', 'doctor', 'repair', 'notes',
-  'say', 'react', 'reply', 'replies', 'discuss', 'work', 'clear']);
+  'say', 'react', 'reply', 'replies', 'discuss', 'work', 'clear', 'setup']);
 
 const LEGACY_BARE_NOTICE = 'note: bare `atris feed` now opens the decision feed. Output is not a terminal, so this run showed the '
   + 'business group feed as before; that ends next release. Use `atris feed list` for the group feed, `atris feed cards --json` for the new one.';
