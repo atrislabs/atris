@@ -1,9 +1,9 @@
 'use strict';
 
-// The pull request check: the quick list in test/fast-tests.txt, every test
+// The broad-change pull request check: the quick list in test/fast-tests.txt, every test
 // file the pull request adds or edits, and the test files that cover the
 // source files it changes (the tests that require them, directly or through
-// other files). The merge queue still runs the whole set through
+// other files). When the impact planner calls for this fallback, the queue runs the whole set through
 // scripts/ci-test-shard.js before anything reaches master.
 // An optional group such as 2/3 splits the picked files by recorded run time,
 // so a few machines share the work.
@@ -231,4 +231,4 @@ function main(args, root = path.resolve(__dirname, '..')) {
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
-module.exports = { pick, main, cover, requirers, describeCover, COVER_CAP, COVER_MILLISECONDS };
+module.exports = { changedFiles, pick, main, cover, requirers, describeCover, COVER_CAP, COVER_MILLISECONDS };
