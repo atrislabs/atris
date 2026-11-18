@@ -49,7 +49,14 @@ jobs:
         id: pick
         env:
           TARGET_READ: ${{ steps.target.outcome }}
-        run: node scripts/ci-test-plan.js
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo "mode=quick" >> "$GITHUB_OUTPUT"
+            echo "base=HEAD^1" >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"group":"1/3","files":[]},{"group":"2/3","files":[]},{"group":"3/3","files":[]}]}' >> "$GITHUB_OUTPUT"
+          else
+            node scripts/ci-test-plan.js
+          fi
 
   unit:
     needs: plan
@@ -78,6 +85,20 @@ jobs:
           GROUP: ${{ matrix.group }}
           FILES: ${{ toJSON(matrix.files) }}
         run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            case "$GROUP" in
+              2/3) variants="on off off on" ;;
+              *) variants="off on on off" ;;
+            esac
+            for variant in $variants; do
+              unset NODE_COMPILE_CACHE
+              if [ "$variant" = on ]; then
+                export NODE_COMPILE_CACHE="$(mktemp -d "$RUNNER_TEMP/atris-compile.XXXXXX")"
+              fi
+              /usr/bin/time -f "cache-timing $GROUP $variant %e" node scripts/ci-quick-check.js "$BASE" "$GROUP"
+            done
+            exit 0
+          fi
           case "$MODE" in
             selected) node -e 'process.exitCode = require("./scripts/ci-impact-check").runFiles(JSON.parse(process.env.FILES), process.cwd())' ;;
             quick) node scripts/ci-quick-check.js "$BASE" "$GROUP" ;;
