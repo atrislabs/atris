@@ -421,3 +421,50 @@ test('a runner that died before the queue noticed is not shown as accepted, and 
   assert.equal(ideaRows(ctx).length, 1);
   assert.equal(ctx.spawned.length, 2);
 });
+
+test('handoff snapshot preserves source body, corrections and provenance across retry', (t) => {
+  const ctx = project(t, ['writer']);
+  const source = feed.proposeCard(ctx.root, { as: 'writer', title: 'Welcome our newest buyers', body: 'Write only to people who bought this week.', why: 'They should feel welcome.', env: ctx.env }).card;
+  const selected = memberSays(ctx, source.id, 'writer', 'Write a warm thank you note for these buyers.');
+  const correction = room.reply(ctx.root, source.id, 'Correction: draft it only. Do not send it.', { env: ctx.env, deps: ctx.deps }).reply;
+  team.setOn(ctx.root, 'writer', false, { env: ctx.env });
+  const first = work.startWork(ctx.root, source.id, { replyId: selected.id, env: ctx.env, deps: ctx.deps });
+  const taskId = first.work.card_id.split(':')[1];
+  const before = ideaRows(ctx).find(row => row.id === taskId).metadata;
+  assert.match(before.objective, /Welcome our newest buyers/);
+  assert.match(before.objective, /Write only to people who bought this week/);
+  assert.match(before.objective, /Correction: draft it only\. Do not send it/);
+  assert.ok(before.objective.includes(source.id));
+  assert.ok(before.objective.includes(selected.id));
+  assert.ok(before.objective.includes(correction.id));
+  assert.match(before.objective, /writer/);
+  assert.match(before.objective, /snapshot/i);
+  room.reply(ctx.root, source.id, 'Later correction: use a different greeting.', { env: ctx.env, deps: ctx.deps });
+  team.setOn(ctx.root, 'writer', true, { env: ctx.env });
+  const retry = work.startWork(ctx.root, source.id, { replyId: selected.id, retry: true, env: ctx.env, deps: ctx.deps });
+  assert.equal(retry.work.card_id, first.work.card_id);
+  const after = ideaRows(ctx).find(row => row.id === taskId).metadata;
+  assert.equal(after.objective.split('\n\nWhen you finish')[0], before.objective.split('\n\nWhen you finish')[0]);
+  assert.equal(after.feed.detail, before.feed.detail);
+  assert.doesNotMatch(after.objective, /Later correction/);
+});
+
+
+test('handoff snapshot bounds conversation and labels omitted context', (t) => {
+  const ctx = project(t, ['writer']);
+  const source = post(ctx);
+  const selected = memberSays(ctx, source.id, 'writer', 'Draft a welcome note for our buyers.');
+  for (let i = 0; i < 12; i += 1) {
+    room.reply(ctx.root, source.id, `Comment ${i}: ${'Words for this conversation. '.repeat(30)}`, { env: ctx.env, deps: ctx.deps });
+  }
+  room.reply(ctx.root, source.id, 'Final correction: keep the note as a draft.', { env: ctx.env, deps: ctx.deps });
+  const out = work.startWork(ctx.root, source.id, { replyId: selected.id, env: ctx.env, deps: ctx.deps });
+  const taskId = out.work.card_id.split(':')[1];
+  const metadata = ideaRows(ctx).find(row => row.id === taskId).metadata;
+  assert.match(metadata.objective, /Final correction: keep the note as a draft/);
+  assert.doesNotMatch(metadata.objective, /Comment 0:/);
+  assert.match(metadata.objective, /at most eight/);
+  assert.match(metadata.objective, /excerpt; read the source/);
+  assert.ok(metadata.objective.length <= 10000);
+  assert.ok(metadata.feed.detail.length <= 10000);
+});
