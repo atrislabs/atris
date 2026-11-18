@@ -10,7 +10,9 @@ rg "releaseAtris|releasePreflight|release preflight" commands/release.js bin/atr
 
 ## Choosing CI tests
 
-`scripts/ci-test-plan.js` (`comparisonBase`, `buildMatrix`) finds the changes in the queued commit and divides the selected files among workers. `scripts/ci-impact-check.js` (`plan`) maps changed files to tests and explains when the full suite is needed. `.github/workflows/ci.yml` requires planning, tests and deck lint to pass. Scheduled and manual runs use all eight full-suite groups.
+`scripts/ci-test-plan.js` (`comparisonBase`, `buildMatrix`) finds changes in pull requests and queued commits and divides the selected files among workers. If the target advanced, the planner uses the tested pull request merge's base only when GitHub identifies that exact merge and Git proves the earlier base is its ancestor. If it cannot prove the base it runs all eight groups.
+
+`scripts/ci-impact-check.js` (`plan`) maps changed files to tests and explains when the full suite is needed. `.github/workflows/ci.yml` requires planning, tests and deck lint to pass. Scheduled and manual runs use all eight full-suite groups.
 
 ## Feature: Release (`atris release`)
 
