@@ -400,3 +400,24 @@ test('a runner that cannot start blocks on the person and an explicit retry resu
   assert.equal(ideaRows(ctx).length, 1);
   assert.equal(ctx.spawned.length, 1);
 });
+
+test('a runner that died before the queue noticed is not shown as accepted, and a retry starts the same task again', (t) => {
+  const ctx = project(t, ['writer']);
+  const card = post(ctx);
+  const said = memberSays(ctx, card.id, 'writer', 'Write a thank you note for the newest buyers.');
+  // A real process that has already exited: the run's pid is gone, as after a crash, before any repair.
+  const deadPid = require('node:child_process').spawnSync(process.execPath, ['-e', '']).pid;
+  const out = work.startWork(ctx.root, card.id, { replyId: said.id, env: ctx.env, deps: { ...ctx.deps, spawnRunner: (_root, entry) => { ctx.spawned.push(entry); return deadPid; } } });
+  const shown = postCard(ctx, card.id).work[0];
+  assert.equal(shown.status, 'failed', 'nothing is running and nothing will start by itself');
+  assert.equal(shown.receipt_state, 'blocked');
+  assert.equal(shown.next_owner, 'user:owner');
+  assert.equal(shown.next_action, 'retry_work');
+  assert.equal(work.startWork(ctx.root, card.id, { replyId: said.id, env: ctx.env, deps: ctx.deps }).replayed, true, 'a plain tap starts nothing');
+  const retried = work.startWork(ctx.root, card.id, { replyId: said.id, retry: true, env: ctx.env, deps: { ...ctx.deps, isAlive: (pid) => pid !== deadPid } });
+  assert.equal(retried.started, true);
+  assert.equal(retried.work.receipt_state, 'running');
+  assert.equal(retried.work.card_id, out.work.card_id);
+  assert.equal(ideaRows(ctx).length, 1);
+  assert.equal(ctx.spawned.length, 2);
+});
