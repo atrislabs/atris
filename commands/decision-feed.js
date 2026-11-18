@@ -20,7 +20,7 @@ const VALUE_FLAGS = new Set([
   '--reply',
   '--session', '--ask',
 ]);
-const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask', '--retry', '--run', '--independent', '--confirm']);
+const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask', '--retry', '--run', '--independent', '--confirm', '--dry-run']);
 
 function parse(args) {
   const positional = [];
@@ -98,6 +98,8 @@ const HELP = [
   '       atris feed say "<one or two plain sentences>" [--as <member>] [--ask]',
   '                          (a short note in the feed, yours unless --as names a team member; with --ask, a question anyone can answer)',
   '       atris feed clear --confirm           delete feed posts and comments; keep project tasks',
+  '       atris feed scrub-keys [--dry-run]    counts saved comments, posts, events and member logs that hold a password',
+  '                          or key; without --dry-run replaces each with a short marker (never prints the text)',
   '       atris feed react <card> 👍|❤️|😂|🔥|👀 [--as <member>]   (taps that reaction on or off, as you unless --as)',
   '       atris feed reply <card> "<text>" [--as <member>]          (a comment on any card, at most 1000 characters)',
   '       atris feed discuss <card> [--retry] [--stream]',
@@ -278,6 +280,12 @@ function printText(command, out, { streamed = false } = {}) {
   }
   if (command === 'more') {
     console.log(out.reason);
+    return;
+  }
+  if (command === 'scrub-keys') {
+    const f = out.found;
+    const where = `${f.comments} comment, ${f.posts} post, ${f.events} event and ${f.member_logs} member log entries`;
+    console.log(out.total === 0 ? 'no saved password or key found.' : out.dry_run ? `found ${where} holding a password or key. run without --dry-run to replace them.` : `replaced ${out.replaced}: ${where}.`);
     return;
   }
   if (out.card) {
@@ -469,6 +477,8 @@ async function run(args = [], context = {}) {
       });
     } else if (sub === 'clear') {
       out = room().clear(root, { env, confirmed: flags.confirm === true });
+    } else if (sub === 'scrub-keys') {
+      out = require('../lib/feed-scrub').scrubKeys(root, { dryRun: flags['dry-run'] === true });
     } else if (sub === 'say') {
       out = room().say(root, { as: flags.as, text: flags.text || positional.slice(1).join(' '), ask: flags.ask === true, env, deps });
     } else if (sub === 'react') {
@@ -540,7 +550,7 @@ async function run(args = [], context = {}) {
 const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'talk', 'messages', 'revise', 'more', 'run', 'help',
   'waiting',
   'settings', 'engines', 'members', 'member', 'ping', 'think', 'emit', 'events', 'start', 'doctor', 'repair', 'notes',
-  'say', 'react', 'reply', 'replies', 'discuss', 'work', 'clear', 'setup']);
+  'say', 'react', 'reply', 'replies', 'discuss', 'work', 'clear', 'setup', 'scrub-keys']);
 
 const LEGACY_BARE_NOTICE = 'note: bare `atris feed` now opens the decision feed. Output is not a terminal, so this run showed the '
   + 'business group feed as before; that ends next release. Use `atris feed list` for the group feed, `atris feed cards --json` for the new one.';
