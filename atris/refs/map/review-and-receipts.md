@@ -124,7 +124,7 @@ rg "planChecks|validateMap|lintMap|whereFromMarkers|codeIdentity|matchReceipt|fi
 
 ## Engine dispatch default branch and refusals
 
-- Readiness runtime selection: `lib/task-proof.js:157` uses `bash -lc`; a login profile can replace the caller's Node path. Reproduction and full failure evidence: `atris/receipts/readiness-runtime-proof-2026-10-14.txt`.
+- Readiness runtime selection: `lib/task-proof.js:156` uses `bash -lc`; a login profile can replace the caller's Node path. Reproduction and full failure evidence: `atris/receipts/readiness-runtime-proof-2026-10-14.txt`.
 
 ## Revision reports across out-of-order commit dates
 
