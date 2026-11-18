@@ -10,6 +10,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const [mode, folder, logFile] = process.argv.slice(2);
+// The full test run starts every file under test/ on its own, with no
+// arguments; that run has nothing to do here.
+if (!mode || !folder || !logFile) process.exit(0);
 const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 const log = (line) => fs.appendFileSync(logFile, `${mode} ${line}\n`);
 
