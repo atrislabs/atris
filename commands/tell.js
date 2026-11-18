@@ -37,7 +37,7 @@ options:
   --task <key>        send it as a task the member can claim and report on
   --channel <name>    the channel it shows in (default: general)
   --as <member>       send as that team member (else ATRIS_AGENT, else you); with listen, whose notes
-  --wait [seconds]    after sending, watch until the member answers or finishes (default 180)
+  --wait [seconds]    after sending, wait for the member's answer and print it (default 180)
   --json              the server's raw reply; with listen, one note per line
 
 listen keeps waiting until you stop it, and does not mark notes read.`);
@@ -134,6 +134,17 @@ function hasAnswered(p) {
 }
 
 const FINAL_STATES = new Set(['completed', 'failed', 'blocked']);
+
+// The most one send may ask the server to hold for an answer.
+const SERVER_WAIT_MAX = 25;
+// A repeat with the same key sends nothing new for ten minutes; stop asking
+// again a minute before that.
+const SAME_KEY_MS = 9 * 60 * 1000;
+
+// A member's reply is printed as written, minus terminal control characters.
+function safeText(value) {
+  return text(value).replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '');
+}
 
 // One person's receipt in plain words, with times when the server has them.
 function personWords(p, receipt = {}) {
@@ -290,7 +301,12 @@ async function tellCommand(args = [], deps = {}) {
   body.idempotency_key = deps.newKey ? deps.newKey() : crypto.randomUUID();
   const clock = deps.now || Date.now;
   const started = clock();
-  const res = await request(`${base}/tell`, { method: 'POST', body, token });
+  // With --wait the server holds the call open until the member answers (up to
+  // 25 seconds), so the answer often comes back with the send itself.
+  const send = (seconds) => request(`${base}/tell`, seconds
+    ? { method: 'POST', body: { ...body, wait_seconds: seconds }, token, timeoutMs: (seconds + 20) * 1000 }
+    : { method: 'POST', body, token });
+  const res = await send(waited.wait === null ? 0 : Math.min(SERVER_WAIT_MAX, waited.wait));
   if (routeMissing(res)) {
     err(`This Atris server does not have tell yet. Use: atris channel ${body.channel || 'general'} "@${target} ..."`);
     return 1;
@@ -306,16 +322,70 @@ async function tellCommand(args = [], deps = {}) {
   }
   if (!quiet) for (const line of receiptLines(reply, business, target)) log(line);
 
-  // --wait: the stopwatch. Check every 5 seconds until the member answers or
-  // finishes, or time runs out. One line per change, timed from the send.
   const sleep = deps.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const to = text(reply.to) || target;
   const limitMs = waited.wait * 1000;
   const elapsed = () => Math.round((clock() - started) / 1000);
+  if (!quiet) log(`waiting up to ${waited.wait} seconds for ${to}`);
+
+  // A server that waits for the answer itself says answered true or false.
+  // While time is left, ask again with the same key: the server sends nothing
+  // new and holds for the answer once more. Past nine minutes the key would no
+  // longer stop a second send, so the receipt watch below takes over.
+  if (typeof reply.answered === 'boolean') {
+    let latest = reply;
+    let saidOnIt = false;
+    let report = null;
+    let outcome = 'timeout';
+    for (;;) {
+      if (latest.accepted && !latest.answered && !saidOnIt) {
+        saidOnIt = true;
+        if (!quiet) log(`${String(elapsed()).padStart(4)}s  ${to} is on it${text(latest.on_it) ? `: ${oneLine(safeText(latest.on_it))}` : ''}`);
+      }
+      if (latest.answered) { outcome = 'answered'; break; }
+      const leftMs = limitMs - (clock() - started);
+      if (leftMs < 1000 || clock() - started >= SAME_KEY_MS) break;
+      // A task report (finished, failed, blocked) carries no reply; the receipt shows it.
+      const check = await readReceipt(reply.post_id);
+      const people = check && check.ok && check.data && Array.isArray(check.data.recipients) ? check.data.recipients.filter((p) => p && typeof p === 'object') : [];
+      const person = people.length ? pickRecipient(people, reply, target) : null;
+      if (person && FINAL_STATES.has(text(person.state))) {
+        report = check.data;
+        outcome = text(person.state) === 'completed' ? 'finished' : text(person.state);
+        break;
+      }
+      const asked = clock();
+      const again = await send(Math.min(SERVER_WAIT_MAX, Math.floor(leftMs / 1000)));
+      if (again && (again.status === 401 || again.status === 403)) { err(`could not check ${reply.post_id}: ${serverMessage(again, business)}`); return 1; }
+      if (again && again.ok && again.data && typeof again.data === 'object' && typeof again.data.answered === 'boolean') latest = again.data;
+      // A reply that came back at once (or an error) gets a short pause, so this never spins.
+      if (clock() - asked < 1000) await sleep(Math.min(5000, Math.max(0, limitMs - (clock() - started))));
+    }
+    const handOff = outcome === 'timeout' && clock() - started >= SAME_KEY_MS && limitMs - (clock() - started) >= 1000;
+    if (!handOff) {
+      const seconds = elapsed();
+      if (quiet) {
+        log(JSON.stringify({ ...latest, ...(report ? { receipt: report } : {}), waited_seconds: seconds }));
+      } else if (outcome === 'answered') {
+        const answer = safeText(latest.answer);
+        if (answer) log(`${to}: ${answer}`);
+        log(`answered in ${seconds} seconds`);
+      } else if (outcome === 'finished') {
+        log(`finished in ${seconds} seconds`);
+      } else if (outcome === 'timeout') {
+        log(`no answer from ${to} after ${seconds} seconds${saidOnIt ? `. ${to} is still on it` : ''}. check: atris tell status ${text(reply.post_id)} --business ${business.slug}`);
+      } else {
+        log(`${to} ${outcome === 'blocked' ? 'is blocked' : 'failed'} after ${seconds} seconds`);
+      }
+      return outcome === 'answered' || outcome === 'finished' ? 0 : 1;
+    }
+  }
+
+  // --wait on the receipt alone: check every 5 seconds until the member answers
+  // or finishes, or time runs out. One line per change, timed from the send.
   let receipt = null;
   let last = '';
   let outcome = 'timeout';
-  if (!quiet) log(`waiting up to ${waited.wait} seconds for ${to}`);
   while (clock() - started < limitMs) {
     await sleep(Math.min(5000, Math.max(0, limitMs - (clock() - started))));
     const check = await readReceipt(reply.post_id);

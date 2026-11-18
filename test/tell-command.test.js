@@ -388,6 +388,93 @@ test('--wait on an old server without receipts says so', async () => {
   assert.match(h.stderr[0], /does not have tell receipts yet/);
 });
 
+// ── --wait on a server that waits for the answer itself ─────
+
+// Each send returns the next step of a script and moves the fake clock by the
+// wait it asked for, as a server holding the call open would.
+function answerServer(steps, receiptStep = null) {
+  let clock = Date.parse('2026-11-18T10:00:00Z');
+  let sends = 0;
+  const handler = fakeServer({
+    [`POST ${BASE}/tell`]: (options) => {
+      const step = steps[Math.min(sends, steps.length - 1)];
+      sends += 1;
+      clock += (options.body.wait_seconds || 0) * 1000 * (step.answered ? 0.4 : 1);
+      return { ok: true, status: 201, data: { ...SENT, wakes: true, wake_reason: 'queued', ...step } };
+    },
+    [`GET ${BASE}/posts/6c0b6823/receipt`]: () => (receiptStep
+      ? { ok: true, status: 200, data: receiptStep }
+      : { ok: true, status: 200, data: person({ state: 'seen' }) }),
+  });
+  const h = harness({ handler });
+  h.deps.now = () => clock;
+  h.deps.sleep = async (ms) => { clock += ms; };
+  h.deps.newKey = () => 'key-1';
+  return h;
+}
+const sends = (h) => h.calls.filter((c) => c.method === 'POST' && c.pathname === `${BASE}/tell`);
+
+test('--wait prints the answer that comes back with the send', async () => {
+  const h = answerServer([{ answered: true, accepted: false, answer: 'Yes, since this morning.', seconds: 10 }]);
+  const code = await tellCommand(['arjun', 'is the fix live?', '--wait'], h.deps);
+  assert.equal(code, 0, h.all());
+  assert.deepEqual(sends(h).map((c) => c.body.wait_seconds), [25]);
+  assert.deepEqual(h.stdout.slice(-2), ['arjun: Yes, since this morning.', 'answered in 10 seconds']);
+});
+
+test('--wait asks again with the same key, says when the member is on it, then prints the answer', async () => {
+  const h = answerServer([
+    { answered: false, accepted: true, on_it: 'On it: checking the deploy log.', answer: null },
+    { answered: true, accepted: true, on_it: 'On it: checking the deploy log.', answer: 'Deploy is healthy.\nNo errors since 9.' },
+  ]);
+  const code = await tellCommand(['arjun', 'check the deploy', '--wait', '60'], h.deps);
+  assert.equal(code, 0, h.all());
+  const posts = sends(h);
+  assert.deepEqual(posts.map((c) => [c.body.idempotency_key, c.body.wait_seconds]), [['key-1', 25], ['key-1', 25]]);
+  assert.deepEqual(h.stdout.slice(-3), [
+    '  25s  arjun is on it: On it: checking the deploy log.',
+    'arjun: Deploy is healthy.\nNo errors since 9.',
+    'answered in 35 seconds',
+  ]);
+});
+
+test('--wait with no answer stops at the time limit, sends once per ask, and exits non-zero', async () => {
+  const h = answerServer([{ answered: false, accepted: false, answer: null }]);
+  const code = await tellCommand(['arjun', 'ping', '--wait', '30'], h.deps);
+  assert.equal(code, 1);
+  assert.deepEqual(sends(h).map((c) => [c.body.idempotency_key, c.body.wait_seconds]), [['key-1', 25], ['key-1', 5]]);
+  assert.equal(h.stdout.at(-1), 'no answer from arjun after 30 seconds. check: atris tell status 6c0b6823 --business atris-labs');
+});
+
+test('--wait --json returns the receipt with the answer', async () => {
+  const h = answerServer([{ answered: true, accepted: false, answer: 'Yes.' }]);
+  assert.equal(await tellCommand(['arjun', 'ping', '--wait', '--json'], h.deps), 0, h.all());
+  assert.equal(h.stdout.length, 1);
+  const out = JSON.parse(h.stdout[0]);
+  assert.equal(out.answer, 'Yes.');
+  assert.equal(out.answered, true);
+  assert.equal(out.waited_seconds, 10);
+});
+
+test('--wait strips terminal control characters from the answer', async () => {
+  const h = answerServer([{ answered: true, answer: 'ok\u001b[2J done\u0007' }]);
+  assert.equal(await tellCommand(['arjun', 'ping', '--wait'], h.deps), 0, h.all());
+  assert.equal(h.stdout.at(-2), 'arjun: ok[2J done');
+});
+
+test('--wait stops when a task report finishes it without a reply', async () => {
+  const h = answerServer([{ answered: false, accepted: false, answer: null }], person({ state: 'completed' }));
+  assert.equal(await tellCommand(['arjun', 'ship it', '--task', 't1', '--wait', '60'], h.deps), 0, h.all());
+  assert.equal(sends(h).length, 1);
+  assert.equal(h.stdout.at(-1), 'finished in 25 seconds');
+});
+
+test('a send without --wait asks the server for no wait', async () => {
+  const h = answerServer([{}]);
+  assert.equal(await tellCommand(['arjun', 'hello'], h.deps), 0, h.all());
+  assert.equal('wait_seconds' in sends(h)[0].body, false);
+});
+
 // ── channel posts ───────────────────────────────────────────
 
 test('a channel post prints who it reached only when the server says', async () => {
