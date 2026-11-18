@@ -1377,8 +1377,8 @@ test('over http: an answer and a say name the card on screen; a page that missed
   }
 });
 
-test('browser: the team table at phone and laptop size: five divided columns, nothing squashed, sideways scroll only on the phone, and a tap and Esc still work', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
-  for (const viewport of [trace.PHONE, trace.SMALL_PHONE, trace.LAPTOP]) {
+test('browser: the team table at phone and laptop size: five divided columns, nothing squashed, sideways scroll only on the phone, and a tap and Esc still work', { skip: !CHROME && 'no chrome on this machine', timeout: 120000, concurrency: 2 }, async t => {
+  await Promise.all([trace.PHONE, trace.SMALL_PHONE, trace.LAPTOP].map(viewport => t.test(`${viewport.width}x${viewport.height}`, async () => {
     const out = await trace.teamTableTrace({ chromePath: CHROME, viewport });
     const at = out.viewport;
     const look = out.look;
@@ -1426,16 +1426,16 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     // the footer's team link from a talk card goes to the same place the same way
     assert.equal(out.footerTeam.kind, 'team', at);
     assert.equal(out.footerTeam.moved.plan === 'turn 420', turn, `${at}: ${out.footerTeam.moved.plan}`);
-  }
+  })));
 });
 
-test('browser: a long member name never takes over a phone: the held column stops short and the name breaks only at its hyphens', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+test('browser: a long member name never takes over a phone: the held column stops short and the name breaks only at its hyphens', { skip: !CHROME && 'no chrome on this machine', timeout: 120000, concurrency: 2 }, async t => {
   const rows = [
     { member: 'customer-success-lead', role: 'answers customers', ovr: '··', engine: 'tool one m-one', status: 'idle', sentence: 'idle: no work in the last day' },
     { member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: the try page, about 4 hours left' },
     { member: 'auto-improver', role: 'continuous improver', ovr: 'new', engine: 'tool one m-one', status: 'idle', sentence: 'idle: no work in the last day' },
   ];
-  for (const viewport of [trace.SMALL_PHONE, trace.PHONE]) {
+  await Promise.all([trace.SMALL_PHONE, trace.PHONE].map(viewport => t.test(`${viewport.width}x${viewport.height}`, async () => {
     const out = await trace.teamTableTrace({ chromePath: CHROME, viewport, rows });
     const at = out.viewport;
     const lines = out.look.name_lines;
@@ -1446,11 +1446,11 @@ test('browser: a long member name never takes over a phone: the held column stop
     // a name that fits stays on one line
     assert.deepEqual([lines.builder, lines['auto-improver']], [['builder'], ['auto-improver']], at);
     assert.equal(out.talk.kind, 'member', at);
-  }
+  })));
 });
 
-test('browser: a tap on an engine cell opens the swap card: the short list, more models on the same card, who it is for, and one tap swaps and brings the team back', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
-  for (const viewport of [trace.PHONE, trace.LAPTOP]) {
+test('browser: a tap on an engine cell opens the swap card: the short list, more models on the same card, who it is for, and one tap swaps and brings the team back', { skip: !CHROME && 'no chrome on this machine', timeout: 120000, concurrency: 2 }, async t => {
+  await Promise.all([trace.PHONE, trace.LAPTOP].map(viewport => t.test(`${viewport.width}x${viewport.height}`, async () => {
     const out = await trace.engineCardTrace({ chromePath: CHROME, viewport });
     const at = out.viewport;
     // the list as the roster gives it: the Atris model, the pick, more models, who it is for, and the way back
@@ -1477,7 +1477,7 @@ test('browser: a tap on an engine cell opens the swap card: the short list, more
     // the line about the swap is the first thing under the title, above the table, on screen, and said once
     assert.deepEqual([out.news.under_title, out.news.above_table, out.news.bottom <= out.news.screen], [true, true, true], `${at}: ${JSON.stringify(out.news)}`);
     assert.ok(!/\bline\b/.test(out.swapped.plan), `${at}: no line under the orb first (${out.swapped.plan})`);
-  }
+  })));
 });
 
 test('browser: the job deck flips one card at a time in the same spot, a yes sends what its card binds, and Esc goes back to the whole team', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
@@ -1701,8 +1701,8 @@ test('browser: the team opened from the big orb closes back to the big orb, and 
   assert.deepEqual([out.viaTalk.has_card, out.viaTalk.line], [false, 'tap to think'], show);
 });
 
-test('browser: the team closed over the calm line goes back into it the way the orb does: the dots, a note that folds in and clears, and the idea out of the dots on its own, with and without motion', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
-  for (const reduced of [false, true]) {
+test('browser: the team closed over the calm line goes back into it the way the orb does: the dots, a note that folds in and clears, and the idea out of the dots on its own, with and without motion', { skip: !CHROME && 'no chrome on this machine', timeout: 120000, concurrency: 2 }, async t => {
+  await Promise.all([false, true].map(reduced => t.test(reduced ? 'reduced motion' : 'motion', async () => {
     const out = await trace.teamOverWaitTrace({ chromePath: CHROME, reduced });
     const show = JSON.stringify(out, null, 1);
     // back on the calm line: its sphere and its open box, not a plain card
@@ -1711,7 +1711,7 @@ test('browser: the team closed over the calm line goes back into it the way the 
     assert.deepEqual([out.noted.words, out.noted.notes], ['', ['make it about schools', "got it, i'll fold that in."]], show);
     // once the idea is ready it shows on its own
     assert.deepEqual([out.landed.kind, out.landed.title], ['idea', trace.CARDS.b1.title], show);
-  }
+  })));
 });
 
 test('browser: a swap whose answer was lost: the next tap draws the team the Mac has at once, with one line why, and never posts the old swap card again', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
@@ -1744,7 +1744,7 @@ test('browser: the small orb on any card goes back to the big dotted orb; the bi
 
 // ---- typing on the calm line: the idea waits for the owner -------------------------
 
-test('browser: on the calm line the owner types, the idea lands and waits; words sent there are a note, and the idea that comes in is the one written with it; a cleared box lets the waiting idea in', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+test('browser: on the calm line the owner types, the idea lands and waits; words sent there are a note, and the idea that comes in is the one written with it; a cleared box lets the waiting idea in', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async t => {
   const gmBet = require('../lib/gm-bet');
   const idea = (title) => ({
     title,
@@ -1758,9 +1758,9 @@ test('browser: on the calm line the owner types, the idea lands and waits; words
   const NOTED = idea('write a getting started page for schools that try atris gm phone in class');
   const WORDS = 'make it about schools';
   const FOLDED = 'got it, i\'ll fold that in.';
-  const runs = [];
-  for (const end of ['send', 'clear']) {
+  const results = await Promise.allSettled(['send', 'clear'].map(async end => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const writing = [];
     const said = [];
     const desk = gmBet.createBetDesk({
@@ -1779,7 +1779,7 @@ test('browser: on the calm line the owner types, the idea lands and waits; words
     // the drafting that began before the answer stopped, and a fresh one knows it
     await new Promise(r => setImmediate(r));
     assert.equal(writing.length, 2);
-    runs.push(await trace.onPhone(desk, CHROME, async (p) => {
+    return trace.onPhone(desk, CHROME, async (p) => {
       const look = () => p.run("(function () { var i = document.querySelector('#bet .field input'); return { title: document.querySelector('#bet h1').textContent, words: i ? i.value : null, notes: Array.prototype.map.call(document.querySelectorAll('#bet .waitnotes .turn'), function (n) { return n.textContent; }), dots: document.getElementById('orb').__orb.frame }; })()");
       const calm = await look();
       // the box is open already; a tap puts the cursor in it
@@ -1810,8 +1810,12 @@ test('browser: on the calm line the owner types, the idea lands and waits; words
       await p.until(`document.querySelector('#bet h1').textContent === ${JSON.stringify(end === 'send' ? NOTED.title : IDEA.title)}`, 'the idea', 9000).catch(() => {});
       await new Promise(r => setTimeout(r, 400));
       return { ...out, after: await look(), said: said.length };
-    }));
-  }
+    });
+  }));
+  const runs = results.map(result => {
+    if (result.status === 'rejected') throw result.reason;
+    return result.value;
+  });
   const show = JSON.stringify(runs, null, 1);
   for (const r of runs) {
     assert.equal(r.calm.title, 'writing your next idea.', show);

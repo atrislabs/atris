@@ -9,15 +9,28 @@ const weights = require('../test/ci-file-durations.json');
 const sha = /^[0-9a-f]{40}$/;
 const groupBudgetMs = 30000;
 
-function comparisonBase(root, eventName, event) {
+function comparisonBase(root, eventName, event, env = process.env) {
   const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   if (eventName === 'pull_request') {
     const base = event.pull_request?.base?.sha;
-    if (!sha.test(base) || git('rev-parse', 'HEAD^1') !== base ||
-        git('rev-parse', 'HEAD^2') !== event.pull_request?.head?.sha) {
+    const parents = git('rev-list', '--parents', '-n', '1', 'HEAD').split(' ');
+    const [merge, actualBase, actualHead] = parents;
+    if (!sha.test(base) || parents.length !== 3 || actualHead !== event.pull_request?.head?.sha) {
       throw new Error('pull request parents do not match the event');
     }
-    return base;
+    if (actualBase !== base) {
+      // The target can advance between the event payload and GitHub's test merge.
+      if (!Number.isSafeInteger(event.number) || event.number < 1 ||
+          env.GITHUB_REF !== `refs/pull/${event.number}/merge` || env.GITHUB_SHA !== merge) {
+        throw new Error('could not verify the GitHub pull request merge');
+      }
+      try {
+        git('merge-base', '--is-ancestor', base, actualBase);
+      } catch {
+        throw new Error('the event base is not a proven ancestor of the tested base');
+      }
+    }
+    return actualBase;
   }
 
   const group = event.merge_group;

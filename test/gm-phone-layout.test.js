@@ -8,11 +8,24 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const trace = require('../scripts/gm-phone-trace');
 const gmCard = require('../lib/gm-card');
+const { phonePage } = require('../lib/gm-phone-page');
 const { layout, CASES } = require('../scripts/gm-phone-layout');
 
 const CHROME = trace.findChrome();
 const skip = !CHROME && 'no chrome on this machine';
 const only = (...names) => CASES.filter(c => names.includes(c.name));
+
+test('layout: measure after a delayed animation has finished, not after a fixed sleep', { skip, timeout: 90000 }, async () => {
+  const page = (...args) => phonePage(...args).replace('</style>', `
+    @keyframes layout-test { from { margin-left: 0 } to { margin-left: 12px } }
+    #bet { animation: layout-test 850ms 150ms both; }
+  </style>`);
+  const rows = await layout({
+    chromePath: CHROME, cases: only('idea'), viewports: ['phone'], page,
+    probe: "getComputedStyle(document.getElementById('bet')).marginLeft",
+  });
+  assert.equal(rows[0].probe, '12px');
+});
 
 test('layout: on the swap card every model\'s note sits on its own line under its name', { skip, timeout: 90000 }, async () => {
   const probe = `Array.prototype.map.call(document.querySelectorAll('#bet button.choice'), function (b) {
@@ -221,11 +234,31 @@ const LAST_LINES = `Array.prototype.map.call(document.querySelectorAll('#bet h1,
   return { what: n.tagName.toLowerCase() + '.' + n.className, lines: tops.length, words: words.length, last: last.join(' '), broken: lastWords.some(function (x) { return x.broken; }), pair_px: pair, room_px: room };
 })`;
 
+const FOOTER_BOX = `(function () {
+  // the footer's own box, so the check holds on the team card too, where its team link steps out
+  var foot = document.getElementById('foot'), f = foot.getBoundingClientRect(), b = document.getElementById('bet');
+  var c = b.hidden ? null : b.getBoundingClientRect();
+  return { foot_bottom: Math.round((f.bottom + scrollY) * 10) / 10, foot_top: f.top + scrollY + parseFloat(getComputedStyle(foot).paddingTop), card_bottom: c ? c.bottom + scrollY : null, waiting: document.body.classList.contains('waiting') };
+})()`;
+
+const WORD_VIEWPORTS = ['phone', 'small', 'side', 'laptop'];
+const FOOTER_VIEWPORTS = ['phone', 'big', 'small', 'laptop'];
+let allCardRows;
+function measureAllCards() {
+  allCardRows ??= layout({
+    chromePath: CHROME,
+    viewports: [...new Set([...WORD_VIEWPORTS, ...FOOTER_VIEWPORTS])],
+    probe: `({ footer: ${FOOTER_BOX}, lastLines: ${LAST_LINES} })`,
+  });
+  return allCardRows;
+}
+
 test('layout: no title, body, or label leaves one word alone on its last line, on any card at any size', { skip, timeout: 180000 }, async () => {
-  const rows = await layout({ chromePath: CHROME, viewports: ['phone', 'small', 'side', 'laptop'], probe: LAST_LINES });
+  const rows = (await measureAllCards()).filter(r => WORD_VIEWPORTS.includes(r.viewport));
+  assert.equal(rows.length, CASES.length * WORD_VIEWPORTS.length);
   const alone = [];
   let wrapped = 0;
-  for (const r of rows) for (const p of r.probe) {
+  for (const r of rows) for (const p of r.probe.lastLines) {
     if (p.lines < 2 || p.broken) continue;
     wrapped += 1;
     // a last word that, with the word before it, is wider than the line can never share its line
@@ -423,20 +456,16 @@ test('layout: a word longer than the screen, like an email address, breaks insid
 });
 
 test('layout: the footer sits at the bottom of the screen on every card that fits, where it sits on the big orb, and 28px under a taller card', { skip, timeout: 180000 }, async () => {
-  const probe = `(function () {
-    // the footer's own box, so the check holds on the team card too, where its team link steps out
-    var foot = document.getElementById('foot'), f = foot.getBoundingClientRect(), b = document.getElementById('bet');
-    var c = b.hidden ? null : b.getBoundingClientRect();
-    return { foot_bottom: Math.round((f.bottom + scrollY) * 10) / 10, foot_top: f.top + scrollY + parseFloat(getComputedStyle(foot).paddingTop), card_bottom: c ? c.bottom + scrollY : null, waiting: document.body.classList.contains('waiting') };
-  })()`;
-  const rows = await layout({ chromePath: CHROME, viewports: ['phone', 'big', 'small', 'laptop'], probe });
-  const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, ...r.probe })), null, 1);
-  for (const v of ['phone', 'big', 'small', 'laptop']) {
-    const at = rows.filter(r => r.viewport === v && !r.probe.waiting);
-    const home = at.find(r => r.case === 'home');
+  const rows = (await measureAllCards()).filter(r => FOOTER_VIEWPORTS.includes(r.viewport));
+  assert.equal(rows.length, CASES.length * FOOTER_VIEWPORTS.length);
+  const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, ...r.probe.footer })), null, 1);
+  for (const v of FOOTER_VIEWPORTS) {
+    const at = rows.filter(r => r.viewport === v && !r.probe.footer.waiting);
+    const homeBottom = at.find(r => r.case === 'home').probe.footer.foot_bottom;
     let fit = 0;
     for (const r of at.filter(x => x.case !== 'home')) {
-      if (r.probe.card_bottom + 28 + 44 <= home.probe.foot_bottom) { fit += 1; assert.equal(r.probe.foot_bottom, home.probe.foot_bottom, show); } else assert.ok(r.probe.foot_top >= r.probe.card_bottom + 28 - 0.5, show);
+      const footer = r.probe.footer;
+      if (footer.card_bottom + 28 + 44 <= homeBottom) { fit += 1; assert.equal(footer.foot_bottom, homeBottom, show); } else assert.ok(footer.foot_top >= footer.card_bottom + 28 - 0.5, show);
     }
     assert.ok(fit >= 8, show);
   }

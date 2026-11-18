@@ -9,7 +9,7 @@ const path = require('node:path');
 
 const http = require('node:http');
 
-const { spawn, spawnSync } = require('node:child_process');
+const { execFile, spawn, spawnSync } = require('node:child_process');
 
 const { buildManifest, computeLocalHashes, threeWayCompare } = require('../../lib/manifest');
 
@@ -184,14 +184,29 @@ function runCli(args, { cwd, input, env, timeout = 15000 } = {}) {
     input,
     encoding: 'utf8',
     timeout,
-    env: {
-      ...scrubAgentEnv(),
-      ATRIS_SKIP_UPDATE_CHECK: '1',
-      ...(env || {}),
-    },
+    env: fixtureCliEnv(env),
   });
   if (result.error) throw result.error;
   return result;
+}
+
+function fixtureCliEnv(env) {
+  return { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1', ...env };
+}
+
+function runCliAsync(args, { cwd, env, timeout = 15000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = execFile(process.execPath, [cliPath, ...withFixtureReadyResult(args)], {
+      cwd,
+      encoding: 'utf8',
+      timeout,
+      env: fixtureCliEnv(env),
+    }, (error, stdout, stderr) => {
+      if (error && typeof error.code !== 'number') return reject(error);
+      resolve({ status: error?.code ?? 0, stdout, stderr });
+    });
+    child.stdin?.end();
+  });
 }
 
 function fakeMemberRunClaude(dir) {
@@ -486,6 +501,7 @@ module.exports = {
   seedBusinessOsState,
   withFixtureReadyResult,
   runCli,
+  runCliAsync,
   fakeMemberRunClaude,
   makeFakeGh,
   seedSupervisorWakeFixture,

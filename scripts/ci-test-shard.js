@@ -42,9 +42,10 @@ function main(args, root = path.resolve(__dirname, '..')) {
   const shard = assign(discover(root), count)[index - 1];
   // Calling node --test with no files would rediscover and run everything.
   if (!shard.files.length) return 0;
+  // The CLI sorts file arguments. The API preserves the measured priority.
   const env = { ...process.env, ATRIS_TEST_SPLIT: '1' };
   delete env.NODE_TEST_CONTEXT;
-  const run = spawnSync(process.execPath, ['--test', ...shard.files], {
+  const run = spawnSync(process.execPath, [path.join(__dirname, 'ci-ordered-tests.js'), ...shard.files], {
     cwd: root,
     stdio: 'inherit',
     env,

@@ -86,6 +86,8 @@ rg "requireAccountBound|refuseAccountGlobal|ACCOUNT_GLOBAL_MESSAGE|isBoundBusine
 
 **Purpose:** Work is merged or reaped, never limbo: the board shows every unlanded branch/worktree; `--reap` salvages then deletes anything landed or past TTL
 
+The process scan resolves repeated paths once per scan. Cleanup still takes a fresh scan before removal and keeps the folder if a scan fails.
+
 - **Implementation:** `commands/land.js` (collectBoard, printBoard, reap, landSummary, printEmptyLand); the board orders overdue, active, then landed residue, labels aging active rows `stale`, and keeps fresh rows `in the air`; counts separate tracked, stale, overdue, and landed work
 - **Empty / unborn repo:** `printEmptyLand` (`commands/land.js`) prints one human sentence on stdout and exits 2; `--json` is a compact refuse receipt; never a stack or wizard. `landSummary` returns null when there is no git history.
 - **Router:** `bin/atris.js` (`command === 'land'` dispatch); leftover throws print one line and exit 2
@@ -123,7 +125,7 @@ rg "requireAccountBound|refuseAccountGlobal|ACCOUNT_GLOBAL_MESSAGE|isBoundBusine
 
 ## Engine dispatch default branch and refusals
 
-- `lib/worktree-core.js:31` preserves custom SSH commands and Git's own config/program precedence; only default SSH gets batch/connect guards. `lib/worktree-core.js:51` bounds push to five minutes so required local hooks can finish; fetch and lookup retain 30 seconds unless a caller sets a shorter limit, with SIGKILL. Only network calls run the SSH config probe. `lib/worktree-core.js` (`gitFailureDetail`) keeps both stdout and stderr when checks reject a push and names a killed call as `timed out`; `lib/worktree-core.js:549` warns when a new checkout starts from a base its fetch could not refresh. Live default lookup retains its five-second limit and saved-ref fallback. Regressions: `test/engine-dispatch-mainline.test.js`, `test/engine-git-calls.test.js`, `test/worktree-push-hooks.test.js` (real 31-second hook and real rejected push).
+- `lib/worktree-core.js:31` preserves custom SSH commands and Git's own config/program precedence; only default SSH gets batch/connect guards. `lib/worktree-core.js:51` bounds push to five minutes so required local hooks can finish; fetch and lookup retain 30 seconds unless a caller sets a shorter limit, with SIGKILL. Only network calls run the SSH config probe. `lib/worktree-core.js` (`gitFailureDetail`) keeps both stdout and stderr when checks reject a push and names a killed call as `timed out`; `lib/worktree-core.js:549` warns when a new checkout starts from a base its fetch could not refresh. Live default lookup retains its five-second limit and saved-ref fallback. Regressions: `test/engine-dispatch-mainline.test.js`, `test/engine-git-calls.test.js`, `test/worktree-push-hooks.test.js` (real successful and rejected pushes, with the dispatched push budget checked directly).
 
 - `commands/land.js:39` uses the same default branch for the landing board; `lib/codex-flight.js:79` uses it for the companion build path and preview; `lib/one-lap-validator.js:11` receives the frozen base for its diff instructions.
 
