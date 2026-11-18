@@ -60,11 +60,17 @@ jobs:
         id: pick
         env:
           TARGET_READ: ${{ steps.target.outcome }}
-        run: node scripts/ci-test-plan.js
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo "mode=four-pair" >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"group":"2/8","order":"AB"},{"group":"2/8","order":"BA"},{"group":"8/8","order":"AB"},{"group":"8/8","order":"BA"}]}' >> "$GITHUB_OUTPUT"
+          else
+            node scripts/ci-test-plan.js
+          fi
 
   unit:
     needs: plan
-    name: unit (${{ matrix.group }})
+    name: unit (${{ matrix.group }}) ${{ matrix.order }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -96,9 +102,31 @@ jobs:
           MODE: ${{ needs.plan.outputs.mode }}
           BASE: ${{ needs.plan.outputs.base }}
           GROUP: ${{ matrix.group }}
+          PAIR_ORDER: ${{ matrix.order }}
           FILES: ${{ toJSON(matrix.files) }}
         run: |
           case "$MODE" in
+            four-pair)
+              google-chrome --version
+              node -e 'const n = require("node:os").availableParallelism(); console.log({cpus:n,control:Math.max(n-1,1),candidate:n}); if(n!==4) process.exitCode=1'
+              case "$PAIR_ORDER" in
+                AB) variants="control candidate" ;;
+                BA) variants="candidate control" ;;
+                *) exit 1 ;;
+              esac
+              status=0
+              for variant in $variants; do
+                case "$variant" in control) limit=default ;; candidate) limit=four ;; esac
+                export NODE_COMPILE_CACHE="$RUNNER_TEMP/atris-limit-$variant"
+                start=$(date +%s%N)
+                echo "four-pair-start $PAIR_ORDER $variant $(git rev-parse HEAD)"
+                result=0
+                ATRIS_TRIAL_LIMIT="$limit" ATRIS_TEST_SPLIT=1 node scripts/ci-test-shard.js "$GROUP" || result=$?
+                echo "four-pair-result $PAIR_ORDER $variant $result $((($(date +%s%N) - start) / 1000000))"
+                if [ "$result" -ne 0 ]; then status=1; fi
+              done
+              exit "$status"
+              ;;
             selected) node -e 'process.exitCode = require("./scripts/ci-impact-check").runFiles(JSON.parse(process.env.FILES), process.cwd())' ;;
             quick)
               if [ -z "${NODE_V8_COVERAGE:-}" ] && [ -z "${NODE_COMPILE_CACHE:-}" ]; then
