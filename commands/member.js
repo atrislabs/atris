@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
 const { loadCredentials, ensureFreshCredentials } = require('../utils/auth');
@@ -18,19 +17,19 @@ const { memberProcessPrompt, MEMBER_PROCESS_PATH } = require('../lib/member-cont
 // Runtime aliases: problem-finder, info-organizer, coordinator, task-planner, improver, problem-solver
 // memberPaths resolves steeringJsonl: path.join(workspaceRoot, '.atris', 'state', 'steering.jsonl')
 const {
-  findWorkspaceBusinessId, todayLogName, ensureMemberLog, appendMemberLifecycleLog, archiveName,
+  findWorkspaceBusinessId, ensureMemberLog, appendMemberLifecycleLog,
   uniqueArchiveDir, parseDaysFlag, parseConfirmFlag, readRepeatedFlag, stripKnownFlags,
   stampIso, fileSafeStamp, slugHash, makeGoalId, uniqueGoalId, makeExperimentId,
-  MEMBER_RUNTIME_ALIASES, memberRuntimeKind, resolveMemberRuntime, memberPaths,
-  missionFileMarkdown, ensureMissionFile, listExistingMemberSlugs, editDistance, nearestMemberSlug,
-  memberRefusalFor, requireRunnableMember, requireMemberDir, emptyMemberGoals, loadMemberGoals,
-  activeGoal, allExperiments, findExperiment, latestByTime, recentLogLines, readOptionalText,
-  extractMarkdownSection, firstUsefulLine, compactSentence, activeRuntimeMissionFromNow, missionPurpose,
-  MEMBER_RUN_RUNNABLE_STATUSES, MISSION_TERMINAL_STATUSES, memberRunMissionMap,
-  memberRunRunnableMissionId, memberRunOwnedActiveMissionId, MEMBER_LIVE_MISSION_STATUSES,
+  MEMBER_RUNTIME_ALIASES, memberRuntimeKind, memberPaths,
+  ensureMissionFile,
+  memberRefusalFor, requireRunnableMember, requireMemberDir, loadMemberGoals,
+  activeGoal, allExperiments, findExperiment, latestByTime, recentLogLines,
+  firstUsefulLine, compactSentence, missionPurpose,
+  MISSION_TERMINAL_STATUSES, memberRunMissionMap,
+  memberRunRunnableMissionId, memberRunOwnedActiveMissionId,
   MEMBER_ACTIVE_ACTIVITY_MS, MEMBER_RECENT_ACTIVITY_MS, memberSlugFromRecord, isFleetMember,
-  missionTimeMs, memberOwnedMissions, memberLatestMission, memberLiveMission, missionShortName,
-  ageLabelFromMs, timestampMs, newestMtimeRecursive, newestRunActivityMtime, memberLastActivity,
+  memberLatestMission, memberLiveMission, missionShortName,
+  ageLabelFromMs, timestampMs, memberLastActivity,
 } = require('../lib/member-core');
 
 function memberMissionSummary(name, missionMap = memberRunMissionMap(), root = process.cwd()) {
@@ -2730,7 +2729,7 @@ function memberAliveCronStatus(name, paths = memberLoopPaths(name)) {
 }
 
 const {
-  writeMemberLoopReceipt, isPidAlive, safeReadText, repoRelative, dateFromLogPath,
+  writeMemberLoopReceipt, isPidAlive, safeReadText, repoRelative,
   logDateForScan, compareLogEvidenceRecentFirst, compareRepeatedFailureSignals, listFilesBounded,
 } = require('../lib/member-core');
 

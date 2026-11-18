@@ -4,7 +4,6 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
 const { memberProcessPrompt, currentWorkPrompt } = require('../lib/member-context');
@@ -25,30 +24,20 @@ const {
 } = require('../lib/brief-ledger');
 const {
   resolveClaudeRunnerModel,
-  resolvePinnedRunnerModel,
-  runnerModelFor,
   resolveClaudeRunnerBin,
   resolveClaudeRunnerCommandTemplate,
   buildRunnerCommand,
   codexJsonEventsCommand,
   CLAUDE_SLIM_ARGS,
   slimLaunchSpendStop,
-  RUNNER_PROFILE_DEFS,
-  RUNNER_PROFILE_ALIASES,
-  RUNNER_PROFILE_NAMES,
 } = require('../lib/runner-command');
 const {
-  resolveEngineForRoleWithPreference,
   engineFailureHealthStatus,
-  engineStallReason,
   engineRegistryView,
-  recordEngineRunHealth,
   setEngineHealth,
 } = require('../lib/engine-registry');
-const { appendRosterRun, parseRunUsage } = require('../lib/roster-runs');
+const { parseRunUsage } = require('../lib/roster-runs');
 const {
-  FUNCTIONAL_MEMBER_TOPICS,
-  listWorkspaceMemberSlugs,
   normalizeOwnerSlug,
   resolveFunctionalOwner,
 } = require('../lib/functional-owner');
@@ -77,7 +66,6 @@ const {
 const { compactMissionLedger } = require('../lib/mission-ledger-compact');
 const autolandLib = require('../lib/autoland');
 const { gateForHuman, landingWhyClause } = require('../lib/voice-gate');
-const { operatorReady, hasAgentJargon } = require('./autoland');
 const {
   MISSION_INSPECT_FIELDS,
   readFieldsFlag,
@@ -89,11 +77,8 @@ const {
 } = require('../lib/inspect-fields');
 const {
   displayNumber,
-  meaningfulWords,
   nextRecordNumber,
   recordMatchesRef,
-  shortRecordLabel,
-  shortRecordRef,
 } = require('../lib/short-name');
 const {
   runCloudMissionCommand,
@@ -131,7 +116,6 @@ const {
   DEFAULT_LONG_RUN_VERIFIER,
   SLEEP_LENGTH_BUDGET_SECONDS,
   HUMAN_BLOCKING_PAUSE_REASONS,
-  MISSION_RUNNER_AUTH_EXPIRED_RE,
   missionRunnerAuthExpired,
   MISSION_BUDGET_TIERS,
   stampIso,
@@ -139,23 +123,16 @@ const {
   slugify,
   shortHash,
   missionId,
-  destinationHash,
   missionDrive,
   proposeMissionDestinationChange,
-  SUPPORTED_MISSION_HARD_GATES,
-  missionRouteLegId,
   missionRouteHardGates,
-  missionRouteScopePresent,
-  missionRouteCycle,
   validateMissionRouteProposal,
   readMissionRouteProposal,
-  MISSION_NATIVE_RUNNER_NAMES,
   MISSION_NATIVE_RUNNER_SET,
   MISSION_AUTO_RUNNER,
   canonicalEngineName,
   knownMissionRunnerText,
   resolveMissionRunnerSelection,
-  rosterTickPins,
   missionTickPrep,
   memberLogTickReason,
   resolveMissionTickRunner,
@@ -165,7 +142,6 @@ const {
   runnerModelPatch,
   missionRunRuntimeView,
   applyMissionRunnerProfile,
-  CLAUDE_FAMILY_RUNNER_ENGINES,
   resolveMissionTickRunnerModel,
   exitMissionError,
   warnIfSummaryNeedsOperatorWhy,
@@ -179,22 +155,13 @@ const {
   stripKnownFlags,
   wantsJson,
   printJsonOrText,
-  MISSION_RUN_VALUE_FLAGS,
-  MISSION_RUN_BOOLEAN_FLAGS,
-  DEFAULT_MISSION_RUN_OWNER_SLUGS,
   missionRunInputRequired,
-  askLine,
-  removeValueFlag,
-  missionRunOwnerRef,
-  missionRunArgsWithOwner,
   missionRunInputFromArgs,
   promptMissionRunInput,
   loadTaskDb,
   writeMissionTaskProjection,
   missionTaskRef,
   missionXpTaskTitle,
-  normalizeMissionTaskMatchText,
-  missionObjectiveTaskMatch,
   taskRowToMissionXpBinding,
   findOpenTaskMatchingMissionObjective,
   statePaths,
@@ -202,11 +169,8 @@ const {
   businessIdForAtris2Mission,
   readJsonLines,
   missionLabel,
-  missionRef,
   missionDisplayText,
   missionNumberWinner,
-  MISSION_REF_SUFFIX_MIN_LENGTH,
-  uniqueMissionSuffix,
   missionNumberDisplayIndex,
   missionRefLooksLikeHandle,
   missionMatchesRef,
@@ -219,17 +183,11 @@ const {
   appendEvent,
   memberDir,
   appendMemberLog,
-  clipWords,
   crystallizeMemberSkillLesson,
   autoQueueMemberNextPush,
-  DEFAULT_MEMBER_BATON_RELAY,
   recordMemberHandoff,
-  withHandoffsLock,
-  rewriteHandoffs,
   updateMemberHandoff,
   closeMemberHandoffsForReceiver,
-  closeHandoffRows,
-  memberMissionFile,
   missingOwnerMemberWarning,
   ensureMemberMissionFile,
   removeLegacyGeneratedMissionViews,
