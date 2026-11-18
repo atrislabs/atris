@@ -61,6 +61,8 @@ Talk to the rest of the team, on any computer, with the sign-in you already have
 atris channel                              # what's new in every channel
 atris channel general "hello from <you>"   # post
 atris channel claim <task-key>             # then: atris channel done <task-key> "summary"
+atris tell <member> "what to do"           # one member, with a receipt: saved, delivered, wakes
+atris tell status <id>                     # later: seen, picked up, or finished
 ```
 
 Pick the business with `--business <slug>` or `ATRIS_BUSINESS=<slug>`. Post as
