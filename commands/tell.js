@@ -28,6 +28,7 @@ function tellHelp(log = console.log) {
   log(`usage: atris tell <member> "message"          send a note to one team member
        atris tell status <id>                  was it seen, answered, finished, and how fast
        atris tell wake <member> on|off         wake that member when someone sends it a note
+       atris tell listen --as <member>         hear each note to that member the moment it is sent
 
 example: atris tell arjun "check the signup page today"
 
@@ -35,9 +36,11 @@ options:
   --business <slug>   which business (else ATRIS_BUSINESS, this folder's business, or your only one)
   --task <key>        send it as a task the member can claim and report on
   --channel <name>    the channel it shows in (default: general)
-  --as <member>       send as that team member (else ATRIS_AGENT, else you)
+  --as <member>       send as that team member (else ATRIS_AGENT, else you); with listen, whose notes
   --wait [seconds]    after sending, watch until the member answers or finishes (default 180)
-  --json              the server's raw reply`);
+  --json              the server's raw reply; with listen, one note per line
+
+listen keeps waiting until you stop it, and does not mark notes read.`);
 }
 
 function text(value) {
@@ -200,8 +203,12 @@ async function tellCommand(args = [], deps = {}) {
   if (flags.help || pos[0] === 'help') { tellHelp(log); return 0; }
   if (error || waited.error) { err(`${error || waited.error}. see: atris tell --help`); return 1; }
   if (!pos.length) { tellHelp(log); return 0; }
+  if (pos[0] === 'listen') {
+    if (waited.wait !== null) { err('--wait goes with a send, like: atris tell arjun "hello" --wait'); return 1; }
+    return listen(pos, flags, deps, log, err, (t) => { secret = t; });
+  }
 
-  // `status` and `wake` are verbs here; a member with one of those names is
+  // `status`, `wake` and `listen` are verbs here; a member with one of those names is
   // reached with a leading @ (atris tell @status "...").
   const verb = pos[0] === 'status' || pos[0] === 'wake' ? pos[0] : null;
   const postId = verb === 'status' ? text(pos[1]) : '';
@@ -342,6 +349,68 @@ async function tellCommand(args = [], deps = {}) {
     log(`${to} ${outcome === 'blocked' ? 'is blocked' : 'failed'} after ${seconds} seconds`);
   }
   return outcome === 'answered' || outcome === 'finished' ? 0 : 1;
+}
+
+// atris tell listen: the open line. Holds one wait at a time on the member's
+// inbox (GET /api/swarlo/{business}/inbox/wait, up to 25 seconds each) and
+// prints each note the moment it lands. A timeout or a network error just
+// waits again, after a short pause that grows while the server is away. It
+// never marks notes read. Backend: services/inbox_wait_service.py.
+const LISTEN_SECONDS = 25;
+const MAX_PAUSE_MS = 30000;
+
+function noteLine(item) {
+  const who = text(item.author_name) || 'someone';
+  const where = text(item.channel) ? ` in #${text(item.channel)}` : '';
+  const body = text(item.content).replace(/\s+/g, ' ') || '(no text)';
+  const id = text(item.post_id);
+  return `${who}${where}: ${body}${id ? `  (post ${id})` : ''}`;
+}
+
+async function listen(pos, flags, deps, log, err, setSecret) {
+  if (pos.length > 1) { err('atris tell listen takes no names. say whose notes with --as, like: atris tell listen --as walsh'); return 1; }
+  const who = memberName(flags, deps.env || process.env);
+  if (!who) { err('say whose notes to listen for, like: atris tell listen --as walsh (or set ATRIS_AGENT)'); return 1; }
+  const business = resolveChannelBusiness(flags, deps);
+  if (business.error) { err(business.error); return 1; }
+  const token = await loginToken(deps);
+  if (!token) { err(NOT_LOGGED_IN); return 1; }
+  setSecret(token);
+  const request = deps.apiRequestJson || apiRequestJson;
+  const found = await lookupMember(request, business, who, token);
+  if (found.missing) { err(`no member called "${who}" in ${business.slug}, so there is nothing to listen to`); return 1; }
+  if (found.failed !== undefined) { err(`could not look up member "${who}": ${boardWhy(found.failed, business)}`); return 1; }
+  if (found.noId) { err(`member "${who}" in ${business.slug} has no agent id, so it has no inbox`); return 1; }
+  const member = found.member;
+
+  const sleep = deps.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const rounds = Number.isInteger(deps.rounds) ? deps.rounds : Infinity; // tests stop the loop
+  const base = `/swarlo/${encodeURIComponent(business.id)}/inbox/wait?agent_id=${encodeURIComponent(member.id)}`;
+  if (!flags.json) log(`listening for notes to ${member.name} in ${business.slug}. ctrl-c to stop`);
+  let after = null;
+  let pause = 0;
+  for (let round = 0; round < rounds; round += 1) {
+    const query = `${base}&timeout=${LISTEN_SECONDS}${after === null ? '' : `&after_seq=${after}`}`;
+    const res = await request(query, { method: 'GET', token, timeoutMs: (LISTEN_SECONDS + 15) * 1000, retries: 0 });
+    if (routeMissing(res)) { err('This Atris server does not have the open line yet. Read the inbox instead: atris channel'); return 1; }
+    if (res && [401, 403, 404].includes(res.status)) { err(`stopped listening: ${serverMessage(res, business)}`); return 1; }
+    if (!res || !res.ok || !res.data || typeof res.data !== 'object') {
+      // The server is away or the line dropped: wait a little longer each time, then try again.
+      pause = Math.min(MAX_PAUSE_MS, pause ? pause * 2 : 1000);
+      await sleep(pause);
+      continue;
+    }
+    pause = 0;
+    const reply = res.data;
+    if (reply.ended === 'replaced') {
+      err(`another listener took the line for ${member.name}, so this one stopped. keep one listener per member`);
+      return 1;
+    }
+    const items = (Array.isArray(reply.items) ? reply.items : []).filter((i) => i && typeof i === 'object');
+    for (const item of items) log(flags.json ? JSON.stringify(item) : noteLine(item));
+    if (Number.isInteger(reply.after_seq)) after = reply.after_seq;
+  }
+  return 0;
 }
 
 // One line per member a channel post reached, when the server says who.

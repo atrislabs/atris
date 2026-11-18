@@ -801,7 +801,7 @@ function showHelpAll() {
   console.log('  hires      - Morning check-in: one line per hire (mail, spend, last run)');
   console.log('  mail       - Your agents\' own inboxes: list, read, send (not Gmail)');
   console.log('  channel    - The team\'s shared channels: read, post, claim, done (atris channel <name>)');
-  console.log('  tell       - Send one note or task to one team member and get a receipt (atris tell <member> "...")');
+  console.log('  tell       - Send one note or task to one team member and get a receipt (atris tell <member> "..."); hear notes live with atris tell listen --as <member>');
   console.log('  listen     - A team member\'s inbox: what was sent to it, then mark it handled (atris listen --as <member>)');
   console.log('  design     - Extract a site design system, check brand adherence, search brands');
   console.log('  mcp        - Run the atris MCP server (stdio) for Claude Desktop and Cursor');
