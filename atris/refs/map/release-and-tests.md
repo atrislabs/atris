@@ -26,6 +26,8 @@ The phone checks for words kept after a failed send, replies that keep the card'
 
 `test/engine-resource.test.js` counts bytes as it fills large log fixtures. The task history and archive checks in `test/commands-4.test.js` and `test/commands-6.test.js` make the first entry through the CLI and add the rest through the task store.
 
+The workspace-free help sweep in `test/commands-7.test.js` runs two CLI processes at a time. Every invocation has its own home and working folder and still checks the exit code, output and absence of local state.
+
 ## Feature: Release (`atris release`)
 
 **Purpose:** Tag a release, bump version, create GitHub release, draft /launch post
