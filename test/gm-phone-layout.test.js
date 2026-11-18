@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
 const trace = require('../scripts/gm-phone-trace');
 const gmCard = require('../lib/gm-card');
 const { phonePage } = require('../lib/gm-phone-page');
-const { layout, CASES } = require('../scripts/gm-phone-layout');
+const { layout, CASES, VIEWPORTS } = require('../scripts/gm-phone-layout');
 
 const CHROME = trace.findChrome();
 const skip = !CHROME && 'no chrome on this machine';
@@ -54,18 +54,6 @@ test('layout: on a phone with a notch the small orb rests below it, as far above
   assert.ok(Math.max(...gaps) - Math.min(...gaps) <= 1, show);
 });
 
-test('layout: the big orb\'s line ends above the footer at every size, a phone on its side too', { skip, timeout: 90000 }, async () => {
-  const rows = await layout({ chromePath: CHROME, cases: only('home') });
-  const show = JSON.stringify(rows.map(r => ({ at: r.size, stage: r.stage, line: r.line, foot: r.foot })), null, 1);
-  assert.equal(rows.length, 5, show);
-  for (const r of rows) {
-    assert.ok(r.line.bottom <= r.foot.top, show);
-    assert.equal(r.scroll_w, r.vw, show);
-  }
-  // an upright phone and the laptop keep their orb: 72% of the short side, at most 520px
-  for (const r of rows.filter(x => x.viewport !== 'side')) assert.ok(Math.abs(r.stage.width - Math.min(0.72 * Math.min(r.vw, r.vh), 520)) <= 1, show);
-});
-
 // short screens: an iPhone 17 Pro on its side in Safari (its bars leave 296px),
 // a phone on its side in full screen, and two small phones on their side
 const SHORT = [
@@ -76,8 +64,35 @@ const SHORT = [
 ];
 const inset = (r, side) => (r.safe_area && r.safe_area[side]) || 0;
 
+const DEFAULT_HOME = Object.keys(VIEWPORTS);
+const SHORT_HOME = [...SHORT, 'phone', 'big', 'small', 'laptop'];
+const DOTS_HOME = [
+  ...SHORT, 'phone', 'big', 'small',
+  { name: 'promax', width: 440, height: 956, deviceScaleFactor: 3, mobile: true, notch: { top: 62, bottom: 34 } },
+  'laptop',
+  { name: 'window', width: 900, height: 600, deviceScaleFactor: 1, mobile: false, notch: null },
+];
+let homeRows;
+async function measureHome(viewports) {
+  homeRows ??= layout({ chromePath: CHROME, cases: only('home'), viewports: DOTS_HOME, probe: DOTS });
+  const rows = await homeRows;
+  return viewports.flatMap(viewport => rows.filter(r => r.viewport === (viewport.name || viewport)));
+}
+
+test('layout: the big orb\'s line ends above the footer at every size, a phone on its side too', { skip, timeout: 90000 }, async () => {
+  const rows = await measureHome(DEFAULT_HOME);
+  const show = JSON.stringify(rows.map(r => ({ at: r.size, stage: r.stage, line: r.line, foot: r.foot })), null, 1);
+  assert.equal(rows.length, 5, show);
+  for (const r of rows) {
+    assert.ok(r.line.bottom <= r.foot.top, show);
+    assert.equal(r.scroll_w, r.vw, show);
+  }
+  // an upright phone and the laptop keep their orb: 72% of the short side, at most 520px
+  for (const r of rows.filter(x => x.viewport !== 'side')) assert.ok(Math.abs(r.stage.width - Math.min(0.72 * Math.min(r.vw, r.vh), 520)) <= 1, show);
+});
+
 test('layout: on a short screen the big orb takes the room above the footer and its line still ends above it; upright phones and the laptop keep the orb where it was', { skip, timeout: 120000 }, async () => {
-  const rows = await layout({ chromePath: CHROME, cases: only('home'), viewports: [...SHORT, 'phone', 'big', 'small', 'laptop'] });
+  const rows = await measureHome(SHORT_HOME);
   const show = JSON.stringify(rows.map(r => ({ at: r.size, inset: r.safe_area, stage: r.stage, line: r.line, foot: r.foot })), null, 1);
   assert.equal(rows.length, 8, show);
   for (const r of rows) {
@@ -113,8 +128,7 @@ const DOTS = `new Promise(function (done) {
 })`;
 
 test('layout: the big orb draws the dots its size holds, so a small orb on a phone on its side is as light as an upright phone\'s, and upright phones and the laptop draw what they always did', { skip, timeout: 150000 }, async () => {
-  const promax = { name: 'promax', width: 440, height: 956, deviceScaleFactor: 3, mobile: true, notch: { top: 62, bottom: 34 } };
-  const rows = await layout({ chromePath: CHROME, cases: only('home'), viewports: [...SHORT, 'phone', 'big', 'small', promax, 'laptop', { name: 'window', width: 900, height: 600, deviceScaleFactor: 1, mobile: false, notch: null }], probe: DOTS });
+  const rows = await measureHome(DOTS_HOME);
   const show = JSON.stringify(rows.map(r => ({ at: r.size, ...r.probe })), null, 1);
   const at = name => rows.find(r => r.viewport === name).probe;
   for (const v of ['phone', 'big', 'small', 'promax']) assert.equal(at(v).dots, 5500, show);
