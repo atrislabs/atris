@@ -282,6 +282,9 @@ function printText(command, out, { streamed = false } = {}) {
   }
   if (out.card) {
     console.log(textCard(out.card));
+    // Why a setup answer was not kept, in the words the desktop shows under the card.
+    const note = (out.setup && out.setup.lesson_error) || out.setup_error;
+    if (command === 'reply' && note) console.log(note);
     return;
   }
   if (out.message) console.log(`sent. ${out.reply_pending ? 'the team member answers on its next run.' : ''}`.trim());

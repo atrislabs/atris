@@ -323,6 +323,65 @@ test('setup: an answer that holds a key is refused for the lessons and said so',
   assert.doesNotMatch(lessons(ctx.root), /sk-ant-/);
 });
 
+// Every file under the project, path to bytes: the comments, the events log,
+// the members' logs, the lessons and the setup state all live in it.
+function snapshot(root) {
+  const out = {};
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile()) out[path.relative(root, full)] = fs.readFileSync(full).toString('base64');
+    }
+  };
+  walk(root);
+  return out;
+}
+
+const FAKE_KEY = `sk-test-${'0123456789abcdef'.repeat(3)}`;
+
+test('setup: an answer that holds a key is refused before anything is written; the question stays open', async (t) => {
+  const ctx = project(t, ['scout']);
+  const { out } = await runSetup(ctx.root, ctx, ctx.deps);
+  const cardId = out.asks.waiting.card_id;
+  const posted = [];
+  const deps = { ...ctx.deps, board: (event) => posted.push(event) };
+  const before = snapshot(ctx.root);
+  const refused = room.reply(ctx.root, cardId, `the shop key is ${FAKE_KEY}`, { env: ctx.env, deps });
+  assert.deepEqual(snapshot(ctx.root), before, 'no comment, event, member log, lesson or setup state was written');
+  assert.deepEqual(posted, [], 'nothing went to the hosted feed');
+  assert.equal(refused.reply, null);
+  assert.equal(refused.card.id, cardId);
+  assert.equal(refused.setup.lesson, null);
+  assert.equal(refused.setup.lesson_error, 'That looks like it holds a password or key, so it was not saved.');
+  assert.equal(refused.setup.asks.waiting.card_id, cardId, 'the same question still waits');
+  assert.equal(refused.setup.asks.answered, 0);
+  for (const file of Object.keys(before)) assert.doesNotMatch(Buffer.from(before[file], 'base64').toString('utf8'), /sk-test-/, file);
+  // The next answer, in plain words, saves as usual.
+  const saved = room.reply(ctx.root, cardId, 'It sells warm socks to people in cold towns.', { env: ctx.env, deps });
+  assert.equal(saved.setup.answered, 'purpose');
+  assert.equal(saved.setup.lesson_error, undefined);
+  assert.match(lessons(ctx.root), /warm socks to people in cold towns/);
+  assert.equal(saved.card.replies.length, 1);
+});
+
+test('cli: atris feed reply with a key on a setup question answers with the reason, exit 0, and saves nothing', async (t) => {
+  const ctx = project(t, ['scout']);
+  const { out } = await runSetup(ctx.root, ctx, ctx.deps);
+  const { spawnSync } = require('node:child_process');
+  const env = { ...ctx.env, HOME: ctx.dir, ATRIS_FEED_BOARD: '0' };
+  const before = snapshot(ctx.root);
+  const run = spawnSync(process.execPath, [BIN, 'feed', 'reply', out.asks.waiting.card_id, `use ${FAKE_KEY}`, '--json'], { cwd: ctx.root, env, encoding: 'utf8' });
+  assert.equal(run.status, 0, run.stderr);
+  const answer = JSON.parse(run.stdout);
+  assert.match(answer.setup.lesson_error, /password or key/);
+  assert.ok(answer.card, 'the card comes back for the screen');
+  assert.deepEqual(snapshot(ctx.root), before);
+  const text = spawnSync(process.execPath, [BIN, 'feed', 'reply', out.asks.waiting.card_id, `use ${FAKE_KEY}`], { cwd: ctx.root, env, encoding: 'utf8' });
+  assert.equal(text.status, 0, text.stderr);
+  assert.match(text.stdout, /password or key, so it was not saved/);
+});
+
 test('setup and the desktop\'s own start at the same moment on one new folder: one team, one card each', async (t) => {
   const ctx = project(t, []);
   const folder = path.join(ctx.dir, 'race');
