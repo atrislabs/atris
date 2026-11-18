@@ -60,11 +60,21 @@ jobs:
         id: pick
         env:
           TARGET_READ: ${{ steps.target.outcome }}
-        run: node scripts/ci-test-plan.js
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo "mode=combo-pair" >> "$GITHUB_OUTPUT"
+            if [ "$GITHUB_RUN_ATTEMPT" -gt 1 ]; then
+              echo 'matrix={"include":[{"group":"1/8","order":"BA"},{"group":"2/8","order":"AB"},{"group":"3/8","order":"BA"},{"group":"4/8","order":"AB"},{"group":"5/8","order":"BA"},{"group":"6/8","order":"AB"},{"group":"7/8","order":"BA"},{"group":"8/8","order":"AB"}]}' >> "$GITHUB_OUTPUT"
+            else
+              echo 'matrix={"include":[{"group":"1/8","order":"AB"},{"group":"2/8","order":"BA"},{"group":"3/8","order":"AB"},{"group":"4/8","order":"BA"},{"group":"5/8","order":"AB"},{"group":"6/8","order":"BA"},{"group":"7/8","order":"AB"},{"group":"8/8","order":"BA"}]}' >> "$GITHUB_OUTPUT"
+            fi
+          else
+            node scripts/ci-test-plan.js
+          fi
 
   unit:
     needs: plan
-    name: unit (${{ matrix.group }})
+    name: unit (${{ matrix.group }}) ${{ matrix.order }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -73,7 +83,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 2
+          fetch-depth: 6
 
       - name: Check preinstalled Node
         id: node
@@ -96,9 +106,34 @@ jobs:
           MODE: ${{ needs.plan.outputs.mode }}
           BASE: ${{ needs.plan.outputs.base }}
           GROUP: ${{ matrix.group }}
+          PAIR_ORDER: ${{ matrix.order }}
           FILES: ${{ toJSON(matrix.files) }}
         run: |
           case "$MODE" in
+            combo-pair)
+              control=$(git rev-parse HEAD~5)
+              candidate=$(git rev-parse HEAD~1)
+              test "$(git diff --name-only "$control" "$candidate")" = "$(printf '%s\n' test/gm-phone-hands.test.js test/gm-phone-motion.test.js test/gm-phone.test.js)"
+              google-chrome --version
+              case "$PAIR_ORDER" in
+                AB) variants="control candidate" ;;
+                BA) variants="candidate control" ;;
+                *) exit 1 ;;
+              esac
+              status=0
+              for variant in $variants; do
+                case "$variant" in control) ref=$control ;; candidate) ref=$candidate ;; esac
+                git switch --detach "$ref"
+                export NODE_COMPILE_CACHE="$RUNNER_TEMP/atris-combo-$variant"
+                start=$(date +%s%N)
+                echo "combo-pair-start $PAIR_ORDER $variant $ref"
+                result=0
+                ATRIS_TEST_SPLIT=1 node scripts/ci-test-shard.js "$GROUP" || result=$?
+                echo "combo-pair-result $PAIR_ORDER $variant $result $((($(date +%s%N) - start) / 1000000))"
+                if [ "$result" -ne 0 ]; then status=1; fi
+              done
+              exit "$status"
+              ;;
             selected) node -e 'process.exitCode = require("./scripts/ci-impact-check").runFiles(JSON.parse(process.env.FILES), process.cwd())' ;;
             quick)
               if [ -z "${NODE_V8_COVERAGE:-}" ] && [ -z "${NODE_COMPILE_CACHE:-}" ]; then
