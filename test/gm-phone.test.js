@@ -1429,13 +1429,13 @@ test('browser: the team table at phone and laptop size: five divided columns, no
   })));
 });
 
-test('browser: a long member name never takes over a phone: the held column stops short and the name breaks only at its hyphens', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+test('browser: a long member name never takes over a phone: the held column stops short and the name breaks only at its hyphens', { skip: !CHROME && 'no chrome on this machine', timeout: 120000, concurrency: 2 }, async t => {
   const rows = [
     { member: 'customer-success-lead', role: 'answers customers', ovr: '··', engine: 'tool one m-one', status: 'idle', sentence: 'idle: no work in the last day' },
     { member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: the try page, about 4 hours left' },
     { member: 'auto-improver', role: 'continuous improver', ovr: 'new', engine: 'tool one m-one', status: 'idle', sentence: 'idle: no work in the last day' },
   ];
-  for (const viewport of [trace.SMALL_PHONE, trace.PHONE]) {
+  await Promise.all([trace.SMALL_PHONE, trace.PHONE].map(viewport => t.test(`${viewport.width}x${viewport.height}`, async () => {
     const out = await trace.teamTableTrace({ chromePath: CHROME, viewport, rows });
     const at = out.viewport;
     const lines = out.look.name_lines;
@@ -1446,11 +1446,11 @@ test('browser: a long member name never takes over a phone: the held column stop
     // a name that fits stays on one line
     assert.deepEqual([lines.builder, lines['auto-improver']], [['builder'], ['auto-improver']], at);
     assert.equal(out.talk.kind, 'member', at);
-  }
+  })));
 });
 
-test('browser: a tap on an engine cell opens the swap card: the short list, more models on the same card, who it is for, and one tap swaps and brings the team back', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
-  for (const viewport of [trace.PHONE, trace.LAPTOP]) {
+test('browser: a tap on an engine cell opens the swap card: the short list, more models on the same card, who it is for, and one tap swaps and brings the team back', { skip: !CHROME && 'no chrome on this machine', timeout: 120000, concurrency: 2 }, async t => {
+  await Promise.all([trace.PHONE, trace.LAPTOP].map(viewport => t.test(`${viewport.width}x${viewport.height}`, async () => {
     const out = await trace.engineCardTrace({ chromePath: CHROME, viewport });
     const at = out.viewport;
     // the list as the roster gives it: the Atris model, the pick, more models, who it is for, and the way back
@@ -1477,7 +1477,7 @@ test('browser: a tap on an engine cell opens the swap card: the short list, more
     // the line about the swap is the first thing under the title, above the table, on screen, and said once
     assert.deepEqual([out.news.under_title, out.news.above_table, out.news.bottom <= out.news.screen], [true, true, true], `${at}: ${JSON.stringify(out.news)}`);
     assert.ok(!/\bline\b/.test(out.swapped.plan), `${at}: no line under the orb first (${out.swapped.plan})`);
-  }
+  })));
 });
 
 test('browser: the job deck flips one card at a time in the same spot, a yes sends what its card binds, and Esc goes back to the whole team', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
