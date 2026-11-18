@@ -22,6 +22,8 @@ the secret it prints one setup line and still completes URL checks. `perf run`
 alone remains URL-only. A 401 means the secret is wrong; a 404 means the backend
 endpoint is not deployed yet. Other failures are reported without response
 bodies or credentials and do not stop the default URL report.
+Explicit `atris perf routes` failures exit with status 1, including missing
+credentials and history write failures. Successful collection exits with 0.
 
 Routes rank by `p95 × count`, recomputed locally rather than trusting a supplied
 score. The top ten show method, template, lifetime count, p50/p95/p99 in

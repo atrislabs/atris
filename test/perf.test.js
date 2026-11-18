@@ -4,13 +4,15 @@ const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execFileSync } = require('node:child_process');
+const { execFile, execFileSync } = require('node:child_process');
 const { measure, percentile, summarize, rankRuns, provider } = require('../lib/perf');
 const { perfCommand } = require('../commands/perf');
 const { renderHtml } = require('../lib/perf-html');
 const { rankRoutes } = require('../lib/perf-routes');
 
 test('invalid route configuration does not block url checks or target management', async t => {
+  const originalExitCode = process.exitCode;
+  t.after(() => { process.exitCode = originalExitCode; });
   const originalSecret = process.env.ATRIS_INTERNAL_SECRET;
   const originalLog = console.log;
   const output = [];
@@ -75,7 +77,55 @@ test('reports skip corrupt route history and keep the latest valid snapshot', as
   }
 });
 
+test('explicit routes failures exit nonzero while the default flow continues', async t => {
+  let mode = 'success';
+  let urlHits = 0;
+  const server = http.createServer((req, res) => {
+    if (req.url === '/health') { urlHits++; res.end('ok'); return; }
+    assert.equal(req.headers.authorization, 'Bearer exit-test-secret');
+    if (mode === 'network') { req.socket.destroy(); return; }
+    res.writeHead(typeof mode === 'number' ? mode : 200);
+    res.end(JSON.stringify({ since: '2026-11-18T00:00:00Z', routes: [] }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-perf-exit-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const dir = path.join(root, 'atris/perf');
+  fs.mkdirSync(dir, { recursive: true });
+  const url = `http://127.0.0.1:${server.address().port}`;
+  fs.writeFileSync(path.join(dir, 'targets.json'), JSON.stringify([
+    { name: 'local', url: url + '/health' },
+    { name: 'routes', type: 'routes', url: url + '/internal/perf/routes' }
+  ]));
+  const command = path.resolve(__dirname, '../commands/perf.js');
+  const run = (args, secret = 'exit-test-secret') => new Promise(resolve => {
+    execFile(process.execPath, ['-e', 'require(process.argv[1]).perfCommand(JSON.parse(process.argv[2]), process.argv[3]).catch(() => { process.exitCode = 1; })', command, JSON.stringify(args), root],
+      { env: { ...process.env, ATRIS_INTERNAL_SECRET: secret } },
+      (error, stdout, stderr) => resolve({ code: error?.code || 0, stdout, stderr }));
+  });
+  assert.equal((await run(['routes'])).code, 0);
+  fs.rmSync(path.join(dir, 'routes.jsonl'));
+  for (const failure of ['missing', 401, 404, 'network', 'save']) {
+    mode = failure;
+    if (failure === 'save') fs.mkdirSync(path.join(dir, 'routes.jsonl'));
+    const secret = failure === 'missing' ? '' : 'exit-test-secret';
+    const explicit = await run(['routes'], secret);
+    assert.equal(explicit.code, 1, String(failure));
+    assert.equal(explicit.stdout.trim().split('\n').length, 1);
+    assert.equal(explicit.stderr, '');
+    assert.ok(!explicit.stdout.includes('exit-test-secret'));
+    const normal = await run(['--samples', '1'], secret);
+    assert.equal(normal.code, 0, normal.stderr);
+    assert.match(normal.stdout, /performance ranked/);
+    if (failure === 'save') fs.rmSync(path.join(dir, 'routes.jsonl'), { recursive: true });
+  }
+  assert.equal(urlHits, 5);
+});
+
 test('backend routes authenticate, rank, record and survive missing or wrong secrets', async t => {
+  const originalExitCode = process.exitCode;
+  t.after(() => { process.exitCode = originalExitCode; });
   const originalSecret = process.env.ATRIS_INTERNAL_SECRET;
   const originalLog = console.log;
   const output = [];

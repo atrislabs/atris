@@ -60,7 +60,7 @@ async function perfCommand(args = [], root = process.cwd()) {
   const collectRoutes = async () => {
     if (!process.env.ATRIS_INTERNAL_SECRET) {
       console.log('set the atris_internal_secret environment variable (uppercase) to enable backend route rankings');
-      return;
+      return false;
     }
     try {
       const source = validateRouteSource(readEntries().find(t => t.type === 'routes') || defaultRouteSource);
@@ -69,12 +69,14 @@ async function perfCommand(args = [], root = process.cwd()) {
       ensurePerfIgnore(root);
       fs.appendFileSync(routesFile, JSON.stringify({ timestamp: new Date().toISOString(), source: source.url, ...snapshot }) + '\n');
       printRoutes(snapshot, top);
+      return true;
     } catch (error) {
       console.log(error.message);
+      return false;
     }
   };
   if (action === 'routes') {
-    await collectRoutes();
+    if (!await collectRoutes()) process.exitCode = 1;
     return;
   }
   if (!action || action === 'run') {
@@ -103,14 +105,20 @@ async function perfCommand(args = [], root = process.cwd()) {
   }
   const runs = fs.existsSync(runsFile) ? fs.readFileSync(runsFile, 'utf8').split('\n').filter(line => line.trim()).map(line => JSON.parse(line)) : [];
   const ranked = rankRuns(runs);
-  const routeHistory = fs.existsSync(routesFile) ? fs.readFileSync(routesFile, 'utf8').split('\n').flatMap(line => {
+  const routeHistory = (() => {
     try {
-      const record = JSON.parse(line);
-      return [{ ...record, ...rankRoutes(record) }];
+      return fs.readFileSync(routesFile, 'utf8').split('\n').flatMap(line => {
+        try {
+          const record = JSON.parse(line);
+          return [{ ...record, ...rankRoutes(record) }];
+        } catch {
+          return [];
+        }
+      });
     } catch {
       return [];
     }
-  }) : [];
+  })();
   const latestRoutes = routeHistory.at(-1);
   if (args.includes('--json')) console.log(JSON.stringify(ranked, null, 2));
   else {
