@@ -154,14 +154,12 @@ test('page: nothing on the screen shows until the page\'s script has run, and th
   assert.ok(script.indexOf("document.body.classList.add('on');") < script.indexOf('function el('), 'before any of its work');
 });
 
-test('browser: a look the Mac lost to its sleep is called off: the new card shows within seconds, and at once when the wifi is back or the phone is unlocked', browser, async () => {
-  const waited = await health.lostLookTrace({ chromePath: CHROME, how: 'wait' });
-  assert.ok(waited.shown_ms != null && waited.shown_ms < 10000, JSON.stringify(waited));
-  for (const how of ['online', 'visible']) {
+test('browser: a look the Mac lost to its sleep is called off: the new card shows within seconds, and at once when the wifi is back or the phone is unlocked', { ...browser, concurrency: 2 }, async (t) => {
+  await Promise.all(['wait', 'online', 'visible'].map(how => t.test(how, async () => {
     const out = await health.lostLookTrace({ chromePath: CHROME, how });
-    assert.ok(out.shown_ms != null && out.shown_ms < 2500, JSON.stringify(out));
-    assert.deepEqual(out.console, [], JSON.stringify(out));
-  }
+    assert.ok(out.shown_ms != null && out.shown_ms < (how === 'wait' ? 10000 : 2500), JSON.stringify(out));
+    if (how !== 'wait') assert.deepEqual(out.console, [], JSON.stringify(out));
+  })));
 });
 
 // ---- the home screen ------------------------------------------------------------------

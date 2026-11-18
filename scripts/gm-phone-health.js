@@ -859,7 +859,7 @@ async function lostLookTrace({ how = 'wait', ...opts } = {}) {
 
 // The Mac goes to sleep under a card: it takes every connection and answers
 // none. After asleepMs the owner taps "sharpen it"; then the Mac wakes and
-// answers what it held. Then the same on the calm line, which looks more
+// answers what it held. A separate page opens on the calm line, which looks more
 // often. card_asks_out: asks for the card still waiting when the owner
 // tapped; tap_reached_mac: the tap's post got to the Mac while it slept, not
 // stuck behind the asks; next_card: the card the page came to after waking.
@@ -867,7 +867,7 @@ async function asleepTrace({ asleepMs = 32000, calmMs = 12000, ...opts } = {}) {
   const { b1, b2, calm } = trace.CARDS;
   const desk = trace.cardDesk(b1, async () => ({ card: b2 }));
   const out = {};
-  await openPage(desk, async (p, send, said, server) => {
+  const underCard = openPage(desk, async (p, send, said, server) => {
     await p.until(titled(b1.title), 'the first card', 10000);
     server.sleep();
     await wait(asleepMs);
@@ -883,7 +883,7 @@ async function asleepTrace({ asleepMs = 32000, calmMs = 12000, ...opts } = {}) {
   }, opts);
   // the calm line looks for the idea every second and a half
   const calmDesk = trace.cardDesk(calm, async () => ({ card: calm }));
-  await openPage(calmDesk, async (p, send, said, server) => {
+  const onCalmLine = openPage(calmDesk, async (p, send, said, server) => {
     await p.until("document.body.classList.contains('waiting') && Boolean(document.querySelector('#bet .sayline .field'))", 'the calm line', 10000);
     server.sleep();
     await wait(calmMs);
@@ -891,6 +891,9 @@ async function asleepTrace({ asleepMs = 32000, calmMs = 12000, ...opts } = {}) {
     out.calm_card_asks_most = await p.run("window.__health.asks.most['GET /card'] || 0");
     server.wake();
   }, opts);
+  for (const result of await Promise.allSettled([underCard, onCalmLine])) {
+    if (result.status === 'rejected') throw result.reason;
+  }
   return out;
 }
 

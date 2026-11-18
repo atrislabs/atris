@@ -14,7 +14,11 @@ rg "releaseAtris|releasePreflight|release preflight" commands/release.js bin/atr
 
 The slow-answer and lost-answer retry checks in `test/gm-phone-hands.test.js` and the team-table, long-name and engine-swap viewport checks in `test/gm-phone.test.js` run at most two independent Chrome sessions at a time per check. Each case still uses its own browser and local test server.
 
+The sleep and lost-look checks in `test/gm-phone-health.test.js` also overlap up to two independent Chrome sessions. The page keeps the same polling and response deadlines.
+
 `test/gm-phone-layout.test.js` measures card line wrapping and footer geometry in the same Chrome render where the card and viewport match. Each assertion still covers its original cards and screen sizes.
+
+`test/engine-resource.test.js` counts bytes as it fills large log fixtures. The task history and archive checks in `test/commands-4.test.js` and `test/commands-6.test.js` make the first entry through the CLI and add the rest through the task store.
 
 ## Feature: Release (`atris release`)
 
