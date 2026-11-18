@@ -33,7 +33,7 @@ test('layout: on the swap card every model\'s note sits on its own line under it
 });
 
 test('layout: on a phone with a notch the small orb rests below it, as far above the card as on a phone without one', { skip, timeout: 90000 }, async () => {
-  const rows = await layout({ chromePath: CHROME, cases: only('idea', 'deck'), viewports: ['phone', 'big', 'small'] });
+  const rows = await measureCards(only('idea', 'deck'), ['phone', 'big', 'small']);
   const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.viewport}`, inset: r.safe_area, lava: r.lava, card: r.card && r.card.top })), null, 1);
   const gaps = rows.map(r => r.card.top - r.lava.bottom);
   for (const r of rows) assert.ok(r.lava.top >= ((r.safe_area && r.safe_area.top) || 0) + 8, show);
@@ -134,7 +134,7 @@ test('layout: on the calm line the footer never lands on the card, with the phon
 });
 
 test('layout: with a notched phone on its side the wide cards start past the notch, and upright phones keep 24px sides', { skip, timeout: 90000 }, async () => {
-  const rows = await layout({ chromePath: CHROME, cases: only('team', 'deck', 'idea'), viewports: ['side', 'phone', 'small'] });
+  const rows = await measureCards(only('team', 'deck', 'idea'), ['side', 'phone', 'small']);
   const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, inset: r.safe_area, card: r.card })), null, 1);
   for (const r of rows) {
     const inset = r.safe_area || {};
@@ -175,11 +175,11 @@ const LINK_ROWS = `Array.prototype.filter.call(document.querySelectorAll('#bet .
 })`;
 
 test('layout: a row of small links that wraps keeps every dot between two links on one line, and every line is centered', { skip, timeout: 90000 }, async () => {
-  const rows = await layout({ chromePath: CHROME, cases: only('deck', 'swap', 'idea', 'reply'), viewports: ['phone', 'small', 'laptop'], probe: LINK_ROWS });
-  const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, rows: r.probe })), null, 1);
+  const rows = await measureCards(only('deck', 'swap', 'idea', 'reply'), ['phone', 'small', 'laptop']);
+  const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, rows: r.probe.links })), null, 1);
   let wrapped = 0;
   for (const r of rows) {
-    for (const row of r.probe) {
+    for (const row of r.probe.links) {
       if (row.lines.length > 1) wrapped += 1;
       for (const d of row.dots) assert.ok(d.one_line, show);
       // the side of a link's own space (the dot and its gaps) is the only give
@@ -253,32 +253,36 @@ const TYPE_SIZES = `(function () {
 
 const WORD_VIEWPORTS = ['phone', 'small', 'side', 'laptop'];
 const FOOTER_VIEWPORTS = ['phone', 'big', 'small', 'laptop'];
-let phoneRows;
-function measurePhoneCards() {
-  phoneRows ??= layout({
-    chromePath: CHROME,
-    viewports: ['phone'],
-    probe: `({
-      footer: ${FOOTER_BOX},
-      edges: ${FIELD_EDGES},
-      sizes: ${TYPE_SIZES},
-      teamLink: getComputedStyle(document.getElementById('working')).display !== 'none',
-      lastLines: ${LAST_LINES},
-    })`,
-  });
-  return phoneRows;
+const cardRows = new Map();
+const CARD_PROBES = `({
+  footer: ${FOOTER_BOX},
+  edges: ${FIELD_EDGES},
+  sizes: ${TYPE_SIZES},
+  teamLink: getComputedStyle(document.getElementById('working')).display !== 'none',
+  links: ${LINK_ROWS},
+  lastLines: ${LAST_LINES},
+})`;
+
+async function measureCards(cases, viewports) {
+  const missing = new Map();
+  for (const viewport of viewports) {
+    if (!cardRows.has(viewport)) cardRows.set(viewport, new Map());
+    const rows = cardRows.get(viewport);
+    const needed = cases.filter(c => !rows.has(c.name));
+    if (!needed.length) continue;
+    const key = needed.map(c => c.name).join(',');
+    if (!missing.has(key)) missing.set(key, { cases: needed, viewports: [] });
+    missing.get(key).viewports.push(viewport);
+  }
+  for (const batch of missing.values()) {
+    const rows = await layout({ chromePath: CHROME, ...batch, probe: CARD_PROBES });
+    for (const row of rows) cardRows.get(row.viewport).set(row.case, row);
+  }
+  return viewports.flatMap(viewport => cases.map(c => cardRows.get(viewport).get(c.name)));
 }
 
-let otherCardRows;
-async function measureAllCards() {
-  const phone = await measurePhoneCards();
-  otherCardRows ??= layout({
-    chromePath: CHROME,
-    viewports: [...new Set([...WORD_VIEWPORTS, ...FOOTER_VIEWPORTS])].filter(v => v !== 'phone'),
-    probe: `({ footer: ${FOOTER_BOX}, lastLines: ${LAST_LINES} })`,
-  });
-  return [...phone, ...await otherCardRows];
-}
+const measurePhoneCards = () => measureCards(CASES, ['phone']);
+const measureAllCards = () => measureCards(CASES, [...new Set([...WORD_VIEWPORTS, ...FOOTER_VIEWPORTS])]);
 
 test('layout: no title, body, or label leaves one word alone on its last line, on any card at any size', { skip, timeout: 180000 }, async () => {
   const rows = (await measureAllCards()).filter(r => WORD_VIEWPORTS.includes(r.viewport));

@@ -26,6 +26,8 @@ The phone checks for words kept after a failed send, replies that keep the card'
 
 `test/gm-phone-health.test.js` shares the identical screen reader capture between announcement and refusal checks, and the identical keyboard capture between focus ring checks. Each check can still run on its own.
 
+`test/gm-phone-layout.test.js` reuses settled Chrome renders for matching cards and screen sizes when checking notch gaps, centered links, word wrapping and the footer. Each check measures any captures it needs when run on its own.
+
 `test/gm-phone-cards.test.js` holds nine unchanged browser journeys for card typing, team, and deck actions so CI can run them on a different worker from `test/gm-phone.test.js`.
 
 `test/gm-phone-layout.test.js` measures card line wrapping, footer geometry, contrast, type sizes and team-link visibility in the same Chrome render where the card and viewport match. Each assertion keeps its original cards and screen sizes.
