@@ -3,7 +3,7 @@ const path = require('node:path');
 const { defaultTargets, validateTarget, measure, summarize, rankRuns } = require('../lib/perf');
 const { renderHtml } = require('../lib/perf-html');
 const { ensurePerfIgnore } = require('../lib/gitignore');
-const { defaultRouteSource, validateRouteSource, fetchRoutes, printRoutes } = require('../lib/perf-routes');
+const { defaultRouteSource, validateRouteSource, rankRoutes, fetchRoutes, printRoutes } = require('../lib/perf-routes');
 
 async function perfCommand(args = [], root = process.cwd()) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
@@ -103,7 +103,14 @@ async function perfCommand(args = [], root = process.cwd()) {
   }
   const runs = fs.existsSync(runsFile) ? fs.readFileSync(runsFile, 'utf8').split('\n').filter(line => line.trim()).map(line => JSON.parse(line)) : [];
   const ranked = rankRuns(runs);
-  const routeHistory = fs.existsSync(routesFile) ? fs.readFileSync(routesFile, 'utf8').split('\n').filter(line => line.trim()).map(JSON.parse) : [];
+  const routeHistory = fs.existsSync(routesFile) ? fs.readFileSync(routesFile, 'utf8').split('\n').flatMap(line => {
+    try {
+      const record = JSON.parse(line);
+      return [{ ...record, ...rankRoutes(record) }];
+    } catch {
+      return [];
+    }
+  }) : [];
   const latestRoutes = routeHistory.at(-1);
   if (args.includes('--json')) console.log(JSON.stringify(ranked, null, 2));
   else {

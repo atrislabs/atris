@@ -49,6 +49,32 @@ test('invalid route configuration does not block url checks or target management
   assert.match(output[0], /route source must be/);
 });
 
+test('reports skip corrupt route history and keep the latest valid snapshot', async t => {
+  const originalLog = console.log;
+  const output = [];
+  console.log = (...args) => output.push(args.join(' '));
+  t.after(() => { console.log = originalLog; });
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-perf-history-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const dir = path.join(root, 'atris/perf');
+  fs.mkdirSync(dir, { recursive: true });
+  const snapshot = { since: '2026-11-18T00:00:00Z', timestamp: '2026-11-18T01:00:00Z', routes: [
+    { method: 'GET', route: '/valid', count: 1, errors: 0, p50: 1, p95: 2, p99: 3, max: 3 }
+  ] };
+  const history = path.join(dir, 'routes.jsonl');
+  fs.writeFileSync(history, ['not json', JSON.stringify(snapshot), 'null', '{}', '{"routes":'].join('\n'));
+  await perfCommand(['report', '--json'], root);
+  assert.deepEqual(JSON.parse(output.at(-1)), []);
+  await perfCommand(['report', '--html'], root);
+  assert.ok(output.some(line => line.startsWith('GET /valid:')));
+  assert.match(fs.readFileSync(path.join(dir, 'report.html'), 'utf8'), /\/valid/);
+  for (const content of ['', '{"truncated":']) {
+    fs.writeFileSync(history, content);
+    await perfCommand(['report', '--html'], root);
+    assert.match(fs.readFileSync(path.join(dir, 'report.html'), 'utf8'), /no backend route snapshots yet/);
+  }
+});
+
 test('backend routes authenticate, rank, record and survive missing or wrong secrets', async t => {
   const originalSecret = process.env.ATRIS_INTERNAL_SECRET;
   const originalLog = console.log;
