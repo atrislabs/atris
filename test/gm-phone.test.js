@@ -1701,8 +1701,8 @@ test('browser: the team opened from the big orb closes back to the big orb, and 
   assert.deepEqual([out.viaTalk.has_card, out.viaTalk.line], [false, 'tap to think'], show);
 });
 
-test('browser: the team closed over the calm line goes back into it the way the orb does: the dots, a note that folds in and clears, and the idea out of the dots on its own, with and without motion', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
-  for (const reduced of [false, true]) {
+test('browser: the team closed over the calm line goes back into it the way the orb does: the dots, a note that folds in and clears, and the idea out of the dots on its own, with and without motion', { skip: !CHROME && 'no chrome on this machine', timeout: 120000, concurrency: 2 }, async t => {
+  await Promise.all([false, true].map(reduced => t.test(reduced ? 'reduced motion' : 'motion', async () => {
     const out = await trace.teamOverWaitTrace({ chromePath: CHROME, reduced });
     const show = JSON.stringify(out, null, 1);
     // back on the calm line: its sphere and its open box, not a plain card
@@ -1711,7 +1711,7 @@ test('browser: the team closed over the calm line goes back into it the way the 
     assert.deepEqual([out.noted.words, out.noted.notes], ['', ['make it about schools', "got it, i'll fold that in."]], show);
     // once the idea is ready it shows on its own
     assert.deepEqual([out.landed.kind, out.landed.title], ['idea', trace.CARDS.b1.title], show);
-  }
+  })));
 });
 
 test('browser: a swap whose answer was lost: the next tap draws the team the Mac has at once, with one line why, and never posts the old swap card again', { skip: !CHROME && 'no chrome on this machine', timeout: 90000 }, async () => {
@@ -1744,7 +1744,7 @@ test('browser: the small orb on any card goes back to the big dotted orb; the bi
 
 // ---- typing on the calm line: the idea waits for the owner -------------------------
 
-test('browser: on the calm line the owner types, the idea lands and waits; words sent there are a note, and the idea that comes in is the one written with it; a cleared box lets the waiting idea in', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
+test('browser: on the calm line the owner types, the idea lands and waits; words sent there are a note, and the idea that comes in is the one written with it; a cleared box lets the waiting idea in', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async t => {
   const gmBet = require('../lib/gm-bet');
   const idea = (title) => ({
     title,
@@ -1758,9 +1758,9 @@ test('browser: on the calm line the owner types, the idea lands and waits; words
   const NOTED = idea('write a getting started page for schools that try atris gm phone in class');
   const WORDS = 'make it about schools';
   const FOLDED = 'got it, i\'ll fold that in.';
-  const runs = [];
-  for (const end of ['send', 'clear']) {
+  const results = await Promise.allSettled(['send', 'clear'].map(async end => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'gm-phone-ws-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const writing = [];
     const said = [];
     const desk = gmBet.createBetDesk({
@@ -1779,7 +1779,7 @@ test('browser: on the calm line the owner types, the idea lands and waits; words
     // the drafting that began before the answer stopped, and a fresh one knows it
     await new Promise(r => setImmediate(r));
     assert.equal(writing.length, 2);
-    runs.push(await trace.onPhone(desk, CHROME, async (p) => {
+    return trace.onPhone(desk, CHROME, async (p) => {
       const look = () => p.run("(function () { var i = document.querySelector('#bet .field input'); return { title: document.querySelector('#bet h1').textContent, words: i ? i.value : null, notes: Array.prototype.map.call(document.querySelectorAll('#bet .waitnotes .turn'), function (n) { return n.textContent; }), dots: document.getElementById('orb').__orb.frame }; })()");
       const calm = await look();
       // the box is open already; a tap puts the cursor in it
@@ -1810,8 +1810,12 @@ test('browser: on the calm line the owner types, the idea lands and waits; words
       await p.until(`document.querySelector('#bet h1').textContent === ${JSON.stringify(end === 'send' ? NOTED.title : IDEA.title)}`, 'the idea', 9000).catch(() => {});
       await new Promise(r => setTimeout(r, 400));
       return { ...out, after: await look(), said: said.length };
-    }));
-  }
+    });
+  }));
+  const runs = results.map(result => {
+    if (result.status === 'rejected') throw result.reason;
+    return result.value;
+  });
   const show = JSON.stringify(runs, null, 1);
   for (const r of runs) {
     assert.equal(r.calm.title, 'writing your next idea.', show);
