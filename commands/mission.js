@@ -4,7 +4,6 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
 const { memberProcessPrompt, currentWorkPrompt } = require('../lib/member-context');
@@ -25,30 +24,20 @@ const {
 } = require('../lib/brief-ledger');
 const {
   resolveClaudeRunnerModel,
-  resolvePinnedRunnerModel,
-  runnerModelFor,
   resolveClaudeRunnerBin,
   resolveClaudeRunnerCommandTemplate,
   buildRunnerCommand,
   codexJsonEventsCommand,
   CLAUDE_SLIM_ARGS,
   slimLaunchSpendStop,
-  RUNNER_PROFILE_DEFS,
-  RUNNER_PROFILE_ALIASES,
-  RUNNER_PROFILE_NAMES,
 } = require('../lib/runner-command');
 const {
-  resolveEngineForRoleWithPreference,
   engineFailureHealthStatus,
-  engineStallReason,
   engineRegistryView,
-  recordEngineRunHealth,
   setEngineHealth,
 } = require('../lib/engine-registry');
-const { appendRosterRun, parseRunUsage } = require('../lib/roster-runs');
+const { parseRunUsage } = require('../lib/roster-runs');
 const {
-  FUNCTIONAL_MEMBER_TOPICS,
-  listWorkspaceMemberSlugs,
   normalizeOwnerSlug,
   resolveFunctionalOwner,
 } = require('../lib/functional-owner');
@@ -77,7 +66,6 @@ const {
 const { compactMissionLedger } = require('../lib/mission-ledger-compact');
 const autolandLib = require('../lib/autoland');
 const { gateForHuman, landingWhyClause } = require('../lib/voice-gate');
-const { operatorReady, hasAgentJargon } = require('./autoland');
 const {
   MISSION_INSPECT_FIELDS,
   readFieldsFlag,
@@ -89,11 +77,8 @@ const {
 } = require('../lib/inspect-fields');
 const {
   displayNumber,
-  meaningfulWords,
   nextRecordNumber,
   recordMatchesRef,
-  shortRecordLabel,
-  shortRecordRef,
 } = require('../lib/short-name');
 const {
   runCloudMissionCommand,
@@ -183,7 +168,6 @@ const {
   MISSION_RUN_BOOLEAN_FLAGS,
   DEFAULT_MISSION_RUN_OWNER_SLUGS,
   missionRunInputRequired,
-  askLine,
   removeValueFlag,
   missionRunOwnerRef,
   missionRunArgsWithOwner,

@@ -19,7 +19,7 @@ Campaign judges, traces, loops, cadence and learning reports. Code refs and sear
 
 Legacy skipped proof refresh: the recorder regression also checks that later judge evidence updates the original node once, with identity and unknown/neutral results preserved.
 
-Complete source evidence: `lib/mission-code-provenance.js:81` captures a clean Git base, `lib/mission-code-provenance.js:90` collects every committed path using physical ancestry despite local or inherited graft files, and `commands/mission.js:6636` puts that evidence in actual mission receipts. `lib/campaign-rsi.js:321` checks the receipt, actual work-step engines, and Git history before export. `lib/rsi-record.js:374` records observed history with original times and no policy credit. Regressions: `test/mission-code-provenance.test.js`, `test/campaign-rsi-recorder.test.js`, `test/rsi-observed.test.js`, and `test/campaign-trace.test.js`.
+Complete source evidence: `lib/mission-code-provenance.js:81` captures a clean Git base, `lib/mission-code-provenance.js:90` collects every committed path using physical ancestry despite local or inherited graft files, and `commands/mission.js:6620` puts that evidence in actual mission receipts. `lib/campaign-rsi.js:321` checks the receipt, actual work-step engines, and Git history before export. `lib/rsi-record.js:374` records observed history with original times and no policy credit. Regressions: `test/mission-code-provenance.test.js`, `test/campaign-rsi-recorder.test.js`, `test/rsi-observed.test.js`, and `test/campaign-trace.test.js`.
 
 ## Revision reports across out-of-order commit dates
 
