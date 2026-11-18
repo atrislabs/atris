@@ -459,11 +459,14 @@ test('broken percent codes and unsupported YouTube identities refuse with one JS
   }
 });
 
-test('the CLI process returns a clean JSON refusal for broken percent decoding', () => {
+test('the CLI process returns a clean JSON refusal for broken percent decoding', (t) => {
+  const fs = require('node:fs');
+  const cwd = fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'nexus-capture-cli-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
   const { spawnSync } = require('node:child_process');
   const path = require('node:path');
   const result = spawnSync(process.execPath, [path.join(__dirname, '../bin/atris.js'), 'nexus', 'capture', '--json',
-    '--name', 'Rae Sample', '--why', 'pricing talk', '--source-url', 'https://www.youtube.com/%E0%A4%A'], { encoding: 'utf8', timeout: 10000 });
+    '--name', 'Rae Sample', '--why', 'pricing talk', '--source-url', 'https://www.youtube.com/%E0%A4%A'], { cwd, encoding: 'utf8', timeout: 10000 });
   assert.ifError(result.error);
   assert.equal(result.status, 2, result.stderr);
   assert.equal(result.stderr, '');
