@@ -69,8 +69,6 @@ jobs:
           node-version: '24'
           package-manager-cache: false
 
-      - run: npm ci
-
       - name: Run selected tests
         env:
           MODE: ${{ needs.plan.outputs.mode }}
