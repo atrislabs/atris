@@ -12,7 +12,7 @@ const path = require('node:path');
 const feed = require('../lib/feed-core');
 const team = require('../lib/feed-team');
 const { setMemberAwake } = require('../lib/member-switches');
-const { project } = require('./helpers/feed-project');
+const { changed, project } = require('./helpers/feed-project');
 
 const TWO = 'IDEA\nTITLE: Thank the first ten buyers\nWHY: Thanked buyers come back\nBODY: One short note each.\n'
   + 'VISUAL: {"kind": "steps", "steps": ["Find the ten", "Write one line each"]}\nEND\n'
@@ -63,7 +63,8 @@ test('stream: a card cut off mid-way, or one that fails the checks, is dropped a
     for (const piece of text.match(/.{1,6}/gs)) onText(piece);
     return { ok: false, text, error: 'the connection dropped' };
   };
-  const { events } = await streamPing(ctx);
+  // The person asked for more: a slip gets its one rewrite. (A round the feed started by itself makes no second model call.)
+  const { events } = await streamPing(ctx, { reason: 'more' });
   const dropped = events.filter((e) => e.type === 'card_dropped');
   assert.ok(dropped.some((e) => /plain words/.test(e.reason) && /One rewrite did not fix it/.test(e.reason)), 'one rewrite was tried first');
   assert.ok(dropped.some((e) => /stopped before the card was finished/.test(e.reason)));
@@ -144,6 +145,7 @@ test('variety: members rotate, ideas must be unlike what is there, and a member 
   ctx.deps.turn = async ({ onText }) => { n += 1; const text = `IDEA\nTITLE: A fresh idea number ${n} for buyers\nWHY: It helps\nEND\n`; onText(text); return { ok: true, text }; };
   const first = await streamPing(ctx, { env });
   const asked = first.out.members.filter((m) => m.status === 'done').map((m) => m.name);
+  changed(ctx);
   const second = await streamPing(ctx, { env });
   assert.equal(second.out.members.find((m) => m.status === 'done').name, ['scout', 'writer', 'closer', 'extra'].find((m) => !asked.includes(m)), 'whoever waited longest goes first');
   const prompt = team.ideaPrompt(ctx.root, 'scout', 'scroll');
@@ -203,7 +205,7 @@ test('stream: a card the model forgot to END is still whole when the answer ende
   assert.equal(events.filter((e) => e.type === 'card_dropped').length, 0);
 });
 
-test('found: at the end of the feed with many ideas waiting (most held back), asking for more is always heard', async (t) => {
+test('found: at the end of the feed with many ideas waiting (most held back), a change in the project still brings the team in', async (t) => {
   const ctx = project(t, ['scout', 'writer', 'closer', 'extra']);
   const titles = ['Call the warm leads today', 'Write the spring price note', 'Ask three owners for a quote', 'Thank the first ten buyers',
     'Check every price on the shop page', 'Send a short welcome note', 'Fix the opening hours line', 'Add a photo to the soap page', 'Answer the oldest customer email'];
@@ -211,11 +213,13 @@ test('found: at the end of the feed with many ideas waiting (most held back), as
   feed.passCards(ctx.root, ids.slice(0, 8), { env: ctx.env, now: Date.now() + 11000 });
   const more = feed.requestMoreIdeas(ctx.root, { env: ctx.env, deps: ctx.deps });
   assert.equal(more.requested, 3, more.reason);
+  changed(ctx);
   const scroll = team.ping(ctx.root, { reason: 'scroll', env: { ...ctx.env }, deps: ctx.deps });
   assert.equal(scroll.pinged, 1, 'the members asked a moment ago are passed over, the one left is asked');
   const askedFirst = more.members.filter((m) => m.status === 'started').map((m) => m.name);
   assert.equal(scroll.members.find((m) => m.status === 'started').name, ['scout', 'writer', 'closer', 'extra'].find((m) => !askedFirst.includes(m)));
   // Only the automatic heartbeat rests while plenty wait.
+  changed(ctx);
   const beat = team.ping(ctx.root, { reason: 'heartbeat', env: { ...ctx.env, ATRIS_FEED_MEMBER_GAP_SECONDS: '0' }, deps: ctx.deps });
   assert.equal(beat.pinged, 0);
   assert.match(beat.reason, /9 ideas are already waiting, so the heartbeat lets the team rest/);

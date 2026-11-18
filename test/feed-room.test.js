@@ -376,7 +376,7 @@ test('ask round: members post, ask, reply and react, streamed like ideas, within
   ctx.deps.turn = streaming([
     'POST', 'TEXT: Three buyers came back twice this month, which made my day.', 'END',
     'ASK', 'TEXT: Does anyone know which candle sold best last week?', 'END',
-    'REPLY 1: Nice work, the buyers will notice the speed.',
+    'REPLY 1: IDEA: Show the faster page to returning buyers first, they will notice the speed.',
     'REACT 1: 🔥', '',
   ].join('\n'), prompts);
   const events = await askRound(ctx, 'scout');
@@ -410,15 +410,17 @@ test('ask round: members post, ask, reply and react, streamed like ideas, within
   assert.equal(stored.replies[0].by, 'agent:scout');
   assert.deepEqual(stored.reactions['🔥'], ['agent:scout']);
 
+  // The owner speaks, so scout may add to the card again (never twice in a row on one card).
+  room.reply(ctx.root, theirs.id, 'Good to hear.', { env: ctx.env });
   // The next thought: an ask, and every limit (own item, no such item, too many).
   ctx.deps.turn = streaming([
     'ASK', 'TEXT: Which day do buyers like a reminder best?', 'END',
     'REACT 1: 👍', 'REACT 2: 😂', 'REACT 2: 👀',
-    'REPLY 9: Hello there.', 'REPLY 2: Thanks for the update, it shows.', 'REPLY 2: A third reply is one too many.', '',
+    'REPLY 9: IDEA: Hello there.', 'REPLY 2: FOUND: The update shows for every buyer now. FROM: the shop notes', 'REPLY 2: IDEA: A third reply is one too many.', '',
   ].join('\n'), prompts);
   const again = await askRound(ctx, 'scout');
   assert.match(prompts[1], /\[1\] scout \(you\): Three buyers came back/);
-  assert.match(prompts[1], /\[2\] writer: The soap page[^\n]*\n {4}scout \(you\) replied: Nice work/);
+  assert.match(prompts[1], /\[2\] writer: The soap page[^\n]*\n {4}scout \(you\) replied \(Idea\): Show the faster page/);
   assert.equal(again.find((e) => e.type === 'card_done').card.kind, 'ask');
   assert.equal(again.filter((e) => e.type === 'card_changed').length, 2);
   assert.equal(again.filter((e) => e.type === 'card_dropped').length, 0, 'replies and reactions are dropped quietly');
@@ -426,7 +428,9 @@ test('ask round: members post, ask, reply and react, streamed like ideas, within
   for (const why of ['a reaction to item 1: Not on your own item.', 'a reaction to item 2: At most 2 reactions in one go.',
     'a reply to item 9: There is no item 9.', 'a reply to item 2: At most 2 replies in one go.']) assert.ok(lines.includes(why), why);
   const card = feed.readCard(ctx.root, theirs.id, { env: ctx.env });
-  assert.equal(card.reply_count, 2);
+  assert.equal(card.reply_count, 3);
+  assert.deepEqual(card.replies.map((r) => r.kind || null), ['idea', null, 'found']);
+  assert.equal(card.replies[2].source, 'the shop notes');
   assert.deepEqual(card.reactions.map((r) => r.emoji), ['😂', '🔥']);
   // A reaction a member already gave is left as it is, not taken off
   // (writer's note is item 3 now: scout's ask and post are newer).
