@@ -14,14 +14,18 @@ async function perfCommand(args = [], root = process.cwd()) {
   const targetsFile = path.join(dir, 'targets.json');
   const runsFile = path.join(dir, 'runs.jsonl');
   const routesFile = path.join(dir, 'routes.jsonl');
-  const readEntries = () => {
+  const readEntries = ({ urlOnly = false, routeCollection = false } = {}) => {
     const targets = fs.existsSync(targetsFile) ? JSON.parse(fs.readFileSync(targetsFile, 'utf8')) : [];
     if (!Array.isArray(targets)) throw new Error('targets must be a list');
-    const valid = targets.map(t => t.type === 'routes' ? t : validateTarget(t));
+    if (routeCollection && targets.filter(t => t.type === 'routes').length > 1) {
+      throw new Error('configure only one backend route source');
+    }
+    const entries = urlOnly ? targets.filter(t => t.type !== 'routes') : targets;
+    const valid = entries.map(t => t.type === 'routes' ? t : validateTarget(t));
     if (new Set(valid.map(t => t.name)).size !== valid.length) throw new Error('target names must be unique');
     return valid;
   };
-  const readTargets = () => readEntries().filter(t => t.type !== 'routes');
+  const readTargets = () => readEntries({ urlOnly: true });
   const saveTargets = targets => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(targetsFile, JSON.stringify(targets, null, 2) + '\n');
@@ -63,7 +67,7 @@ async function perfCommand(args = [], root = process.cwd()) {
       return false;
     }
     try {
-      const source = validateRouteSource(readEntries().find(t => t.type === 'routes') || defaultRouteSource);
+      const source = validateRouteSource(readEntries({ routeCollection: true }).find(t => t.type === 'routes') || defaultRouteSource);
       const snapshot = await fetchRoutes(source, process.env.ATRIS_INTERNAL_SECRET);
       fs.mkdirSync(dir, { recursive: true });
       ensurePerfIgnore(root);

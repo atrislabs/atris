@@ -69,6 +69,55 @@ test('target management rejects names shared by urls and route sources', async t
   }
 });
 
+test('multiple route sources fail collection without blocking default url checks', async t => {
+  const originalExitCode = process.exitCode;
+  const originalSecret = process.env.ATRIS_INTERNAL_SECRET;
+  const originalLog = console.log;
+  const output = [];
+  console.log = (...args) => output.push(args.join(' '));
+  process.env.ATRIS_INTERNAL_SECRET = 'multiple-sources-test-secret';
+  t.after(() => {
+    process.exitCode = originalExitCode;
+    console.log = originalLog;
+    if (originalSecret === undefined) delete process.env.ATRIS_INTERNAL_SECRET;
+    else process.env.ATRIS_INTERNAL_SECRET = originalSecret;
+  });
+  let urlHits = 0, routeHits = 0;
+  const server = http.createServer((req, res) => {
+    if (req.url === '/health') urlHits++;
+    else routeHits++;
+    res.end('ok');
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-perf-sources-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const dir = path.join(root, 'atris/perf');
+  fs.mkdirSync(dir, { recursive: true });
+  const url = `http://127.0.0.1:${server.address().port}`;
+  for (const name of ['another-source', 'routes']) {
+    fs.writeFileSync(path.join(dir, 'targets.json'), JSON.stringify([
+      { name: 'local', url: url + '/health' },
+      { name: 'routes', type: 'routes', url: url + '/first' },
+      { name, type: 'routes', url: url + '/second' }
+    ]));
+    output.length = 0;
+    process.exitCode = undefined;
+    await perfCommand(['routes'], root);
+    assert.equal(process.exitCode, 1);
+    assert.deepEqual(output, ['configure only one backend route source']);
+    output.length = 0;
+    process.exitCode = undefined;
+    await perfCommand(['--samples', '1'], root);
+    assert.equal(process.exitCode, undefined);
+    assert.equal(output.filter(line => line === 'configure only one backend route source').length, 1);
+    assert.ok(output.some(line => line.startsWith('performance ranked')));
+  }
+  assert.equal(urlHits, 2);
+  assert.equal(routeHits, 0);
+  assert.ok(!fs.existsSync(path.join(dir, 'routes.jsonl')));
+});
+
 test('reports skip corrupt route history and keep the latest valid snapshot', async t => {
   const originalLog = console.log;
   const output = [];

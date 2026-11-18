@@ -14,6 +14,9 @@ The targets list also accepts one route source, seeded as:
 Edit that entry to use a different backend endpoint. Existing targets lists
 without a route entry use this production source by default. URL checks ignore
 the route source entry; add, list and remove preserve the rest of the list.
+Names must be unique across URL targets and the route source. The name `routes`
+is reserved for the route source. Multiple route sources fail route collection
+with one message; the default flow still completes its URL checks and report.
 Only http/https source URLs without credentials, query strings or fragments are
 accepted. Redirects are not followed, so the bearer token is never forwarded.
 
