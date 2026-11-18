@@ -2747,7 +2747,6 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
         process.exitCode = 1;
         return;
     }
-    return;
   }
 
   if (sub === '--cloud' || sub === 'cloud') {
