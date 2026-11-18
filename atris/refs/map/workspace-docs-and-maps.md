@@ -94,7 +94,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 - **Entry points:** `bin/atris.js` (help text, known commands, wiki + alias routing)
 - **Handlers:** `commands/wiki.js` (ingest/query/lint/search/log), `lib/wiki.js` (scaffold + prompt builders), `commands/init.js` (wiki bootstrap), `commands/activate.js` (wiki status load)
-- **Help:** `commands/wiki.js` (`hasHelpFlag`/`printWikiHelp`) and `commands/wiki.js:408-412` short-circuit wiki help before ingest/query/lint workers can scaffold state
+- **Help:** `commands/wiki.js` (`hasHelpFlag`/`printWikiHelp`) and `commands/wiki.js:407-411` short-circuit wiki help before ingest/query/lint workers can scaffold state
 - **Regression:** `test/commands-2.test.js:2197-2219` covers `ingest|query|lint --help`, `wiki --help`, and `wiki ingest --help` without `atris/` or `$HOME/.atris` creation
 - **How it works:**
 - `atris ingest <path>` scaffolds `atris/wiki/`, stages local evidence into `atris/context/_ingest/`, writes a manifest receipt, refreshes wiki STATUS/log, and prints the local ingest prompt against the staged source
@@ -107,7 +107,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris wiki log [N]` shows recent `atris/wiki/log.md` activity
 - `atris wiki consolidate` prints a local pruning prompt and records per-surface counts in `.atris/state/wiki.metabolism.json`; lint flags over-budget surfaces and growth of 10 or more entries, while boot and `atris clean` print one defensive pruning nudge when those findings exist
 - `atris wiki loop` routes to the same local upkeep analysis as `atris loop`
-- `atris wiki learn "<topic>" [--into dir]` (`commands/wiki.js:528`, `lib/learning-team.js` `runLearn`) gathers recent papers, posts and repos over https, ranks them (`lib/learning-team.js:225`), has one engine distill them on the owner's login with paid keys stripped, checks the answer (`lib/learning-team.js` `validateNotes`) and writes notes to `concepts/<topic>/`, a brief to `briefs/<topic>.md` and one `## Learning` index line (`lib/learning-team.js:451`); tests in `test/learning-team.test.js`, product brief in `atris/features/learning-team/idea.md`
+- `atris wiki learn "<topic>" [--into dir]` (`commands/wiki.js:527`, `lib/learning-team.js` `runLearn`) gathers recent papers, posts and repos over https, ranks them (`lib/learning-team.js:225`), has one engine distill them on the owner's login with paid keys stripped, checks the answer (`lib/learning-team.js` `validateNotes`) and writes notes to `concepts/<topic>/`, a brief to `briefs/<topic>.md` and one `## Learning` index line (`lib/learning-team.js:451`); tests in `test/learning-team.test.js`, product brief in `atris/features/learning-team/idea.md`
 - `atris pull --only wiki` / `atris push --only wiki` normalize to `atris/wiki/`
 - **Wiki structure:**
 - `atris/context/`

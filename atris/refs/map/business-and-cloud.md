@@ -77,9 +77,9 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 
 **Purpose:** Pull remote journal/business data into the local workspace
 
-- **Entry point:** `commands/pull.js:116-204` (pullAtris function)
+- **Entry point:** `commands/pull.js:112-200` (pullAtris function)
 - **Helpers:** `pullBusiness` (`commands/pull.js`), `pullGeneralJournal` (`commands/pull.js`), `pullMemberJournal` (`commands/pull.js`)
-- **Exports:** `module.exports = { pullAtris }` (`commands/pull.js:688`)
+- **Exports:** `module.exports = { pullAtris }` (`commands/pull.js:684`)
 
 **Search:** `rg "pullAtris" commands/pull.js`
 
@@ -173,7 +173,7 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 
 **Purpose:** A GitHub repo and a plain-words task go in; the business computer does the work on a new branch, opens one pull request, and the command prints the link. It never merges.
 
-- **Entry point:** `commands/computer.js:2352` (`case 'pr'` in `runComputer`)
+- **Entry point:** `commands/computer.js:2350` (`case 'pr'` in `runComputer`)
 - **Command:** `commands/computer.js` (`computerPr`): wakes the computer, posts `/business/{id}/chat` with the instruction, streams the run through a redacting writer, exits 0 only on a same-repo pull request link
 - **Instruction and parsing:** `lib/computer-pr.js` (`buildPullRequestPrompt`, starts with "GitHub task:" so the server attaches the caller's GitHub access), `lib/computer-pr.js` (`parsePullRequestResult`), `lib/computer-pr.js` (`redactSecrets`)
 - **Run text:** `commands/computer.js` (`streamBusinessChatResult` returns `{ok, status, text, resultText}` and takes optional `write`/`writeError`)
