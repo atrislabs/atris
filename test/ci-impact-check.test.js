@@ -9,7 +9,7 @@ const { execFileSync, spawnSync } = require('node:child_process');
 const { plan } = require('../scripts/ci-impact-check');
 
 const selector = require.resolve('../scripts/ci-impact-check');
-const phone = ['gm-phone-health', 'gm-phone-layout', 'gm-phone-hands', 'gm-phone-motion', 'gm-phone']
+const phone = ['gm-phone-health', 'gm-phone-layout', 'gm-phone-hands', 'gm-phone-motion', 'gm-phone-journey', 'gm-phone']
   .map(name => 'test/' + name + '.test.js');
 const smoke = 'test/smoke.test.js';
 const alpha = 'test/alpha.test.js';
