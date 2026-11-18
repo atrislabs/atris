@@ -182,6 +182,7 @@
   "test/front-doors.test.js": 934,
   "test/game-dashboard.test.js": 3,
   "test/gm-bet.test.js": 40288,
+  "test/gm-phone-cards.test.js": 80000,
   "test/gm-phone-hands.test.js": 173194,
   "test/gm-phone-health.test.js": 150000,
   "test/gm-phone-layout.test.js": 155000,
