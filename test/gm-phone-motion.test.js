@@ -20,7 +20,12 @@ const show = p => JSON.stringify(p, null, 1);
 // a turn in place keeps the footer on screen while the card's height glides
 const IN_PLACE = new Set(['deck flip']);
 
-test('browser: every orb path glides, with no jump, no cut, and no frozen moment, and nothing runs once a card lands', { skip, timeout: 240000 }, async () => {
+test.describe('independent full motion matrices', { concurrency: 2 }, () => {
+  test('browser: every orb path glides, with no jump, no cut, and no frozen moment, and nothing runs once a card lands', { skip, timeout: 240000 }, checkMotion);
+  test('browser: under reduced motion every path is plain fades: nothing travels, and the sphere and the footer are never gone or moved in a frame', { skip, timeout: 240000 }, checkReducedMotion);
+});
+
+async function checkMotion() {
   const out = await paths.pathsTrace({ chromePath: CHROME });
   assert.equal(out.paths.length, paths.PATHS.length, show(out.paths.map(p => p.name)));
   for (const p of out.paths) {
@@ -52,7 +57,7 @@ test('browser: every orb path glides, with no jump, no cut, and no frozen moment
       assert.ok(p.after.orb_frames > 20, show(p));
     }
   }
-});
+}
 
 test('trace: a cut in the frames reads as a cut, and a fade as a fade', () => {
   const frame = (t, o, line) => ({ t, ft: t, orb: { frame: 0, mode: 'card', step: 0, mean: 0, ms: 16.7 }, sphere: 0, stage: null, lava: null, box: { o, card: 'c', title: { x: 0, y: 0, w: 10, h: 10 }, text: 'c' }, ghost: 0, line, foot: { r: { x: 0, y: 0, w: 10, h: 10 }, o: 1 }, busy: true });
@@ -281,7 +286,7 @@ test('browser: on a phone with a notch in full screen the small orb rests below 
   assert.equal(notch.card_top - notch.orb_bottom, plain.card_top - plain.orb_bottom, said);
 });
 
-test('browser: under reduced motion every path is plain fades: nothing travels, and the sphere and the footer are never gone or moved in a frame', { skip, timeout: 240000 }, async () => {
+async function checkReducedMotion() {
   const out = await paths.pathsTrace({ chromePath: CHROME, reduced: true });
   for (const p of out.paths) {
     assert.equal(p.error, undefined, show(p));
@@ -299,7 +304,7 @@ test('browser: under reduced motion every path is plain fades: nothing travels, 
   // a flip is a fade out and in, never words swapped in one frame (before: no fade, the footer jumped 121px)
   const flip = byName(out)['deck flip'];
   assert.ok(flip.card_fade > 0 && flip.card_fade <= 0.15, show(flip));
-});
+}
 
 test('browser: in the background the page sends no looks and draws nothing, and back on screen it looks at once', { skip, timeout: 90000 }, async () => {
   const { CARDS } = require('../scripts/gm-phone-trace');
