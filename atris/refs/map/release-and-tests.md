@@ -12,7 +12,7 @@ rg "releaseAtris|releasePreflight|release preflight" commands/release.js bin/atr
 
 `scripts/ci-test-plan.js` (`comparisonBase`, `buildMatrix`) finds the changes in the queued commit and divides the selected files among workers. `scripts/ci-impact-check.js` (`plan`) maps changed files to tests and explains when the full suite is needed. `.github/workflows/ci.yml` requires planning, tests and deck lint to pass. Scheduled and manual runs use all eight full-suite groups.
 
-The slow-answer check in `test/gm-phone-hands.test.js` and the team-table viewport check in `test/gm-phone.test.js` run at most two independent Chrome sessions at a time. Each case still uses its own browser and local test server.
+The slow-answer check in `test/gm-phone-hands.test.js` and the team-table viewport check in `test/gm-phone-team.test.js` run at most two independent Chrome sessions at a time. Each case still uses its own browser and local test server. The rest of the team, swap and job-deck browser checks run alongside the team-table check, separate from `test/gm-phone.test.js`.
 
 `test/gm-phone-layout.test.js` measures card line wrapping and footer geometry in the same Chrome render where the card and viewport match. Each assertion still covers its original cards and screen sizes.
 
