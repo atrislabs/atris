@@ -171,7 +171,14 @@ async function serve(desk, page) {
   return { url: `http://${base}/?t=${TOKEN}`, close: () => new Promise(r => { server.closeAllConnections(); server.close(r); fs.rmSync(dir, { recursive: true, force: true }); }) };
 }
 
-const AT_REST = "document.readyState === 'complete' && !document.body.hasAttribute('data-busy') && ((document.body.classList.contains('has-card') && !document.getElementById('bet').hidden && document.getElementById('bet').classList.contains('up')) || (!document.body.classList.contains('has-card') && document.getElementById('line').textContent === 'tap to think'))";
+const AT_REST = `(document.readyState === 'complete' &&
+  !document.body.matches('.opening, [data-busy]') &&
+  (document.body.classList.contains('has-card')
+    ? document.getElementById('bet').matches('.up:not([hidden])')
+    : document.getElementById('line').textContent === 'tap to think') &&
+  document.fonts.status === 'loaded' &&
+  !document.getAnimations().some(a => (a.pending || a.playState === 'running') &&
+    Number.isFinite(a.effect?.getComputedTiming().endTime)))`;
 
 // Every case at every viewport, in one Chrome. notch: also emulate the
 // viewport's safe area. probe: one more expression read in the page at
@@ -197,11 +204,16 @@ async function layout({ chromePath = trace.findChrome(), cases = CASES, viewport
       try { await send('Emulation.setSafeAreaInsetsOverride', { insets: inset }); safeArea = true; } catch { /* an older chrome */ }
       for (const c of cases) {
         desk.set(c.card);
-        await send('Page.navigate', { url: server.url });
+        // A different URL keeps a readiness check from seeing the previous card.
+        const url = `${server.url}&layout=${out.length}`;
+        await send('Page.navigate', { url });
         const p = { run: async (expr) => { const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true }); if (r.exceptionDetails) throw new Error(r.exceptionDetails.text); return r.result.value; } };
+        const ready = `location.href === ${JSON.stringify(url)} && document.body?.classList.contains('has-card') === ${Boolean(c.card)} && ${AT_REST}`;
         const end = Date.now() + 8000;
-        while (Date.now() < end && !(await p.run(AT_REST).catch(() => false))) await wait(30);
-        await wait(700);
+        while (!(await p.run(ready).catch(() => false))) {
+          if (Date.now() >= end) throw new Error(`layout did not settle: ${c.name} at ${name}`);
+          await wait(30);
+        }
         const m = await p.run(MEASURE);
         out.push({ case: c.name, viewport: name, size: `${v.width}x${v.height}`, safe_area: safeArea ? inset : null, ...m, probe: probe ? await p.run(probe) : null });
         if (shots) {
