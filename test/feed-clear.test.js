@@ -60,8 +60,9 @@ test('an answer already being generated cannot restore a deleted comment', async
   assert.equal(room.replies(ctx.root, idea.id, { env: ctx.env }).reply_count, 0);
 });
 
-test('help: clear has its own line and does not split say from its explanation', () => {
-  const out = require('node:child_process').spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'feed', 'help'], { encoding: 'utf8' });
+test('help: clear has its own line and does not split say from its explanation', (t) => {
+  const ctx = project(t, ['writer']);
+  const out = require('node:child_process').spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'feed', 'help'], { encoding: 'utf8', cwd: ctx.root, env: { ...process.env, ...ctx.env } });
   const lines = out.stdout.split('\n');
   const say = lines.findIndex((line) => line.includes('atris feed say "'));
   assert.match(lines[say + 1], /a short note in the feed/);
