@@ -94,6 +94,16 @@ test('runs exactly the picked files and fails closed on a bad base or a stale qu
   assert.equal(main([base], root), 1);
 });
 
+test('the quick check runs with eight concurrent test files', (t) => {
+  const { root } = fixture(t);
+  write(root, 'test/quick.test.js', [
+    "const assert = require('node:assert/strict');",
+    "assert.ok(process.execArgv.includes('--test-concurrency=8'));",
+    marker('quick'),
+  ].join('\n'));
+  assert.deepEqual(runCheck(root, 'HEAD'), ['quick']);
+});
+
 test('groups share the picked files: each runs once, and a spare group runs none', (t) => {
   const { root, base } = fixture(t);
   const ran = [1, 2, 3].flatMap((i) => runCheck(root, base, `${i}/3`));
