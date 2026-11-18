@@ -57,6 +57,8 @@ npm run publish:release
 
 Raw temporary-folder test setup: `test/helpers/task-help-fixture.js:43` supplies the unchanged folder functions to version-cmd, confidence-gate, unknowns, console-packet-shape and agent-proof-only tests. Their local no-argument wrappers retain each exact prefix and raw temporary path; CLI helpers, options and behavior checks remain local. Check: `node --test test/version-cmd.test.js test/confidence-gate.test.js test/unknowns.test.js test/console-packet-shape.test.js test/agent-proof-only.test.js`. The same unchanged folder functions also serve agents, config-guard, dream and router-brain tests; their local files, injected callbacks and availability checks stay local. Check: `node --test test/agents.test.js test/config-guard.test.js test/dream.test.js test/router-brain.test.js`.
 
+The task list limit cases in `test/commands-6.test.js` create the first row through the CLI and populate the other rows through the task store. The auto-accept scan, grouped reviews and blocked-task archive checks still run through the CLI at their original row counts.
+
 ## Balanced GitHub test groups and review resilience
 
 - `scripts/ci-test-shard.js:15` discovers the Node 24 default test patterns, excluding node_modules. `scripts/ci-test-shard.js:22` assigns every discovered file once, largest measured cost first, to the lightest of eight groups using `test/ci-file-durations.json`. `scripts/ci-ordered-tests.js` runs the assigned files through the Node test API in that order instead of the CLI's alphabetical order. The same file isolation, command-test splitting, and failure status remain. `test/ci-test-shard.test.js` compares eight real child runs with native discovery.
