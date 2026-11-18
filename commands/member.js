@@ -17,19 +17,19 @@ const { memberProcessPrompt, MEMBER_PROCESS_PATH } = require('../lib/member-cont
 // Runtime aliases: problem-finder, info-organizer, coordinator, task-planner, improver, problem-solver
 // memberPaths resolves steeringJsonl: path.join(workspaceRoot, '.atris', 'state', 'steering.jsonl')
 const {
-  findWorkspaceBusinessId, ensureMemberLog, appendMemberLifecycleLog,
+  findWorkspaceBusinessId, ensureMemberLog, appendMemberLifecycleLog, archiveName,
   uniqueArchiveDir, parseDaysFlag, parseConfirmFlag, readRepeatedFlag, stripKnownFlags,
   stampIso, fileSafeStamp, slugHash, makeGoalId, uniqueGoalId, makeExperimentId,
-  MEMBER_RUNTIME_ALIASES, memberRuntimeKind, memberPaths,
-  ensureMissionFile,
+  MEMBER_RUNTIME_ALIASES, memberRuntimeKind, resolveMemberRuntime, memberPaths,
+  missionFileMarkdown, ensureMissionFile, listExistingMemberSlugs, nearestMemberSlug,
   memberRefusalFor, requireRunnableMember, requireMemberDir, loadMemberGoals,
   activeGoal, allExperiments, findExperiment, latestByTime, recentLogLines,
-  firstUsefulLine, compactSentence, missionPurpose,
-  MISSION_TERMINAL_STATUSES, memberRunMissionMap,
-  memberRunRunnableMissionId, memberRunOwnedActiveMissionId,
+  extractMarkdownSection, firstUsefulLine, compactSentence, activeRuntimeMissionFromNow, missionPurpose,
+  MEMBER_RUN_RUNNABLE_STATUSES, MISSION_TERMINAL_STATUSES, memberRunMissionMap,
+  memberRunRunnableMissionId, memberRunOwnedActiveMissionId, MEMBER_LIVE_MISSION_STATUSES,
   MEMBER_ACTIVE_ACTIVITY_MS, MEMBER_RECENT_ACTIVITY_MS, memberSlugFromRecord, isFleetMember,
-  memberLatestMission, memberLiveMission, missionShortName,
-  ageLabelFromMs, timestampMs, memberLastActivity,
+  missionTimeMs, memberOwnedMissions, memberLatestMission, memberLiveMission, missionShortName,
+  ageLabelFromMs, timestampMs, newestMtimeRecursive, newestRunActivityMtime, memberLastActivity,
 } = require('../lib/member-core');
 
 function memberMissionSummary(name, missionMap = memberRunMissionMap(), root = process.cwd()) {
@@ -2729,7 +2729,7 @@ function memberAliveCronStatus(name, paths = memberLoopPaths(name)) {
 }
 
 const {
-  writeMemberLoopReceipt, isPidAlive, safeReadText, repoRelative,
+  writeMemberLoopReceipt, isPidAlive, safeReadText, repoRelative, dateFromLogPath,
   logDateForScan, compareLogEvidenceRecentFirst, compareRepeatedFailureSignals, listFilesBounded,
 } = require('../lib/member-core');
 
