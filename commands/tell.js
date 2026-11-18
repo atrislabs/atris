@@ -6,6 +6,7 @@
 // `atris channel`. Backend: POST /api/swarlo/{business}/tell and
 // GET /api/swarlo/{business}/posts/{post_id}/receipt.
 
+const crypto = require('node:crypto');
 const { apiRequestJson } = require('../utils/api');
 const { NOT_LOGGED_IN, oneLine } = require('../lib/developer-api');
 const { parseArgs, loginToken } = require('../lib/business-target');
@@ -88,10 +89,13 @@ function receiptLines(reply, business, member) {
   const lines = [];
   const where = channel ? `in #${channel} ` : '';
   lines.push(['saved', `${task ? `task ${task} ` : ''}${where}for ${to}`]);
+  // delivered: null means saved, but the server could not check the inbox yet.
+  const unconfirmed = reply.delivered === null;
   if (reply.delivered === true) lines.push(['delivered', `it is in ${to}'s inbox`]);
   else if (reply.delivered === false) lines.unshift(['not delivered', sentence(reply.note) || `it was saved but did not reach ${to}'s inbox`]);
+  else if (unconfirmed) lines.push(['delivered', 'saved, not confirmed yet. check status before sending again']);
   else lines.push(['delivered', 'unknown, the server did not say']);
-  const wakes = wakesLine(reply, to);
+  const wakes = unconfirmed && reply.wakes !== true ? '' : wakesLine(reply, to);
   if (wakes) lines.push(['wakes', wakes]);
   if (reply.wakes === false && text(reply.wake_reason) === 'turned_off') lines.push(['wake', `atris tell wake ${to} on --business ${business.slug}`]);
   if (text(reply.post_id)) lines.push(['check', `atris tell status ${text(reply.post_id)} --business ${business.slug}`]);
@@ -145,9 +149,23 @@ function personWords(p, receipt = {}) {
 function statusLines(reply) {
   const people = (Array.isArray(reply.recipients) ? reply.recipients : []).filter((p) => p && typeof p === 'object');
   if (!people.length) return ['nobody has this note in their inbox yet'];
-  const names = people.map((p) => text(p.to) || 'someone');
+  const names = people.map((p) => text(p.name) || text(p.to) || 'someone');
   const width = Math.max(...names.map((n) => n.length));
   return people.map((p, i) => `${names[i].padEnd(width)}  ${personWords(p, reply)}`);
+}
+
+// The member a send went to, in a receipt that may list several. The member id
+// from the send wins; a name match (any case) only stands in for a row that
+// carries no id. Never the first row by default: that could be someone else.
+function pickRecipient(people, reply, target) {
+  const id = text(reply && reply.member_id);
+  if (id) {
+    const hit = people.find((p) => text(p.member_id) === id);
+    if (hit) return hit;
+  }
+  const wanted = [text(reply && reply.to), text(target)].map((s) => s.toLowerCase()).filter(Boolean);
+  return people.find((p) => !(id && text(p.member_id))
+    && [text(p.name), text(p.to)].some((n) => n && wanted.includes(n.toLowerCase()))) || null;
 }
 
 // --wait [seconds]: an optional number after the switch. Pulled out before
@@ -260,6 +278,9 @@ async function tellCommand(args = [], deps = {}) {
     channel: typeof flags.channel === 'string' ? flags.channel.replace(/^#/, '') : null,
   };
   if (sender) body.agent_id = sender.id;
+  // One key per run: if this request is retried, the server returns the first
+  // receipt instead of sending the note twice.
+  body.idempotency_key = deps.newKey ? deps.newKey() : crypto.randomUUID();
   const clock = deps.now || Date.now;
   const started = clock();
   const res = await request(`${base}/tell`, { method: 'POST', body, token });
@@ -296,8 +317,12 @@ async function tellCommand(args = [], deps = {}) {
     if (!check || !check.ok || !check.data || typeof check.data !== 'object') continue;
     receipt = check.data;
     const people = (Array.isArray(receipt.recipients) ? receipt.recipients : []).filter((p) => p && typeof p === 'object');
-    const person = people.find((p) => text(p.to) === to) || people[0];
-    if (!person) continue;
+    if (!people.length) continue;
+    const person = pickRecipient(people, reply, target);
+    if (!person) {
+      err(`the receipt does not list ${to}, so --wait stopped here. check: atris tell status ${text(reply.post_id)} --business ${business.slug}`);
+      return 1;
+    }
     const words = personWords(person, receipt);
     if (words !== last && !quiet) log(`${String(elapsed()).padStart(4)}s  ${to} ${words}`);
     last = words;
