@@ -228,6 +228,8 @@ test('browser: the live page has the home screen tags and both icons decode, and
 
 // a refusal is a 409 by design; chrome notes any 4xx answer in the console
 const refusedAct = line => line.kind === 'error' && /status of 409/.test(line.text) && /\/act$/.test(line.url || '');
+let readerCapture;
+const readCards = () => readerCapture ??= health.readerTrace({ chromePath: CHROME });
 
 test('page: one hidden polite region reads each new card as it lands, its title and its why', () => {
   const html = phonePage('NONCE');
@@ -239,7 +241,7 @@ test('page: one hidden polite region reads each new card as it lands, its title 
 });
 
 test('browser: a screen reader hears every card as it lands: the question, the idea, the choice, the picked idea', browser, async () => {
-  const out = await health.readerTrace({ chromePath: CHROME });
+  const out = await readCards();
   const show = JSON.stringify(out);
   assert.equal(out.heard.length, 4, show);
   for (const h of out.heard) {
@@ -251,7 +253,7 @@ test('browser: a screen reader hears every card as it lands: the question, the i
 });
 
 test('browser: when a tap does not go through, its one line why is a status, so a screen reader hears it as it appears', browser, async () => {
-  const out = await health.readerTrace({ chromePath: CHROME });
+  const out = await readCards();
   assert.equal(out.refused.text, 'that did not go through. try again.', JSON.stringify(out.refused));
   assert.equal(out.refused.role, 'status', JSON.stringify(out.refused));
 });
@@ -278,8 +280,11 @@ test('browser: on the team table each button tells a screen reader what it does:
 
 // ---- the focus ring -------------------------------------------------------------------
 
+let focusCapture;
+const readFocusRings = () => focusCapture ??= health.focusTrace({ chromePath: CHROME });
+
 test('browser: the small orb on a card shows a focus ring of 2px on screen, though it is the big orb drawn at a fifth', browser, async () => {
-  const out = await health.focusTrace({ chromePath: CHROME });
+  const out = await readFocusRings();
   const lava = out.card.find(s => s.what === 'lava');
   assert.ok(lava, JSON.stringify(out.card));
   assert.ok(lava.ring_px >= 1.95 && lava.ring_px <= 2.05, JSON.stringify(lava));
@@ -287,7 +292,7 @@ test('browser: the small orb on a card shows a focus ring of 2px on screen, thou
 });
 
 test('browser: every Tab stop on a card and on the big orb shows a 2px amber ring that never touches the control beside it', browser, async () => {
-  const out = await health.focusTrace({ chromePath: CHROME });
+  const out = await readFocusRings();
   const stops = [...out.card, ...out.orb];
   assert.ok(out.card.length >= 5 && out.orb.length >= 2, JSON.stringify(out));
   for (const s of stops) {
