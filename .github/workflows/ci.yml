@@ -60,11 +60,18 @@ jobs:
         id: pick
         env:
           TARGET_READ: ${{ steps.target.outcome }}
-        run: node scripts/ci-test-plan.js
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo "mode=quick" >> "$GITHUB_OUTPUT"
+            echo "base=HEAD~2" >> "$GITHUB_OUTPUT"
+            echo 'matrix={"include":[{"group":"1/3","order":"control"},{"group":"2/3","order":"control"},{"group":"3/3","order":"control"},{"group":"1/3","order":"slowest-first"},{"group":"2/3","order":"slowest-first"},{"group":"3/3","order":"slowest-first"}]}' >> "$GITHUB_OUTPUT"
+          else
+            node scripts/ci-test-plan.js
+          fi
 
   unit:
     needs: plan
-    name: unit (${{ matrix.group }})
+    name: unit (${{ matrix.group }}) ${{ matrix.order }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -73,7 +80,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 2
+          fetch-depth: 3
 
       - name: Check preinstalled Node
         id: node
@@ -96,6 +103,7 @@ jobs:
           MODE: ${{ needs.plan.outputs.mode }}
           BASE: ${{ needs.plan.outputs.base }}
           GROUP: ${{ matrix.group }}
+          ATRIS_QUICK_ORDER: ${{ matrix.order }}
           FILES: ${{ toJSON(matrix.files) }}
         run: |
           case "$MODE" in

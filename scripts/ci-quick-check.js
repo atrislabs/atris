@@ -221,7 +221,9 @@ function main(args, root = path.resolve(__dirname, '..')) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
   delete env.ATRIS_TEST_SPLIT;
-  const run = spawnSync(process.execPath, ['--test', ...files], {
+  const runner = env.ATRIS_QUICK_ORDER === 'slowest-first'
+    ? path.join(__dirname, 'ci-ordered-tests.js') : '--test';
+  const run = spawnSync(process.execPath, [runner, ...files], {
     cwd: root,
     stdio: 'inherit',
     env,
