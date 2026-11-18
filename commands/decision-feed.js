@@ -20,20 +20,23 @@ function standingYes() {
 
 const VALUE_FLAGS = new Set([
   '--filter', '--limit', '--cursor', '--since', '--as', '--title', '--why', '--body', '--detail',
-  '--visual', '--kind', '--lane', '--note', '--story', '--reason', '--card', '--proof', '--text', '--engine', '--choose', '--member', '--wait', '--cards',
+  '--visual', '--kind', '--lane', '--note', '--story', '--reason', '--card', '--proof', '--text', '--engine', '--choose', '--member', '--wait', '--cards', '--goal',
+  '--reply',
+  '--session', '--ask',
 ]);
-const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask']);
+const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask', '--retry', '--run', '--independent', '--confirm', '--dry-run']);
 
 function parse(args) {
   const positional = [];
   const flags = {};
   const story = [];
+  const waiting = args.find((arg) => !String(arg).startsWith('-')) === 'waiting';
   let json = false;
   for (let i = 0; i < args.length; i += 1) {
     const token = String(args[i]);
     if (token === '--json') { json = true; continue; }
     if (token === '--help' || token === '-h') { flags.help = true; continue; }
-    if (BOOL_FLAGS.has(token)) { flags[token.slice(2)] = true; continue; }
+    if (BOOL_FLAGS.has(token) && !(waiting && token === '--ask')) { flags[token.slice(2)] = true; continue; }
     if (token === '--') { positional.push(...args.slice(i + 1).map(String)); break; }
     const eq = token.indexOf('=');
     const name = token.startsWith('--') && eq > 0 ? token.slice(0, eq) : token;
@@ -73,8 +76,16 @@ const HELP = [
   '                          [--body "<text>"] [--detail "<technical notes>"] [--visual \'<json>\']',
   '                          [--kind proposal|question] [--lane money|billing|...] [--story "<line>"]',
   '       atris feed decide <card> approve|dismiss [--note "<text>"]',
+  '       atris feed waiting set --session <id> --ask "<one or two plain sentences>" [--title "<window name>"] [--engine <name>]',
+  '       atris feed waiting clear --session <id>',
+  '       atris feed waiting list [--json]',
   '       atris feed talk <card> "<message>" [--stream] [--as <member>]   or   atris feed talk <card> --choose <id>',
   '                          (the card\'s member answers at once, one tool-free turn on its model; --stream prints it as it comes)',
+  '       atris feed talk --member <name> [--independent] [--stream] [--json] -- <card> ["<words>"]',
+  '                          (any awake member answers on any card, one turn counted like a ping; your words, when given, are saved',
+  '                          first as your comment, once; the answer is saved as the member\'s comment. Only a person can ask.',
+  '                          --independent: the member reads only your words, not what teammates said, for its own view)',
+  '       atris feed replies <card> [--limit N]   every comment on a card, oldest first (at most 500)',
   '       atris feed messages <card>',
   '       atris feed revise <card> --as <member> [--title ...] [--why ...] [--body ...] [--detail ...] [--visual ...]',
   '       atris feed more                     (wakes up to 3 ON members to look for ideas: a ping with reason scroll)',
@@ -82,7 +93,7 @@ const HELP = [
   '       atris feed engines                  the models usable on this computer right now',
   '       atris feed members                  the team: on or off, model in effect, last active, what it is doing',
   '       atris feed member on|off <name>',
-  '       atris feed ping [<member>] [--reason scroll|heartbeat|event] [--stream]',
+  '       atris feed ping [<member>] [--reason scroll|heartbeat|event|refresh] [--stream]',
   '                          (members think up ideas in one fast turn each, up to 3 at once; --stream prints cards as they are written)',
   '       atris feed settings set local-pings-per-day <n> | cloud-pings-per-day <n> | member-gap-seconds <n>',
   '       atris feed settings set standing-yes on|off | standing-yes-per-day <n>   (off by default; when on, a proposal',
@@ -93,9 +104,27 @@ const HELP = [
   '       atris feed events [--limit N]        the stream of what members put in the feed',
   '       atris feed say "<one or two plain sentences>" [--as <member>] [--ask]',
   '                          (a short note in the feed, yours unless --as names a team member; with --ask, a question anyone can answer)',
+  '       atris feed clear --confirm           delete feed posts and comments; keep project tasks',
+  '       atris feed scrub-keys [--dry-run]    counts saved comments, posts, events and member logs that hold a password',
+  '                          or key; without --dry-run replaces each with a short marker (never prints the text)',
   '       atris feed react <card> 👍|❤️|😂|🔥|👀 [--as <member>]   (taps that reaction on or off, as you unless --as)',
-  '       atris feed reply <card> "<text>" [--as <member>]          (a short reply on any card, at most 280 characters)',
-  '       atris feed start <folder> [--engine <id>]   set up a folder of projects, add a starter team, turn it on, first ping',
+  '       atris feed reply <card> "<text>" [--as <member>]          (a comment on any card, at most 1000 characters)',
+  '       atris feed discuss <card> [--retry] [--stream]',
+  '                          (Atris reads your post, or your newest comment on it, with the project and the team, picks up to',
+  '                          two awake members whose roles fit, and asks each for its own view as a comment. Once for each thing',
+  '                          you write, one round at a time, at most 5 rounds a card; --retry runs a failed round again)',
+  '       atris feed work <card> --reply <comment> [--retry]',
+  '                          (turns a teammate\'s comment on the card into work: proposed as that member\'s idea and approved by you,',
+  '                          the same yes as approve, with every guard it has; its state and result show on this card. One task per',
+  '                          comment; --retry starts it again only after it failed. A comment that is only "@member do it" does the same.)',
+  '       atris feed start <folder> [--engine <id>] [--goal "<one plain sentence>"]',
+  '                          (set up a folder of projects, add a starter team when it has none, turn it on, set the goal, first ping)',
+  '       atris feed setup [--stream] [--json] [--engine <id>]',
+  '                          (set up this project while you watch: the starter team joins one card at a time, the project is read',
+  '                          by plain rules into a few cards of what was found, then at most three questions, one at a time.',
+  '                          A reply on a question is saved in the project lessons; no model is used. Safe to run again.',
+  '                          --stream --json prints one line per step, then {"type":"done",...})',
+  '       atris feed setup skip [<card>]      skip the setup question waiting for you; nothing is saved',
   '       atris feed doctor [--no-call]       before a demo: what is ready, what is not, and the one thing to do (exits 1 when not ready)',
   '       atris feed repair                   put right runs, replies and approvals left half done; says what it fixed',
   '       atris feed notes [--member <name>]  what the owner taught the team in card conversations; notes forget <id> removes one',
@@ -106,8 +135,10 @@ const HELP = [
 
 function textCard(card) {
   const note = card.kind === 'post' || card.kind === 'ask';
-  const mark = note ? card.kind : card.needs_decision ? 'decide' : card.state;
+  const waiting = card.source.type === 'session';
+  const mark = waiting ? 'waiting' : note ? card.kind : card.needs_decision ? 'decide' : card.state;
   const lines = [`${mark.padEnd(8)}${card.title}`];
+  if (waiting) lines.push(`        ${card.body}`);
   if (card.why) lines.push(`        why: ${card.why}`);
   if (card.kind === 'result' || card.proof.status !== 'none') lines.push(`        proof: ${card.proof.status}`);
   if (card.run && card.run.status === 'queued') lines.push(`        waiting to start, number ${card.run.position} in line`);
@@ -120,7 +151,24 @@ function textCard(card) {
   return lines.join('\n');
 }
 
-function printText(command, out) {
+function printText(command, out, { streamed = false } = {}) {
+  if (command === 'setup') {
+    if (!streamed) for (const entry of out.steps) console.log(entry.text);
+    const waiting = out.asks.waiting;
+    console.log(waiting ? `set up. waiting on your answer: ${waiting.text}` : 'set up. nothing is waiting on you.');
+    return;
+  }
+  if (command === 'clear') {
+    console.log('Feed cleared. Project tasks and activity records remain.');
+    return;
+  }
+  if (command === 'waiting') {
+    if (Array.isArray(out.waiting)) {
+      for (const entry of out.waiting) console.log(`${entry.title || 'Chat window'} (${entry.session}): ${entry.ask}`);
+      if (!out.waiting.length) console.log('no chats waiting');
+    } else if (out.waiting) console.log('chat is waiting for your answer.');
+    return;
+  }
   if (command === 'cards') {
     const theme = out.theme.text ? `goal: ${out.theme.text}` : 'goal: not set. set it: atris feed theme set "<sentence>"';
     console.log(theme);
@@ -131,6 +179,21 @@ function printText(command, out) {
   }
   if (command === 'theme') {
     console.log(out.theme ? (out.theme.text || 'no goal set yet') : (out.text || 'no goal set yet'));
+    return;
+  }
+  if (command === 'discuss') {
+    const d = out.discussion;
+    if (!d) { console.log('nothing started.'); return; }
+    const names = d.picks.map((p) => `${p.member} (${p.status})`).join(', ');
+    console.log(d.message || (names ? `Atris asked ${names}.` : `Atris is ${d.status === 'choosing' ? 'choosing who should answer' : d.status}.`));
+    if (out.replayed) console.log('(already started for these words; nothing was asked again)');
+    if (out.queued) console.log('(a round is running; your newest words get the next one)');
+    return;
+  }
+  if (command === 'work') {
+    const w = out.work;
+    if (!w) { console.log('nothing started.'); return; }
+    console.log(`${w.member}: ${w.message || w.status}${out.replayed ? ' (already asked; nothing new was started)' : ''}`);
     return;
   }
   if (command === 'messages') {
@@ -148,6 +211,16 @@ function printText(command, out) {
     else if (outcome.reason === 'queued') console.log(`approved. it starts when a slot frees up (number ${outcome.position} in line).`);
     else if (outcome.reason === 'accepted') console.log('accepted.');
     else console.log(`approved. not started: ${outcome.reason || 'unknown'}`);
+    return;
+  }
+  if (command === 'ask') {
+    console.log(`${out.reply.author.name}: ${out.reply.text}`);
+    return;
+  }
+  if (command === 'replies') {
+    for (const reply of out.replies) console.log(`${reply.author.name}: ${reply.text}`);
+    if (!out.replies.length) console.log('no comments yet');
+    if (out.truncated) console.log(`(${out.reply_count + (out.dropped || 0) - out.replies.length} older comment(s) not shown)`);
     return;
   }
   if (command === 'talk') {
@@ -221,8 +294,17 @@ function printText(command, out) {
     console.log(out.reason);
     return;
   }
+  if (command === 'scrub-keys') {
+    const f = out.found;
+    const where = `${f.comments} comment, ${f.posts} post, ${f.events} event and ${f.member_logs} member log entries`;
+    console.log(out.total === 0 ? 'no saved password or key found.' : out.dry_run ? `found ${where} holding a password or key. run without --dry-run to replace them.` : `replaced ${out.replaced}: ${where}.`);
+    return;
+  }
   if (out.card) {
     console.log(textCard(out.card));
+    // Why a setup answer was not kept, in the words the desktop shows under the card.
+    const note = (out.setup && out.setup.lesson_error) || out.setup_error;
+    if (command === 'reply' && note) console.log(note);
     return;
   }
   if (out.message) console.log(`sent. ${out.reply_pending ? 'the team member answers on its next run.' : ''}`.trim());
@@ -253,8 +335,38 @@ async function run(args = [], context = {}) {
       else printText('doctor', out);
       return out.ready ? 0 : 1;
     }
+    if (sub === 'setup') {
+      // Set the project up while the feed watches: team, a read, then questions.
+      // --stream --json: one JSON line per step as it happens, then the summary.
+      const setupLib = require('../lib/feed-setup');
+      if (positional[1] === 'skip') {
+        const skipped = setupLib.skip(feed.projectRoot(context.cwd || process.cwd()), positional[2] || flags.card || null, { env, deps });
+        if (json) console.log(JSON.stringify(skipped, null, 2));
+        else console.log(`skipped.${skipped.next ? ` next question: ${skipped.next.text}` : ' no more questions.'}`);
+        return 0;
+      }
+      if (positional[1]) throw new feed.FeedError(400, `unknown setup command: ${positional[1]}`);
+      const onStep = !flags.stream ? null : json
+        ? (event) => write(`${JSON.stringify(event)}\n`)
+        : (event) => write(`${event.text}\n`);
+      let out;
+      try {
+        out = await setupLib.setup(context.cwd || process.cwd(), { env, deps, engine: flags.engine, onStep });
+      } catch (error) {
+        const known = feed.asFeedError(error);
+        if (flags.stream && json && known) {
+          write(`${JSON.stringify({ type: 'error', ok: false, error: known.toJSON() })}\n`);
+          return 1;
+        }
+        throw error;
+      }
+      if (flags.stream && json) write(`${JSON.stringify({ type: 'done', ...out })}\n`);
+      else if (json) console.log(JSON.stringify(out, null, 2));
+      else printText('setup', out, { streamed: Boolean(flags.stream) });
+      return 0;
+    }
     if (sub === 'start') {
-      const out = await team().start(positional[1] || context.cwd || process.cwd(), { env, deps, engine: flags.engine });
+      const out = await team().start(positional[1] || context.cwd || process.cwd(), { env, deps, engine: flags.engine, goal: flags.goal });
       if (json) console.log(JSON.stringify(out, null, 2));
       else printText('start', out);
       return 0;
@@ -263,6 +375,12 @@ async function run(args = [], context = {}) {
     let out;
     if (sub === 'cards') {
       out = feed.listCards(root, { filter: flags.filter || 'all', limit: flags.limit, cursor: flags.cursor, since: flags.since, env });
+    } else if (sub === 'waiting') {
+      const action = positional[1];
+      if (action === 'set') out = feed.setWaiting(root, { session: flags.session, ask: flags.ask, title: flags.title, engine: flags.engine });
+      else if (action === 'clear') out = feed.clearWaiting(root, flags.session);
+      else if (action === 'list') out = feed.listWaiting(root);
+      else throw new feed.FeedError(400, 'usage: atris feed waiting set|clear|list');
     } else if (sub === 'theme') {
       if (positional[1] === 'set') {
         out = feed.setTheme(root, positional.slice(2).join(' '), { env });
@@ -291,17 +409,25 @@ async function run(args = [], context = {}) {
       out = feed.passCards(root, items, { env });
     } else if (sub === 'talk') {
       const card = positional[1];
-      if (!card) throw new feed.FeedError(400, 'usage: atris feed talk <card> "<message>"');
+      if (!card) throw new feed.FeedError(400, flags.member !== undefined ? 'usage: atris feed talk --member <name> -- <card> ["<words>"]' : 'usage: atris feed talk <card> "<message>"');
       // --stream --json: one JSON event per line (saved, chunk, reply, revision, done).
       // --stream alone: the answer's words as they come. --json alone: the final answer.
       const onEvent = !flags.stream ? null : json
         ? (event) => write(`${JSON.stringify(event)}\n`)
         : (event) => { if (event.type === 'chunk') write(event.text); else if (event.type === 'done') write('\n'); };
       try {
-        out = await feed.talk(root, card, positional.slice(2).join(' '), { as: flags.as, choose: flags.choose, env, deps, onEvent });
+        if (flags.member !== undefined) {
+          // Any awake member answers on any card; the answer is saved as its comment.
+          if (flags.as || flags.choose) throw new feed.FeedError(400, '--member cannot be used with --as or --choose.');
+          command = 'ask';
+          out = await team().askMember(root, { member: flags.member, cardId: card, text: flags.text || positional.slice(2).join(' '), independent: flags.independent === true, env, deps, onEvent });
+        } else {
+          out = await feed.talk(root, card, positional.slice(2).join(' '), { as: flags.as, choose: flags.choose, env, deps, onEvent });
+        }
       } catch (error) {
-        if (flags.stream && json && error instanceof feed.FeedError) {
-          write(`${JSON.stringify({ type: 'error', ok: false, error: error.toJSON() })}\n`);
+        const known = feed.asFeedError(error);
+        if (flags.stream && json && known) {
+          write(`${JSON.stringify({ type: 'error', ok: false, error: known.toJSON() })}\n`);
           return 1;
         }
         throw error;
@@ -363,6 +489,10 @@ async function run(args = [], context = {}) {
         visual: visualFlag(flags.visual), lane: flags.lane, card: flags.card, proof: flags.proof,
         text: flags.text || positional.slice(2).join(' '), env, deps,
       });
+    } else if (sub === 'clear') {
+      out = room().clear(root, { env, confirmed: flags.confirm === true });
+    } else if (sub === 'scrub-keys') {
+      out = require('../lib/feed-scrub').scrubKeys(root, { dryRun: flags['dry-run'] === true });
     } else if (sub === 'say') {
       out = room().say(root, { as: flags.as, text: flags.text || positional.slice(1).join(' '), ask: flags.ask === true, env, deps });
     } else if (sub === 'react') {
@@ -374,6 +504,27 @@ async function run(args = [], context = {}) {
       const text = flags.text || positional.slice(2).join(' ');
       if (!card || !text) throw new feed.FeedError(400, 'usage: atris feed reply <card> "<text>" [--as <member>]');
       out = room().reply(root, card, text, { as: flags.as, env, deps });
+    } else if (sub === 'replies') {
+      if (!positional[1]) throw new feed.FeedError(400, 'usage: atris feed replies <card> [--limit N]');
+      out = room().replies(root, positional[1], { limit: flags.limit, env });
+    } else if (sub === 'discuss') {
+      const host = require('../lib/feed-host');
+      if (flags.run) {
+        // Internal: the background half that discuss starts.
+        if (!positional[1] || !positional[2]) throw new feed.FeedError(400, 'usage: atris feed discuss --run <card> <round>');
+        await host.runRound(root, positional[1], positional[2], { env, deps });
+        return 0;
+      }
+      if (!positional[1]) throw new feed.FeedError(400, 'usage: atris feed discuss <card> [--retry]');
+      const onEvent = flags.stream ? (event) => write(`${JSON.stringify(event)}\n`) : null;
+      out = await host.discuss(root, positional[1], { retry: flags.retry === true, inline: Boolean(flags.stream), env, deps, onEvent: onEvent || undefined });
+      if (flags.stream) {
+        write(`${JSON.stringify({ type: 'end', ...out })}\n`);
+        return 0;
+      }
+    } else if (sub === 'work') {
+      if (!positional[1] || !flags.reply) throw new feed.FeedError(400, 'usage: atris feed work <card> --reply <comment id> [--retry]');
+      out = require('../lib/feed-work').startWork(root, positional[1], { replyId: flags.reply, retry: flags.retry === true, env, deps });
     } else if (sub === 'events') {
       out = { version: feed.FEED_VERSION, events: team().readEvents(root, { limit: Number.parseInt(flags.limit, 10) || 50 }) };
     } else if (sub === 'notes') {
@@ -399,8 +550,11 @@ async function run(args = [], context = {}) {
     if (json) console.log(JSON.stringify(out, null, 2));
     else printText(command, out);
     return 0;
-  } catch (error) {
-    if (!(error instanceof feed.FeedError)) throw error;
+  } catch (caught) {
+    // A busy task store answers with error.busy true, so a caller can retry
+    // instead of reading the silence as a tool too old to have the command.
+    const error = feed.asFeedError(caught);
+    if (!error) throw caught;
     if (json) console.log(JSON.stringify({ version: feed.FEED_VERSION, ok: false, error: error.toJSON() }, null, 2));
     else console.error(`error: ${error.message}`);
     return error.status === 400 && command === 'unknown' ? 2 : 1;
@@ -408,8 +562,9 @@ async function run(args = [], context = {}) {
 }
 
 const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'talk', 'messages', 'revise', 'more', 'run', 'help',
+  'waiting',
   'settings', 'engines', 'members', 'member', 'ping', 'think', 'emit', 'events', 'start', 'doctor', 'repair', 'notes',
-  'say', 'react', 'reply']);
+  'say', 'react', 'reply', 'replies', 'discuss', 'work', 'clear', 'setup', 'scrub-keys']);
 
 const LEGACY_BARE_NOTICE = 'note: bare `atris feed` now opens the decision feed. Output is not a terminal, so this run showed the '
   + 'business group feed as before; that ends next release. Use `atris feed list` for the group feed, `atris feed cards --json` for the new one.';

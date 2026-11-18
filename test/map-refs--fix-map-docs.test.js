@@ -1,8 +1,7 @@
 'use strict';
 
-// fixMapDocs rewrites stale file:line refs in atris/MAP.md and
-// atris/refs/MAP-NOTES.md when the named symbol sits unambiguously on another
-// line, and reports what it moved plus the refs a human still has to fix.
+// fixMapDocs pins file:line refs in atris/MAP.md and atris/refs/MAP-NOTES.md
+// to the symbol written next to them, dropping the line number, and reports what it moved plus the refs a human still has to fix.
 // These tests build throwaway roots in the temp dir so the real map docs and
 // the machine's environment are never touched.
 
@@ -30,7 +29,7 @@ function writeNotes(root, text) {
   fs.writeFileSync(path.join(root, 'atris', 'refs', 'MAP-NOTES.md'), text);
 }
 
-test('a moved ref in MAP.md is rewritten on disk and reported', (t) => {
+test('a moved ref in MAP.md is pinned to its name on disk and reported', (t) => {
   const root = makeRoot();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -47,12 +46,12 @@ test('a moved ref in MAP.md is rewritten on disk and reported', (t) => {
   assert.equal(change.doc, 'atris/MAP.md');
   assert.equal(change.map_line, 3);
   assert.equal(change.from, 'lib/a.js:1');
-  assert.equal(change.to, 'lib/a.js:8');
+  assert.equal(change.to, 'lib/a.js');
   assert.equal(change.symbol, 'alpha');
   assert.deepEqual(result.left, []);
 
   const written = fs.readFileSync(path.join(root, 'atris', 'MAP.md'), 'utf8');
-  assert.ok(written.includes('`lib/a.js:8` `alpha`'), 'the map file itself is updated');
+  assert.ok(written.includes('`lib/a.js` `alpha`'), 'the map file itself is updated');
   assert.ok(!written.includes('lib/a.js:1'), 'the stale line number is gone');
 });
 
@@ -78,15 +77,15 @@ test('refs in both MAP.md and MAP-NOTES.md are fixed in one run', (t) => {
   assert.deepEqual(docs, ['atris/MAP.md', 'atris/refs/MAP-NOTES.md']);
 
   const notes = fs.readFileSync(path.join(root, 'atris', 'refs', 'MAP-NOTES.md'), 'utf8');
-  assert.ok(notes.includes('`lib/b.js:8` `beta`'));
+  assert.ok(notes.includes('`lib/b.js` `beta`'));
 });
 
-test('refs that already point at the symbol leave the file untouched', (t) => {
+test('refs already pinned to a name leave the file untouched', (t) => {
   const root = makeRoot();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   fs.writeFileSync(path.join(root, 'lib', 'a.js'), '// a\nfunction alpha() {}\n');
-  const mapText = '# map\n\n- `lib/a.js:2` `alpha` does the thing\n';
+  const mapText = '# map\n\n- `lib/a.js` `alpha` does the thing\n';
   writeMap(root, mapText);
 
   const result = fixMapDocs(root);

@@ -1,0 +1,26 @@
+> atris@3.83.5 publish:release
+> node scripts/publish-atris-release.js
+
+
+> atris@3.83.5 prepare
+> (git hook copy omitted)
+
++ atris@3.83.5
+npm notice
+npm notice 📦  atris@3.83.5
+npm notice Tarball Contents
+npm notice Tarball Details
+npm notice name: atris
+npm notice version: 3.83.5
+npm notice filename: atris-3.83.5.tgz
+npm notice package size: 3.6 MB
+npm notice unpacked size: 12.7 MB
+npm notice shasum: f402478914c7f2882e836eb0294bae4a48f2aa07
+npm notice integrity: sha512-LZC/mWFkfmKqy[...]B7wn1GXE3izBA==
+npm notice total files: 781
+npm notice
+npm notice npm tokens that bypass 2FA are being restricted for account changes and direct publishing. Learn how to prepare: https://gh.io/npm-gat-bypass2fa-deprecation
+npm notice Publishing to https://registry.npmjs.org/ with tag latest and public access
+npm notice publish Signed provenance statement with source and build information from GitHub Actions
+npm notice publish Provenance statement published to transparency log: https://search.sigstore.dev/?logIndex=3902048194
+npm notice Your package is being processed and may take a few minutes to become available.

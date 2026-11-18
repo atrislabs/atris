@@ -1102,7 +1102,15 @@ const DEFAULT_REVISIONS_DAYS = 14;
 
 function isAgentCommitBody(body) {
   const markers = AGENT_TRAILER_MARKERS.map((m) => m.toLowerCase());
-  for (const line of String(body || '').split(/\r?\n/)) {
+  const lines = String(body || '').split(/\r?\n/);
+  // The Atris line goes on every save, a person's too; "Atris-Made-By: person"
+  // says a person typed it, unless a named agent also signed.
+  if (lines.some((line) => /^\s*atris-made-by\s*:\s*person\s*$/i.test(line))) {
+    return lines.some((line) => /^\s*co-authored-by\s*:/i.test(line)
+      && !/atris-builder\[bot\]/i.test(line)
+      && (markers.some((m) => line.toLowerCase().includes(m)) || /\[bot\]@users\.noreply\.github\.com/i.test(line)));
+  }
+  for (const line of lines) {
     if (!/^\s*co-authored-by\s*:/i.test(line)) continue;
     const lower = line.toLowerCase();
     if (markers.some((m) => lower.includes(m))) return true;
@@ -1399,6 +1407,13 @@ function collectRevisionSignals(root, options = {}) {
     const via = byHash.get(arrival.get(c.hash));
     if (via && via !== c && isAgentBranchName(mergedBranchOf(via.subject))) c.isAgent = true;
   }
+
+  // The start-up screen reuses this one history read for "what changed in
+  // the last day" instead of spawning a second git log. It runs after the
+  // agent branch rule so those commits count as agent work there too.
+  // Accepted limit: a change written more than `days` before its branch
+  // merged is outside this read, so it does not count toward the last day.
+  if (typeof options.onCommits === 'function') options.onCommits(commits, arrival);
 
   const landings = commits.filter((c) => c.isAgent);
   // A merge that carries agent work onto the mainline is a landing action,

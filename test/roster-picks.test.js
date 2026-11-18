@@ -119,7 +119,7 @@ test('with no picks: the full list as before, and no more models entry', () => w
 
 test('claude code known names are the current family, in order', () => {
   const { availableModels } = require('../lib/roster-models');
-  assert.deepEqual(availableModels([{ id: 'claude' }])[0].models, ['fable 5.1', 'opus 5.5', 'sonnet 5.5', 'haiku 5.5']);
+  assert.deepEqual(availableModels([{ id: 'claude' }])[0].models, ['fable 5.2', 'fable 5.1', 'opus 5.5', 'sonnet 5.5', 'haiku 5.5']);
 });
 
 test('the picks section is not read as a job and warns about nothing', () => withRoom(({ root }) => {
@@ -144,7 +144,7 @@ test('--available prints the same ordered list, and --json carries it', () => wi
   assert.match(lines[5], /^codex\s+gpt-6\.2-new\s+pick$/);
   assert.equal(lines[6], '');
   assert.equal(lines[7], 'more models');
-  assert.match(res.out, /^claude code\s+fable 5\.1, opus 5\.5, sonnet 5\.5, haiku 5\.5\s+\(known names\)$/m);
+  assert.match(res.out, /^claude code\s+fable 5\.2, fable 5\.1, opus 5\.5, sonnet 5\.5, haiku 5\.5\s+\(known names\)$/m);
   const json = JSON.parse(cli('--available', '--json').out);
   const { swapList } = require('../lib/roster-swap');
   assert.deepEqual(json.list, JSON.parse(JSON.stringify(swapList(root).options)));

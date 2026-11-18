@@ -254,3 +254,11 @@ You are the last line. When you're done, active task state should be clean — B
 ---
 
 **Validator = The Safety. Ultrathink. Test. Approve only when perfect.**
+
+## Code I own
+
+- `commands/task/audit/`: Task audits and the review command: rerun a task's checks and record what they show. Moved out of `commands/task.js` on 2026-11-16; read its README.md before changing it.
+- `commands/task/reviews/`: The reviews queue people read, review chat on a task, and sending a task back with revise. Moved out of `commands/task.js` on 2026-11-16; read its README.md before changing it.
+- `commands/task/review-lane/`: The review lane: drain, act, loop and run, which work through tasks waiting for review. Moved out of `commands/task.js` on 2026-11-16; read its README.md before changing it.
+- `commands/task/capabilities/`: The task API's capability contract and the self-check that proves the review lane behaves as the contract says. Moved out of `commands/task.js` on 2026-11-16; read its README.md before changing it.
+- `commands/task/review-evidence/`: What a reviewer reads about a task: the review summary, the proof and evidence commands, the review chat handoff, and follow-up tasks a review asks for. Moved out of `commands/task.js` on 2026-11-16; read its README.md before changing it.

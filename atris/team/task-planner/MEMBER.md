@@ -36,3 +36,7 @@ Turns project knowledge into one useful next task.
 - A proposal always offers the existing approve-plan action and a way to ask
   for a change; it never weakens proof or human-accept rules.
 - A good next goal makes a real user trust the product more after using it, not after hearing an explanation.
+
+## Code I own
+
+- `commands/task/next/`: Choosing what to work on: the queue and its scopes, the current task, next, endgame seed tasks and continue-work. Moved out of `commands/task.js` on 2026-11-16; read its README.md before changing it.

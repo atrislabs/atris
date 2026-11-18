@@ -15,8 +15,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # The full set. It guards master: every merge queue run (and any other
+  # event) runs all eight shards. Pull requests get the quick job instead.
   unit:
     name: unit (${{ matrix.shard }}/8)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -40,6 +43,40 @@ jobs:
           ATRIS_TEST_SPLIT: '1'
         run: node scripts/ci-test-shard.js ${{ matrix.shard }}/8
 
+  # The per change check on a pull request: the quick list, every test file
+  # the pull request adds or edits, and the tests that require the source files
+  # it changes, split three ways by recorded run time. The merge queue runs the
+  # full set.
+  quick:
+    name: quick (${{ matrix.group }}/3)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # The pull request merge commit and its first parent, the base.
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - run: npm ci
+
+      - name: Quick tests, the tests this pull request touches, and the tests that cover its source
+        run: |
+          git rev-parse --verify --quiet 'HEAD^2' > /dev/null || {
+            echo 'expected the pull request merge commit; nothing to compare with.'
+            exit 1
+          }
+          node scripts/ci-quick-check.js 'HEAD^1' ${{ matrix.group }}/3
+
   decks:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -56,14 +93,19 @@ jobs:
       - name: Lint shipped deck specs
         run: npm run lint:decks
 
-  # The required check. It passes only when every shard and the deck lint
-  # passed, so a skipped or cancelled shard can never count as green.
+  # The required check. A skipped or cancelled job can never count as green:
+  # on a pull request it needs the quick job and the deck lint to pass. In
+  # the merge queue it needs every shard and the deck lint to pass.
   test:
     if: always()
-    needs: [unit, decks]
+    needs: [unit, quick, decks]
     runs-on: ubuntu-latest
     steps:
       - name: All checks passed
         run: |
-          test "${{ needs.unit.result }}" = success
           test "${{ needs.decks.result }}" = success
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            test "${{ needs.quick.result }}" = success
+          else
+            test "${{ needs.unit.result }}" = success
+          fi

@@ -1,12 +1,12 @@
 # Workspace docs and maps
 
-Init, update, workflow, wiki, skills, doc health, the map tools and the hourly map note fold. Exact `file:line` refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
+Init, update, workflow, wiki, skills, doc health, the map tools and the hourly map note fold. Code refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
 
 ## Quick Reference Index
 
 | Route | Paths | Purpose |
 | --- | --- | --- |
-| Document health | `commands/doc-health.js`, `lib/map-refs.js`, `lib/recall-exam.js`, `test/recall-exam.test.js`, `atris/doc-health/recall-seen.jsonl`, `test/doc-health.test.js`, `atris/doc-health/questions.jsonl` | Boot size, map coverage, lookup hops, stale features and members, near duplicates, and weighted score (boot earns full credit through 80,000 chars, zero at 200,000). `lib/map-refs.js` checks every backticked `path:N` ref in this map against the code, using the identifier written right next to it: right, moved, unclear, or gone; the map score is the existing-path share times the right-ref share. `atris doc-health --fix-refs` rewrites only moved refs (ranges keep their width, clamped to the last line) and lists the rest by map line. computeDocHealth(root) supplies the guarded startup docs row in bin/atris.js:1766 without a subprocess; one-hop questions avoid document reads and score-only member scans stop at the first recent log. Inactive member frontmatter is excluded from freshness; retired/superseded features are not stale; _archive and _templates never count as features. Uses `commands/brain.js:144` readText and `lib/mission-root.js:24` resolveWorkspaceRoot; registered beside doctor in `bin/atris.js:2757`, with both commands draining piped output through process.exitCode and `lib/known-commands.js`. Recall exam: `atris doc-health --recall <file>` runs `lib/recall-exam.js` runRecallExam, a reader that starts from the boot files and opens the linked markdown file whose line best matches the question until an opened file holds the needle; it reports found, files opened, wrong opens and tokens read, and `--summary` keeps a held-out set unprinted. |
+| Document health | `commands/doc-health.js`, `lib/map-refs.js`, `lib/recall-exam.js`, `test/recall-exam.test.js`, `atris/doc-health/recall-seen.jsonl`, `test/doc-health.test.js`, `atris/doc-health/questions.jsonl` | Boot size, map coverage, lookup hops, stale features and members, near duplicates, and weighted score (boot earns full credit through 80,000 chars, zero at 200,000). `lib/map-refs.js` checks every backticked `path:N` ref in this map against the code, using the identifier written right next to it: right, moved, unclear, or gone; the map score is the existing-path share times the right-ref share. `atris doc-health --fix-refs` rewrites only moved refs (ranges keep their width, clamped to the last line) and lists the rest by map line. computeDocHealth(root) supplies the guarded startup docs row in bin/atris.js:1725 without a subprocess; one-hop questions avoid document reads and score-only member scans stop at the first recent log. Inactive member frontmatter is excluded from freshness; retired/superseded features are not stale; _archive and _templates never count as features. Uses `commands/brain.js` readText and `lib/mission-root.js` resolveWorkspaceRoot; registered beside doctor in `bin/atris.js:2721`, with both commands draining piped output through process.exitCode and `lib/known-commands.js`. Recall exam: `atris doc-health --recall <file>` runs `lib/recall-exam.js` runRecallExam, a reader that starts from the boot files and opens the linked markdown file whose line best matches the question until an opened file holds the needle; it reports found, files opened, wrong opens and tokens read, and `--summary` keeps a held-out set unprinted. |
 
 ## Search shortcuts: Core CLI logic
 
@@ -65,15 +65,15 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 **Purpose:** Housekeeping: find stale tasks, heal broken refs, detect stale wiki pages, archive old journals
 
-- **Dispatch:** `bin/atris.js:1931` handles `--help`, `--dry-run`, and `--json` before routing to `cleanAtris`
-- **Help:** `bin/atris.js:1187` (`showCleanHelp`) prints usage without touching workspace state
+- **Dispatch:** `bin/atris.js:1890` handles `--help`, `--dry-run`, and `--json` before routing to `cleanAtris`
+- **Help:** `bin/atris.js` (`showCleanHelp`) prints usage without touching workspace state
 - **Entry point:** `commands/clean.js:14` (cleanAtris function)
-- **JSON payload:** `commands/clean.js:266` (`cleanResultPayload`) returns machine-readable stale tasks, MAP refs, journals, sections, stale pages, dead code, and manual actions without text chrome
+- **JSON payload:** `commands/clean.js` (`cleanResultPayload`) returns machine-readable stale tasks, MAP refs, journals, sections, stale pages, dead code, and manual actions without text chrome
 - **Helpers:**
 - `findStaleTasks()`: Find tasks claimed >3 days ago
 - `healBrokenMapRefs()`: Validate + auto-fix MAP.md file:line refs (range + drift detection)
-- `findStalePages()` (`commands/clean.js:748`): Scan atris/ for markdown with `last_compiled` frontmatter, compare when each source last changed
-- `checkPageStaleness()` (`commands/clean.js:821`): Parse frontmatter, check each source vs compiled date; `contentChangedAt()` uses the last commit date for files git holds unchanged, so a checkout touching mtimes is not staleness (`test/clean-stale-pages.test.js`). Plain-language sources and web links name no file and are skipped (`looksLikePath`); a relative source is found from the repo root, the page folder, or any folder between (`resolveSource`, `test/staleness-parser.test.js`)
+- `findStalePages()` (`commands/clean.js`): Scan atris/ for markdown with `last_compiled` frontmatter, compare when each source last changed
+- `checkPageStaleness()` (`commands/clean.js`): Parse frontmatter, check each source vs compiled date; `contentChangedAt()` uses the last commit date for files git holds unchanged, so a checkout touching mtimes is not staleness (`test/clean-stale-pages.test.js`). Plain-language sources and web links name no file and are skipped (`looksLikePath`); a relative source is found from the repo root, the page folder, or any folder between (`resolveSource`, `test/staleness-parser.test.js`)
 - dead-code report: step 6 in `cleanAtris` calls slop's `findDeadCode` (report-only, feeds manual actions); a file guarded by `require.main === module` counts as an entrypoint, so a server started with `node lib/x.js` is never called test-only
 - `archiveOldJournals()`: Move journals >30 days to archive/
 - `cleanEmptySections()`: Remove placeholder sections
@@ -94,7 +94,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 
 - **Entry points:** `bin/atris.js` (help text, known commands, wiki + alias routing)
 - **Handlers:** `commands/wiki.js` (ingest/query/lint/search/log), `lib/wiki.js` (scaffold + prompt builders), `commands/init.js` (wiki bootstrap), `commands/activate.js` (wiki status load)
-- **Help:** `commands/wiki.js:172-174` (`hasHelpFlag`/`printWikiHelp`) and `commands/wiki.js:408-412` short-circuit wiki help before ingest/query/lint workers can scaffold state
+- **Help:** `commands/wiki.js` (`hasHelpFlag`/`printWikiHelp`) and `commands/wiki.js:407-411` short-circuit wiki help before ingest/query/lint workers can scaffold state
 - **Regression:** `test/commands-2.test.js:2197-2219` covers `ingest|query|lint --help`, `wiki --help`, and `wiki ingest --help` without `atris/` or `$HOME/.atris` creation
 - **How it works:**
 - `atris ingest <path>` scaffolds `atris/wiki/`, stages local evidence into `atris/context/_ingest/`, writes a manifest receipt, refreshes wiki STATUS/log, and prints the local ingest prompt against the staged source
@@ -107,6 +107,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris wiki log [N]` shows recent `atris/wiki/log.md` activity
 - `atris wiki consolidate` prints a local pruning prompt and records per-surface counts in `.atris/state/wiki.metabolism.json`; lint flags over-budget surfaces and growth of 10 or more entries, while boot and `atris clean` print one defensive pruning nudge when those findings exist
 - `atris wiki loop` routes to the same local upkeep analysis as `atris loop`
+- `atris wiki learn "<topic>" [--into dir]` (`commands/wiki.js:527`, `lib/learning-team.js` `runLearn`) gathers recent papers, posts and repos over https, ranks them (`lib/learning-team.js:225`), has one engine distill them on the owner's login with paid keys stripped, checks the answer (`lib/learning-team.js` `validateNotes`) and writes notes to `concepts/<topic>/`, a brief to `briefs/<topic>.md` and one `## Learning` index line (`lib/learning-team.js:451`); tests in `test/learning-team.test.js`, product brief in `atris/features/learning-team/idea.md`
 - `atris pull --only wiki` / `atris push --only wiki` normalize to `atris/wiki/`
 - **Wiki structure:**
 - `atris/context/`
@@ -121,7 +122,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris/wiki/briefs/`
 - **Value:** Makes project memory local by default instead of forcing the cloud path first
 
-**Search:** `rg "wikiCommand|printWikiHelp|wikiIngest|buildIngestPrompt|wikiMetabolismNudge|normalizeWikiOnlyPrefix|ensureWikiScaffold|wiki help paths" commands/wiki.js commands/clean.js lib/wiki.js commands/init.js bin/atris.js test/commands-1.test.js test/wiki-metabolism-warning.test.js`
+**Search:** `rg "wikiCommand|printWikiHelp|wikiIngest|buildIngestPrompt|wikiMetabolismNudge|normalizeWikiOnlyPrefix|ensureWikiScaffold|wiki help paths|runLearn|validateNotes" commands/wiki.js commands/clean.js lib/wiki.js lib/learning-team.js commands/init.js bin/atris.js test/commands-1.test.js test/wiki-metabolism-warning.test.js`
 
 ## Concern: Skills
 
@@ -135,6 +136,7 @@ rg "Agent Contract|Universal Agent|OpenClaw" AGENTS.md .cursorrules commands/ini
 - `atris/skills/README.md`: Skills pattern + Claude symlink instructions
 - `atris/skills/copy-editor/SKILL.md`: Repo-owned anti-slop copy editor skill, including memo-specific slop gate
 - `atris/skills/clean-copy/SKILL.md`: Repo-owned skill for cutting interface copy that should not exist, before any rewording
+- `atris/skills/feature-folders/SKILL.md`: Repo-owned skill for splitting a giant source file into owned feature folders with a byte-for-byte rebuild proof
 - `commands/skill.js` and `test/skill-audit-codeblocks.test.js` - Skill audit checks and code-block XML regression coverage
 - `atris skill eval <skill-path>` routes through `commands/skill-eval.js`, runs an independent bench engine in a neutral temporary directory, and appends an `atris.skill_eval.v1` row to `.atris/state/scorecards.jsonl`
 - `lib/skill-eval-gate.js` finds changed `SKILL.md` files and requires a newer passing receipt whose judge differs from the worker model; `lib/auto-accept-certified.js` runs it through the shared landing hygiene gate

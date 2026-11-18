@@ -258,7 +258,7 @@ test('a known live default branch never falls back when fetching its missing ref
   assert.throws(() => fleet.resolveDispatchLandTarget(setup.root), /could not fetch the remote default branch/);
 });
 
-test('worktree creation looks up the branch once and disables prompts on every network call', (t) => {
+test('worktree creation looks up the branch at most once and disables prompts on every network call', (t) => {
   const setup = room(t);
   const readTrace = traceNetworkGit(t, setup);
   const worker = createAgentWorktree({ root: setup.root, agent: 'tester', task: 'default', path: setup.worktree });
@@ -269,7 +269,9 @@ test('worktree creation looks up the branch once and disables prompts on every n
     assert.equal(call.prompt, '0', JSON.stringify(call));
     assert.equal(call.ssh, 'ssh -i /tmp/test-key');
   }
-  assert.equal(calls.filter(call => call.args.includes('--symref')).length, 1);
+  // Since 2026-11-17 the main branch is read from the local copy when it is known, so the server is asked at most once.
+  assert.ok(calls.filter(call => call.args.includes('--symref')).length <= 1);
+  assert.equal(calls.filter(call => call.args[0] === 'fetch').length, 1, 'one fetch');
 });
 
 test('checking a build that landed itself also disables network prompts', (t) => {

@@ -274,3 +274,44 @@ test('the latest completion contributes its lesson before older endgame outcomes
   assert.equal(context.recent_outcomes[0].task_id, old.id);
   assert.equal(context.recent_outcomes[0].lesson, 'Latest correction from the reviewer');
 });
+
+test('task next says a missing reason is not recorded and labels an old project goal as old', (t) => {
+  const { root, env } = room(t);
+  const updated = new Date(Date.now() - 33 * 86400000).toISOString();
+  write(root, '.atris/state/scoreboard.json', JSON.stringify({ goal: 'Build a cancer eval labs act on', updated_at: updated }));
+  const db = taskDb.open(env.ATRIS_TASKS_DB);
+  const added = taskDb.addTask(db, { workspaceRoot: root, title: 'The overview hides that leaderboards disagree', status: 'open' });
+  const { payload } = next(root, env);
+  assert.equal(payload.task_id, added.id);
+  assert.deepEqual(payload.context.task_reason, { recorded: false, text: 'no reason is recorded for this task.' });
+  assert.ok(payload.context.gaps.includes('reason_missing'));
+  assert.equal(payload.context.goal.kind, 'project_goal');
+  assert.equal(payload.context.goal.updated_at, updated);
+  assert.equal(payload.context.goal.old, true);
+  assert.match(payload.context.goal.about, /^project goal, not a task's reason/);
+  assert.match(payload.context.goal.about, /33 days ago, so it is old/);
+  assert.doesNotMatch(JSON.stringify(payload.context.task_reason), /cancer/);
+});
+
+test('task next passes a stored reason through unchanged next to a fresh project goal', (t) => {
+  const { root, env } = room(t);
+  write(root, '.atris/state/scoreboard.json', JSON.stringify({ goal: 'Make calendar lookups reliable', updated_at: new Date().toISOString() }));
+  const reason = 'Readers miss meetings after a timeout in lib/calendar.js';
+  const db = taskDb.open(env.ATRIS_TASKS_DB);
+  taskDb.addTask(db, { workspaceRoot: root, title: 'Repair calendar lookup retries', status: 'open', metadata: { why_it_matters: reason } });
+  const { payload } = next(root, env);
+  assert.deepEqual(payload.context.task_reason, { recorded: true, text: reason });
+  assert.ok(!payload.context.gaps.includes('reason_missing'));
+  assert.equal(payload.context.goal.old, false);
+  assert.doesNotMatch(payload.context.goal.about, /old/);
+});
+
+test('a project goal with no stored date falls back to when its file last changed', (t) => {
+  const { root } = room(t);
+  write(root, '.atris/state/scoreboard.json', JSON.stringify({ goal: 'Repair calendar retries' }));
+  const { buildNextWorkContext } = require('../lib/next-work-context');
+  const context = buildNextWorkContext({ root, taskSource: 'database' });
+  assert.ok(Date.parse(context.goal.updated_at) > Date.now() - 86400000);
+  assert.equal(context.goal.old, false);
+  assert.equal(context.task_reason, null);
+});
