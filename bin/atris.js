@@ -579,6 +579,7 @@ function helpCatalog() {
     { name: 'activate', summary: 'load atris context for this session', json: false, interactive_risk: 'low' },
     { name: 'status', summary: 'local work and completions', json: true, interactive_risk: 'low' },
     { name: 'engine', summary: 'engine roster, ask, validate, dispatch', json: true, interactive_risk: 'low' },
+    { name: 'tell', summary: 'send one note or task to one team member; status shows seen, picked up, finished', json: true, interactive_risk: 'low' },
     { name: 'help', summary: 'this help (default short; --all full)', json: true, interactive_risk: 'none' },
   ];
 }
@@ -815,6 +816,7 @@ function showHelpAll() {
   console.log('  hires      - Morning check-in: one line per hire (mail, spend, last run)');
   console.log('  mail       - Your agents\' own inboxes: list, read, send (not Gmail)');
   console.log('  channel    - The team\'s shared channels: read, post, claim, done (atris channel <name>)');
+  console.log('  tell       - Send one note or task to one team member and get a receipt (atris tell <member> "...")');
   console.log('  listen     - A team member\'s inbox: what was sent to it, then mark it handled (atris listen --as <member>)');
   console.log('  design     - Extract a site design system, check brand adherence, search brands');
   console.log('  mcp        - Run the atris MCP server (stdio) for Claude Desktop and Cursor');
@@ -2640,6 +2642,11 @@ if (command === 'guide') {
 } else if (command === 'channel') {
   // The team's shared channels on the hosted server: read, post, claim, report by name.
   Promise.resolve().then(() => require('../commands/channel').channelCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'tell') {
+  // One note or task to one team member, with a receipt: saved, delivered, wakes, check.
+  Promise.resolve().then(() => require('../commands/tell').tellCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'listen') {
