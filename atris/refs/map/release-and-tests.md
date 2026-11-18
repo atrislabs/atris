@@ -18,6 +18,8 @@ The sleep and lost-look checks in `test/gm-phone-health.test.js` also overlap up
 
 The connection and navigation checks in `test/gm-phone-hands.test.js` overlap up to two independent sessions. The checks keep the real reconnect, polling and response timers.
 
+`test/gm-phone-recovery.test.js` holds seven unchanged calm-line and orb recovery journeys so CI can run them on a different worker from the other phone hand checks.
+
 The calm-line checks in `test/gm-phone.test.js` overlap motion and reduced motion when closing the team, and sending and clearing a note while an idea waits. Each case keeps its own browser and desk.
 
 The detached mission check in `test/mission-status.test.js` uses a one-second cadence. The real child still runs past its first cycle and exits when its saved budget runs out.
