@@ -9,6 +9,7 @@ const { apiRequestJson } = require('../utils/api');
 const { NOT_LOGGED_IN } = require('../lib/developer-api');
 const { parseArgs, loginToken, relativeTime, clip } = require('../lib/business-target');
 const { resolveChannelBusiness, boardWhy, memberName, lookupMember } = require('../lib/team-board');
+const { reachedLines } = require('./tell');
 
 // Words that are verbs here, so no channel can be called one of them.
 const REPORTS = ['done', 'failed', 'blocked'];
@@ -28,6 +29,8 @@ function channelHelp(log = console.log) {
        atris channel claim <task-key> ["note"]         claim a task
        atris channel done <task-key> "summary"         report it done (also: failed, blocked)
        atris channel list                              channel names only
+
+to reach one member: atris tell <member> "..."
 
 options:
   --business <slug>   which business (else ATRIS_BUSINESS, this folder's business, or your only one)
@@ -194,8 +197,9 @@ async function channelCommand(args = [], deps = {}) {
     const body = signed(typeof flags.task === 'string' ? { content: text, task_key: flags.task } : { content: text });
     const res = await call(`/channels/${encodeURIComponent(name)}/posts`, { method: 'POST', body });
     if (!res || !res.ok) { err(`could not post to #${name}: ${why(res)}`); return 1; }
-    if (flags.json) say(res);
-    else log(body.task_key ? `posted task ${body.task_key} to #${name}${byline}. claim it: atris channel claim ${body.task_key}` : `posted to #${name}${byline}`);
+    if (flags.json) { say(res); return 0; }
+    log(body.task_key ? `posted task ${body.task_key} to #${name}${byline}. claim it: atris channel claim ${body.task_key}` : `posted to #${name}${byline}`);
+    for (const line of reachedLines(res.data)) log(line);
     return 0;
   }
 
