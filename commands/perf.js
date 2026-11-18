@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { defaultTargets, validateTarget, measure, summarize, rankRuns } = require('../lib/perf');
 const { renderHtml } = require('../lib/perf-html');
+const { ensurePerfIgnore } = require('../lib/gitignore');
 
 async function perfCommand(args = [], root = process.cwd()) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
@@ -67,6 +68,7 @@ async function perfCommand(args = [], root = process.cwd()) {
       const samples = [];
       for (let i = 0; i < count; i++) samples.push(await measure(target, timeout));
       const run = summarize(target, samples, timestamp);
+      ensurePerfIgnore(root);
       fs.appendFileSync(runsFile, JSON.stringify(run) + '\n');
       console.log(`${target.name}: p95 ttfb ${run.ttfb.p95.toFixed(1)} ms; errors ${(run.errorRate * 100).toFixed(0)}%`);
     }
@@ -88,6 +90,7 @@ async function perfCommand(args = [], root = process.cwd()) {
     const next = args[args.indexOf('--html') + 1];
     const file = next && !next.startsWith('--') ? path.resolve(root, next) : path.join(dir, 'report.html');
     fs.mkdirSync(path.dirname(file), { recursive: true });
+    ensurePerfIgnore(root);
     fs.writeFileSync(file, renderHtml(ranked));
     if (!args.includes('--json')) console.log(`report saved to ${file}`);
   }

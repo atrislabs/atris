@@ -4,6 +4,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { execFileSync } = require('node:child_process');
 const { measure, percentile, summarize, rankRuns, provider } = require('../lib/perf');
 const { perfCommand } = require('../commands/perf');
 const { renderHtml } = require('../lib/perf-html');
@@ -33,6 +34,8 @@ test('real requests measure phases, failures, slow reads and append report histo
   t.after(() => { server.closeAllConnections(); server.close(); });
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-perf-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  fs.writeFileSync(path.join(root, '.gitignore'), 'existing-rule\n');
   const url = `http://127.0.0.1:${server.address().port}`;
   const target = { name: 'local', url, weight: 2 };
   const first = await measure(target);
@@ -74,6 +77,11 @@ test('real requests measure phases, failures, slow reads and append report histo
   assert.equal(rankRuns(runs)[0].delta, runs[1].ttfb.p95 - runs[0].ttfb.p95);
   await perfCommand(['report', '--html'], root);
   const html = fs.readFileSync(path.join(root, 'atris/perf/report.html'), 'utf8');
+  assert.equal(execFileSync('git', ['check-ignore', 'atris/perf/runs.jsonl', 'atris/perf/report.html'], { cwd: root, encoding: 'utf8' }), 'atris/perf/runs.jsonl\natris/perf/report.html\n');
+  const ignore = fs.readFileSync(path.join(root, '.gitignore'), 'utf8');
+  assert.ok(ignore.startsWith('existing-rule\n'));
+  assert.equal(ignore.split('atris/perf/runs.jsonl').length, 2);
+  assert.equal(ignore.split('atris/perf/report.html').length, 2);
   assert.match(html, /<svg/);
   assert.match(html, /<style>/);
   assert.match(html, /p95 ttfb trend/);
