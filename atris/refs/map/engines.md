@@ -59,6 +59,7 @@ rg "pickLane|loadOverrides|routerCommand|promotionCandidates|autoLaneForMessage|
 ## Engine dispatch default branch and refusals
 
 - Regression: `test/engine-dispatch-mainline.test.js:1` uses real engines and Git for main/trunk dispatch and fleet landings, successful login-related output with backups available, engine-only refusals, backup refusal receipts, a server-only rename without a local tracking ref, failed fetch refusal, one lookup per flight, traced network prompt settings, failed Codex tool transcripts, absent-origin landing, and branch fallback priority. `test/one-lap-runtime.test.js:913` covers sealed review and import on main; `test/engine-dispatch-no-origin.test.js:1` covers absent and unavailable origin.
+- The stalled Git regression in `test/engine-dispatch-mainline.test.js` checks the real lookup and fetch deadlines before reducing them in the test process. Both stand-ins still ignore termination and must be killed at the deadline.
 
 - Engine start helper count: `lib/engine-resource.js:153` appends `leaked_ssh_agents` on start only, using `readSshAgents` at line 229 and the sweep filter at line 239; throws or unreadable scan fields leave null. Regression: `test/engine-resource.test.js:2374` covers all three unavailable readers, and `test/engine-resource.test.js:2389` denies real ps execution and reads back the saved null. `lib/fleet.js:1256` records before launch. Regression: `test/engine-resource.test.js:127`, `test/engine-dispatch.test.js:1319`.
 
