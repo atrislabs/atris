@@ -25,18 +25,21 @@ function showPopshareHelp(log = console.log) {
   log('       atris popshare today                              today board: going out, by hand, failed, gaps');
   log('       atris popshare week [--next|--prev|--date YYYY-MM-DD]');
   log('       atris popshare show <id>                          one post, everything on it');
+  log('       atris popshare strategy [--north-star "..."] [--audience "..."] [--cadence "..."] [--arc "..." ...|--clear-arcs]');
   log('       atris popshare goals [platform=n]...              weekly goals, like x=14 linkedin=7');
   log('       atris popshare open                               poke the week with the keyboard');
-  log('       atris popshare add <platform> "text" [--at "YYYY-MM-DD HH:MM"] [--idea|--draft|--ready] [--theme t] [--note n]... [--media f]...');
-  log('       atris popshare list [--days 7]');
+  log('       atris popshare add <platform> "text" [--at "YYYY-MM-DD HH:MM"] [--idea|--draft|--ready] [--theme t] [--tie slug] [--note n]... [--media f]...');
+  log('       atris popshare list [--days 7] [--tie slug]');
   log('       atris popshare schedule <id> --at "YYYY-MM-DD HH:MM"');
-  log('       atris popshare edit <id> [--text "..."] [--theme t] [--note n]... [--status s] [--platform p] [--media f]... [--clear-media]');
+  log('       atris popshare edit <id> [--text "..."] [--theme t] [--tie slug|--clear-tie] [--note n]... [--status s] [--platform p] [--media f]... [--clear-media]');
   log('       atris popshare post <id>                            send an x or linkedin post now');
   log('       atris popshare posted <id> [--url u]                 mark a by-hand post as posted');
   log('       atris popshare rm <id>');
-  log('       atris popshare score [--weeks 4]');
+  log('       atris popshare scorecard [--tie slug]             engagement, narrative arcs, and tie rollups');
+  log('       atris popshare scoreboard [--weeks 4]             weekly output vs cadence goals');
+  log('       atris popshare score [--weeks 4]                  alias for scoreboard');
   log('       atris popshare interview <id>                      answer the questions, get an outline');
-  log('       atris popshare interview --new <platform> "topic" [--research]');
+  log('       atris popshare interview --new <platform> "topic" [--tie slug] [--research]');
   log('       atris popshare install <business>                    add popshare to a workspace');
   log('platforms: x, linkedin, blog, instagram, tiktok. --at is local time. ids take the first 6+ characters.');
 }
@@ -215,17 +218,21 @@ function todayFolder() {
 
 /** Pull `add <platform> "text" [flags]` apart into a create body. */
 function parseAddArgs(args = []) {
-  const flags = { at: undefined, theme: undefined, notes: [], status: null, media: [] };
+  const flags = { at: undefined, theme: undefined, tie: undefined, notes: [], status: null, media: [] };
   const positional = [];
   const rest = args.filter((arg) => arg !== '--json');
   for (let i = 0; i < rest.length; i += 1) {
     const arg = rest[i];
-    if (arg === '--at' || arg === '--theme' || arg === '--note' || arg === '--media') {
+    if (arg === '--at' || arg === '--theme' || arg === '--tie' || arg === '--note' || arg === '--media') {
       const value = rest[i + 1];
       if (value === undefined || value.startsWith('--')) return { error: `${arg} needs a value` };
       if (arg === '--at') flags.at = value;
       else if (arg === '--theme') flags.theme = value;
-      else if (arg === '--media') flags.media.push(value);
+      else if (arg === '--tie') {
+        const cleanedTie = String(value).trim();
+        if (!cleanedTie) return { error: '--tie needs a non-empty slug' };
+        flags.tie = cleanedTie;
+      } else if (arg === '--media') flags.media.push(value);
       else flags.notes.push(value);
       i += 1;
       continue;
@@ -258,6 +265,7 @@ function parseAddArgs(args = []) {
     status: scheduledFor ? 'scheduled' : (flags.status || 'draft'),
     scheduledFor,
     theme: flags.theme,
+    tieId: flags.tie,
     notes: flags.notes,
     media: flags.media,
   };
@@ -296,7 +304,7 @@ function shortId(id) {
 }
 
 function postSnippet(post) {
-  const raw = post && (post.text || post.title);
+  const raw = post && (post.text || post.title || post.text_snippet);
   const text = String(raw || '').replace(/\s+/g, ' ').trim();
   return text.length > 80 ? `${text.slice(0, 79)}...` : text;
 }
@@ -446,20 +454,133 @@ function scoreText(units = []) {
   return lines.join('\n');
 }
 
-/** Pull `interview <id>` or `interview --new <platform> "topic" [--research]`
+function formatMetricSummary(metrics) {
+  if (!metrics || typeof metrics !== 'object') return '';
+  const ordered = [
+    ['impression_count', 'impressions'],
+    ['like_count', 'likes'],
+    ['reply_count', 'replies'],
+    ['comment_count', 'comments'],
+    ['retweet_count', 'reposts'],
+    ['quote_count', 'quotes'],
+    ['bookmark_count', 'bookmarks'],
+  ];
+  const seen = new Set();
+  const parts = [];
+  for (const [key, label] of ordered) {
+    seen.add(key);
+    const count = Number(metrics[key]);
+    if (Number.isFinite(count) && count > 0) {
+      parts.push(`${count.toLocaleString('en-US')} ${label}`);
+    }
+  }
+  for (const [key, raw] of Object.entries(metrics)) {
+    if (seen.has(key)) continue;
+    const count = Number(raw);
+    if (Number.isFinite(count) && count > 0) {
+      parts.push(`${count.toLocaleString('en-US')} ${key.replace(/_/g, ' ')}`);
+    }
+  }
+  return parts.join(', ');
+}
+
+/** Engagement, narrative arcs, platform breakdown, and tie rollups. */
+function scorecardText(data = {}, opts = {}) {
+  const tieFilter = opts && opts.tie ? String(opts.tie).trim() : '';
+  const connections = data.connections && typeof data.connections === 'object' ? data.connections : {};
+  const lines = [];
+
+  const connParts = [];
+  for (const platform of ['x', 'linkedin']) {
+    if (connections[platform]) connParts.push(`${platformName(platform)}: ${connections[platform]}`);
+  }
+  if (connParts.length) {
+    lines.push(`connections: ${connParts.join(', ')}`);
+  } else if (data.connected === false) {
+    lines.push('no social accounts connected yet.');
+  }
+
+  const allTies = Array.isArray(data.ties) ? data.ties : [];
+  const allPosts = Array.isArray(data.posts) ? data.posts : [];
+  const ties = tieFilter ? allTies.filter((item) => item && item.tie_id === tieFilter) : allTies;
+  const posts = tieFilter ? allPosts.filter((item) => item && item.tie_id === tieFilter) : allPosts;
+
+  if (!tieFilter) {
+    const totals = data.totals && typeof data.totals === 'object' ? data.totals : {};
+    const postCount = Number(totals.posts || posts.length || 0);
+    const rate = totals.arc_match_rate !== undefined && totals.arc_match_rate !== null
+      ? `, ${Math.round(Number(totals.arc_match_rate) * 100)}% on arc`
+      : '';
+    lines.push(`scorecard: ${postCount} post${postCount === 1 ? '' : 's'}${rate}`);
+    const totalMetrics = formatMetricSummary(totals.metrics);
+    if (totalMetrics) lines.push(`  metrics: ${totalMetrics}`);
+    const byPlatform = totals.by_platform && typeof totals.by_platform === 'object' ? totals.by_platform : {};
+    for (const [platform, bucket] of Object.entries(byPlatform)) {
+      if (!bucket || typeof bucket !== 'object') continue;
+      const count = Number(bucket.posts || 0);
+      const metrics = formatMetricSummary(bucket.metrics);
+      lines.push(`  ${platformName(platform)}: ${count} post${count === 1 ? '' : 's'}${metrics ? ` (${metrics})` : ''}`);
+    }
+  } else {
+    lines.push(`tie: ${tieFilter}`);
+    if (!ties.length && !posts.length) {
+      lines.push('  no posted items match this tie yet.');
+    }
+  }
+
+  if (ties.length) {
+    lines.push('', 'ties:');
+    for (const tie of ties) {
+      const platforms = Array.isArray(tie.platforms) && tie.platforms.length ? tie.platforms.join(', ') : 'none';
+      const count = Number(tie.posts || 0);
+      const metrics = formatMetricSummary(tie.metrics);
+      const metricBit = metrics ? ` · ${metrics}` : '';
+      lines.push(`  ${tie.tie_id} (${platforms}) · ${count} post${count === 1 ? '' : 's'}${metricBit}`);
+    }
+  }
+
+  if (posts.length) {
+    lines.push('', 'posts:');
+    for (const post of posts.slice(0, 15)) {
+      const label = platformName(post.platform);
+      const tieBit = post.tie_id && !tieFilter ? ` [${post.tie_id}]` : '';
+      const arcBit = post.arc_matched ? ` (${post.arc_matched})` : '';
+      const metrics = formatMetricSummary(post.metrics);
+      const metricBit = metrics ? ` · ${metrics}` : '';
+      lines.push(`  ${label}${tieBit}${arcBit}: ${postSnippet(post)}${metricBit}`);
+    }
+  } else if (!tieFilter) {
+    lines.push('no posted posts scored yet.');
+  }
+
+  return lines.join('\n');
+}
+
+/** Pull `interview <id>` or `interview --new <platform> "topic" [--tie slug] [--research]`
  * apart. --research only matters when a session starts fresh. */
 function parseInterviewArgs(args = []) {
   const rest = args.filter((arg) => arg !== '--json');
   let research = false;
   let isNew = false;
+  let tieId = undefined;
   const positional = [];
-  for (const arg of rest) {
+  for (let i = 0; i < rest.length; i += 1) {
+    const arg = rest[i];
     if (arg === '--research') {
       research = true;
       continue;
     }
     if (arg === '--new') {
       isNew = true;
+      continue;
+    }
+    if (arg === '--tie') {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith('--')) return { error: '--tie needs a value' };
+      const cleaned = String(value).trim();
+      if (!cleaned) return { error: '--tie needs a non-empty slug' };
+      tieId = cleaned;
+      i += 1;
       continue;
     }
     if (arg.startsWith('--')) return { error: `unknown flag ${arg}` };
@@ -475,7 +596,7 @@ function parseInterviewArgs(args = []) {
     if (!topic) {
       return { error: 'say what the post is about: atris popshare interview --new x "your topic"' };
     }
-    return { mode: 'new', platform, topic, research };
+    return { mode: 'new', platform, topic, tieId, research };
   }
   const idInput = positional[0];
   if (!idInput) {
@@ -934,6 +1055,7 @@ function showText(post = {}) {
     if (when) lines.push(`saved ${when}`);
   }
   if (post.theme) lines.push(`theme: ${post.theme}`);
+  if (post.tie_id) lines.push(`tie: ${post.tie_id}`);
   lines.push('');
   const body = String(post.text || post.title || '').trim();
   lines.push(body || '(no words yet)');
@@ -999,6 +1121,67 @@ function goalsText(strategy = {}) {
     const value = Number(goals[platform]);
     lines.push(`  ${platformName(platform).padEnd(width)}  ${Number.isFinite(value) ? value : 0} a week`);
   }
+  return lines.join('\n');
+}
+
+/** Pull `strategy [--north-star ...] [--audience ...] [--cadence ...] [--arc ...]` apart. */
+function parseStrategyArgs(args = []) {
+  const rest = args.filter((arg) => arg !== '--json');
+  const updates = {};
+  const arcs = [];
+  const goals = {};
+  let clearArcs = false;
+  for (let i = 0; i < rest.length; i += 1) {
+    const arg = rest[i];
+    if (arg === '--north-star' || arg === '--audience' || arg === '--cadence' || arg === '--arc') {
+      const value = rest[i + 1];
+      if (value === undefined || value.startsWith('--')) return { error: `${arg} needs a value` };
+      if (arg === '--north-star') updates.north_star = value.trim();
+      else if (arg === '--audience') updates.audience = value.trim();
+      else if (arg === '--cadence') updates.cadence = value.trim();
+      else if (value.trim()) arcs.push(value.trim());
+      i += 1;
+      continue;
+    }
+    if (arg === '--clear-arcs') {
+      clearArcs = true;
+      continue;
+    }
+    if (arg.startsWith('--')) return { error: `unknown flag ${arg}` };
+    const goalMatch = arg.match(/^([A-Za-z]+)=(.+)$/);
+    if (!goalMatch) return { error: `unexpected "${arg}". try: atris popshare strategy --north-star "..."` };
+    const rawPlatform = goalMatch[1].toLowerCase();
+    const platform = rawPlatform === 'twitter' ? 'x' : rawPlatform;
+    if (!PLATFORMS.includes(platform)) {
+      return { error: `unknown platform ${goalMatch[1]}. use ${PLATFORMS.join(', ')}` };
+    }
+    const rawCount = goalMatch[2].trim();
+    if (!/^\d+$/.test(rawCount)) {
+      return { error: `${platformName(platform)} goal must be a whole number, 0 or more` };
+    }
+    goals[platform] = Number(rawCount);
+  }
+  if (clearArcs && arcs.length) return { error: 'use either --arc or --clear-arcs, not both' };
+  if (clearArcs) updates.narrative_arcs = [];
+  else if (arcs.length) updates.narrative_arcs = arcs;
+  if (Object.keys(goals).length) updates.cadence_goals = goals;
+  return { updates: Object.keys(updates).length ? updates : null };
+}
+
+/** Full Popshare strategy summary: north star, audience, cadence, arcs, goals. */
+function strategyText(strategy = {}) {
+  const lines = ['strategy'];
+  lines.push(`  north star: ${strategy.north_star || '(not set)'}`);
+  lines.push(`  audience:   ${strategy.audience || '(not set)'}`);
+  lines.push(`  cadence:    ${strategy.cadence || '(not set)'}`);
+  const arcs = Array.isArray(strategy.narrative_arcs) ? strategy.narrative_arcs : [];
+  if (arcs.length) {
+    lines.push('  narrative arcs:');
+    arcs.forEach((arc) => lines.push(`    - ${arc}`));
+  } else {
+    lines.push('  narrative arcs: (none)');
+  }
+  lines.push('', goalsText(strategy));
   return lines.join('\n');
 }
 
@@ -1268,9 +1451,11 @@ async function popshareCommand(args = [], deps = {}) {
       let postId;
       let session;
       if (parsed.mode === 'new') {
+        const body = { platform: parsed.platform, topic: parsed.topic, research: parsed.research };
+        if (parsed.tieId) body.tie_id = parsed.tieId;
         const got = await call('/popshare/interview', {
           method: 'POST',
-          body: { platform: parsed.platform, topic: parsed.topic, research: parsed.research },
+          body,
           retries: 0,
         });
         if (got.error) return fail(got.error, { status: got.status });
@@ -1639,6 +1824,42 @@ async function popshareCommand(args = [], deps = {}) {
       return 0;
     }
 
+    if (cmd === 'strategy') {
+      const parsed = parseStrategyArgs(rest);
+      if (parsed.error) return fail(parsed.error);
+      const got = await call('/popshare/strategy');
+      if (got.error) return fail(got.error, { status: got.status });
+      const strategy = got.data || {};
+      if (!parsed.updates) {
+        printResult({ json, ok: true, text: strategyText(strategy), payload: { ok: true, strategy } }, io);
+        return 0;
+      }
+      const existingGoals = strategy.cadence_goals && typeof strategy.cadence_goals === 'object'
+        ? strategy.cadence_goals
+        : {};
+      const body = {
+        narrative_arcs: parsed.updates.narrative_arcs !== undefined
+          ? parsed.updates.narrative_arcs
+          : (Array.isArray(strategy.narrative_arcs) ? strategy.narrative_arcs : []),
+        cadence: parsed.updates.cadence !== undefined ? parsed.updates.cadence : String(strategy.cadence || ''),
+        audience: parsed.updates.audience !== undefined ? parsed.updates.audience : String(strategy.audience || ''),
+        north_star: parsed.updates.north_star !== undefined ? parsed.updates.north_star : String(strategy.north_star || ''),
+        cadence_goals: parsed.updates.cadence_goals
+          ? { ...existingGoals, ...parsed.updates.cadence_goals }
+          : existingGoals,
+      };
+      const put = await call('/popshare/strategy', { method: 'PUT', body });
+      if (put.error) return fail(put.error, { status: put.status });
+      const saved = put.data || {};
+      printResult({
+        json,
+        ok: true,
+        text: `strategy saved\n${strategyText(saved)}`,
+        payload: { ok: true, strategy: saved },
+      }, io);
+      return 0;
+    }
+
     if (cmd === 'goals') {
       const parsed = parseGoalsArgs(rest);
       if (parsed.error) return fail(parsed.error);
@@ -1688,6 +1909,7 @@ async function popshareCommand(args = [], deps = {}) {
         notes: parsed.notes,
       };
       if (parsed.theme) body.theme = parsed.theme;
+      if (parsed.tieId) body.tie_id = parsed.tieId;
       if (parsed.scheduledFor) body.scheduled_for = parsed.scheduledFor;
       if (parsed.media && parsed.media.length) {
         const uploads = [];
@@ -1715,13 +1937,36 @@ async function popshareCommand(args = [], deps = {}) {
     }
 
     if (cmd === 'list') {
-      const at = rest.indexOf('--days');
-      const rawDays = at !== -1 ? rest[at + 1] : undefined;
-      const days = rawDays === undefined ? 7 : Number(rawDays);
-      if (!Number.isInteger(days) || days < 1 || days > 365) return fail('--days takes a whole number from 1 to 365');
-      const start = new Date(Date.now() - days * DAY_MS).toISOString();
-      const end = new Date().toISOString();
-      const got = await call(`/popshare/posts?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
+      let days = null;
+      let tieFilter = null;
+      for (let i = 0; i < rest.length; i += 1) {
+        const arg = rest[i];
+        if (arg === '--days') {
+          const rawDays = rest[i + 1];
+          const num = Number(rawDays);
+          if (!Number.isInteger(num) || num < 1 || num > 365) return fail('--days takes a whole number from 1 to 365');
+          days = num;
+          i += 1;
+          continue;
+        }
+        if (arg === '--tie') {
+          const val = rest[i + 1];
+          if (val === undefined || val.startsWith('--') || !String(val).trim()) return fail('--tie needs a value');
+          tieFilter = String(val).trim();
+          i += 1;
+          continue;
+        }
+        return fail(`unknown flag ${arg}`);
+      }
+      const query = [];
+      if (tieFilter) query.push(`tie_id=${encodeURIComponent(tieFilter)}`);
+      if (days !== null || !tieFilter) {
+        const windowDays = days === null ? 7 : days;
+        const start = new Date(Date.now() - windowDays * DAY_MS).toISOString();
+        const end = new Date().toISOString();
+        query.push(`start=${encodeURIComponent(start)}`, `end=${encodeURIComponent(end)}`);
+      }
+      const got = await call(`/popshare/posts?${query.join('&')}`);
       if (got.error) return fail(got.error, { status: got.status });
       const posts = (got.data && got.data.posts) || [];
       printResult({ json, ok: true, text: listText(posts), payload: { ok: true, posts } }, io);
@@ -1763,10 +2008,10 @@ async function popshareCommand(args = [], deps = {}) {
       const editArgs = rest.slice(1).filter((arg) => arg !== '--json');
       for (let i = 0; i < editArgs.length; i += 1) {
         const arg = editArgs[i];
-        if (['--text', '--theme', '--status', '--platform', '--media'].includes(arg)) {
+        if (['--text', '--theme', '--tie', '--status', '--platform', '--media'].includes(arg)) {
           const value = editArgs[i + 1];
           if (value === undefined || value.startsWith('--')) return fail(`${arg} needs a value`);
-          const key = arg.slice(2);
+          const key = arg === '--tie' ? 'tie_id' : arg.slice(2);
           if (key === 'status' && !EDITABLE_STATUSES.has(value)) {
             return fail(`status must be one of ${[...EDITABLE_STATUSES].join(', ')}`);
           }
@@ -1774,8 +2019,16 @@ async function popshareCommand(args = [], deps = {}) {
             return fail(`platform must be one of ${PLATFORMS.join(', ')}`);
           }
           if (key === 'media') mediaFiles.push(value);
-          else fields[key] = value;
+          else if (key === 'tie_id') {
+            const trimmed = String(value).trim();
+            if (!trimmed) return fail('--tie needs a non-empty slug (use --clear-tie to clear)');
+            fields.tie_id = trimmed;
+          } else fields[key] = value;
           i += 1;
+          continue;
+        }
+        if (arg === '--clear-tie') {
+          fields.tie_id = '';
           continue;
         }
         if (arg === '--clear-media') {
@@ -1790,10 +2043,10 @@ async function popshareCommand(args = [], deps = {}) {
           continue;
         }
         if (arg.startsWith('--')) return fail(`unknown flag ${arg}`);
-        return fail(`unexpected "${arg}". flags only after the id: --text, --theme, --note, --status, --platform, --media, --clear-media`);
+        return fail(`unexpected "${arg}". flags only after the id: --text, --theme, --tie, --clear-tie, --note, --status, --platform, --media, --clear-media`);
       }
       if (!Object.keys(fields).length && !addedNotes.length && !mediaFiles.length && !clearMedia) {
-        return fail('say what to change: --text, --theme, --note, --status, --platform, --media or --clear-media');
+        return fail('say what to change: --text, --theme, --tie, --clear-tie, --note, --status, --platform, --media or --clear-media');
       }
       const resolved = await resolveId(idInput);
       if (resolved.error) return failResolution(resolved);
@@ -1887,7 +2140,40 @@ async function popshareCommand(args = [], deps = {}) {
       return 0;
     }
 
-    if (cmd === 'score') {
+    if (cmd === 'scorecard') {
+      let tieFilter = null;
+      for (let i = 0; i < rest.length; i += 1) {
+        const arg = rest[i];
+        if (arg === '--tie') {
+          const value = rest[i + 1];
+          if (value === undefined || value.startsWith('--') || !String(value).trim()) return fail('--tie needs a value');
+          tieFilter = String(value).trim();
+          i += 1;
+          continue;
+        }
+        return fail(`unknown flag ${arg}`);
+      }
+      const got = await call('/popshare/scorecard');
+      if (got.error) return fail(got.error, { status: got.status });
+      const data = got.data || {};
+      const payload = tieFilter
+        ? {
+            ok: true,
+            connected: Boolean(data.connected),
+            connections: data.connections || {},
+            tie_id: tieFilter,
+            tie: (data.by_tie && data.by_tie[tieFilter]) || null,
+            ties: (Array.isArray(data.ties) ? data.ties : []).filter((t) => t && t.tie_id === tieFilter),
+            posts: (Array.isArray(data.posts) ? data.posts : []).filter((p) => p && p.tie_id === tieFilter),
+            totals: data.totals || {},
+            by_tie: data.by_tie || {},
+          }
+        : { ok: true, ...data };
+      printResult({ json, ok: true, text: scorecardText(data, { tie: tieFilter }), payload }, io);
+      return 0;
+    }
+
+    if (cmd === 'score' || cmd === 'scoreboard') {
       const at = rest.indexOf('--weeks');
       const rawWeeks = at !== -1 ? rest[at + 1] : undefined;
       const weeks = rawWeeks === undefined ? 4 : Number(rawWeeks);
@@ -1958,6 +2244,9 @@ module.exports = {
   showText,
   parseGoalsArgs,
   goalsText,
+  parseStrategyArgs,
+  strategyText,
+  scorecardText,
   openInitialState,
   keyName,
   openReduce,

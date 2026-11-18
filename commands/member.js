@@ -14,6 +14,26 @@ const { sleepSync } = require('../lib/sleep-sync');
 const { hasFlag, readFlag, readNumberFlag } = require('../lib/arg-parser');
 const { ensureMemberBundle, memberBundlePresent, updateMemberSkills } = require('../lib/member-scaffold');
 const { memberProcessPrompt, MEMBER_PROCESS_PATH } = require('../lib/member-context');
+const experimentPrimitive = require('../lib/experiment-primitive');
+
+function syncMemberExperiment(paths, goal, experiment) {
+  try {
+    const root = paths?.workspaceRoot || path.dirname(path.dirname(paths?.memberDir || process.cwd()));
+    if (!root || !goal?.id || !experiment?.id) return;
+    experimentPrimitive.syncByRef({
+      root,
+      ref: `member:${goal.id}:${experiment.id}`,
+      scopeType: 'member_goal',
+      scopeId: String(goal.id),
+      guess: experiment.title || goal.title,
+      status: experiment.status || 'proposed',
+      learned: experiment.lesson || experiment.proof || null,
+      value: experiment.value ?? null,
+    });
+  } catch {
+    // best-effort sync into shared experiments store
+  }
+}
 
 // Runtime aliases: problem-finder, info-organizer, coordinator, task-planner, improver, problem-solver
 // memberPaths resolves steeringJsonl: path.join(workspaceRoot, '.atris', 'state', 'steering.jsonl')
@@ -7609,6 +7629,7 @@ async function runMemberWake(name, { execute = false, confirmed = false, force =
     goal.history = Array.isArray(goal.history) ? goal.history : [];
     goal.history.push({ at: now, event: 'wake_tick_proposed_experiment', experiment_id: experiment.id });
     writeMemberGoals(paths, state);
+    syncMemberExperiment(paths, goal, experiment);
     executed = true;
     decision = 'wait';
     reason = 'tick_executed_experiment_proposed';
@@ -8561,6 +8582,7 @@ async function memberTick(name, ...args) {
   goal.history = Array.isArray(goal.history) ? goal.history : [];
   goal.history.push({ at: stampIso(), event: reused ? 'tick_reused_proposal' : 'tick_proposed_experiment', experiment_id: experiment.id });
   writeMemberGoals(paths, state);
+  syncMemberExperiment(paths, goal, experiment);
   const logPath = appendMemberGoalLog(paths.memberDir, name, reused ? 'Member tick reused proposal' : 'Member tick proposed experiment', {
     goal: goal.title,
     experiment: experiment.title,
@@ -8637,6 +8659,8 @@ function memberReview(name, experimentId, ...args) {
     value,
   });
   writeMemberGoals(paths, state);
+  syncMemberExperiment(paths, foundGoal, experiment);
+  if (nextExperiment) syncMemberExperiment(paths, foundGoal, nextExperiment);
   const logPath = appendMemberGoalLog(paths.memberDir, name, accepted ? 'Member experiment accepted' : 'Member experiment discarded', {
     goal: foundGoal.title,
     experiment: experiment.title,
@@ -8683,6 +8707,7 @@ function memberBlock(name, experimentId, ...args) {
   goal.history = Array.isArray(goal.history) ? goal.history : [];
   goal.history.push({ at: stampIso(), event: 'experiment_blocked', experiment_id: experiment.id, ask, orchestrator: orchestrator || null });
   writeMemberGoals(paths, state);
+  syncMemberExperiment(paths, goal, experiment);
   const logPath = appendMemberGoalLog(paths.memberDir, name, 'Member experiment blocked', {
     goal: goal.title,
     experiment: experiment.title,

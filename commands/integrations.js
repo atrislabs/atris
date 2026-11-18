@@ -723,10 +723,10 @@ async function gmailCommandInner(subcommand, ...args) {
 // CALENDAR
 // ============================================================================
 
-async function calendarRange(label, { timeMin, timeMax, days } = {}) {
+async function calendarRange(label, { timeMin, timeMax, days, json = false } = {}) {
   const { token, email } = await getAuth();
 
-  console.log(`📅 ${label}:\n`);
+  if (!json) console.log(`📅 ${label}:\n`);
 
   const params = new URLSearchParams();
   if (timeMin) params.set('time_min', timeMin);
@@ -739,6 +739,11 @@ async function calendarRange(label, { timeMin, timeMax, days } = {}) {
   });
 
   if (!result.ok) {
+    if (json) {
+      console.log(JSON.stringify({ ok: false, error: result.error || 'Failed to fetch events', status: result.status || 0 }));
+      process.exitCode = 1;
+      return;
+    }
     if (result.status === 400 || result.status === 401) {
       console.error(`Calendar not connected for ${email}.`);
       console.error('Connect at: https://atris.ai/dashboard/settings');
@@ -753,6 +758,10 @@ async function calendarRange(label, { timeMin, timeMax, days } = {}) {
   for (const error of result.data?.errors || []) console.error(`calendar ${error.account_id || 'account'}: ${error.message || error.code || 'could not read events'}`);
   const meta = calendarReadMetadata(result.data);
   if (!googleContext.getStore()?.calendarAccount && !googleContext.getStore()?.business) writeCalendarEventsCache(events, { source: 'calendarRange', days: days || null, ...meta });
+  if (json) {
+    console.log(JSON.stringify({ ok: true, events, ...meta }));
+    return;
+  }
   formatCalendarEvents(label.toLowerCase(), events);
 }
 
@@ -812,23 +821,23 @@ async function calendarSearch(args = []) {
   formatCalendarSearchResults(query, matches, { json, total: events.length, source: 'live', liveOk: !meta.partial, error: meta.partial ? 'some calendar accounts could not be read' : '', ...meta });
 }
 
-async function calendarToday() {
+async function calendarToday(json = false) {
   const { start, end } = localDayBounds();
-  await calendarRange("Today's events", { timeMin: start.toISOString(), timeMax: end.toISOString() });
+  await calendarRange("Today's events", { timeMin: start.toISOString(), timeMax: end.toISOString(), json });
 }
 
-async function calendarYesterday() {
+async function calendarYesterday(json = false) {
   const { start, end } = localDayBounds(-1);
-  await calendarRange("Yesterday's events", { timeMin: start.toISOString(), timeMax: end.toISOString() });
+  await calendarRange("Yesterday's events", { timeMin: start.toISOString(), timeMax: end.toISOString(), json });
 }
 
-async function calendarWeek() {
-  await calendarRange("This week's events", { days: 7 });
+async function calendarWeek(json = false) {
+  await calendarRange("This week's events", { days: 7, json });
 }
 
-async function calendarDate(dateText) {
+async function calendarDate(dateText, json = false) {
   const { start, end } = localDateBounds(dateText);
-  await calendarRange(`Events on ${dateText}`, { timeMin: start.toISOString(), timeMax: end.toISOString() });
+  await calendarRange(`Events on ${dateText}`, { timeMin: start.toISOString(), timeMax: end.toISOString(), json });
 }
 
 async function calendarAdd(args) {
@@ -913,17 +922,17 @@ async function calendarCommand(subcommand, ...args) {
 async function calendarCommandInner(subcommand, ...args) {
   switch (subcommand) {
     case 'today':
-      await calendarToday();
+      await calendarToday(args.includes('--json'));
       break;
     case 'yesterday':
     case 'yday':
-      await calendarYesterday();
+      await calendarYesterday(args.includes('--json'));
       break;
     case 'week':
-      await calendarWeek();
+      await calendarWeek(args.includes('--json'));
       break;
     case 'date':
-      await calendarDate(args[0]);
+      await calendarDate(args.find((arg) => !arg.startsWith('--')), args.includes('--json'));
       break;
     case 'search':
       await calendarSearch(args);
@@ -934,10 +943,10 @@ async function calendarCommandInner(subcommand, ...args) {
       break;
     default:
       console.log('Calendar commands:');
-      console.log('  atris calendar today          - Show today\'s events');
-      console.log('  atris calendar yesterday      - Show yesterday\'s events');
-      console.log('  atris calendar week           - Show this week\'s events');
-      console.log('  atris calendar date YYYY-MM-DD - Show events on a date');
+      console.log('  atris calendar today [--json]          - Show today\'s events');
+      console.log('  atris calendar yesterday [--json]      - Show yesterday\'s events');
+      console.log('  atris calendar week [--json]           - Show upcoming events');
+      console.log('  atris calendar date YYYY-MM-DD [--json] - Show events on a date');
       console.log('  atris calendar search <query> [--days 30] [--limit 20] [--timeout-ms 10000] [--json] - Search upcoming events');
       console.log('  atris calendar add "Title" --date YYYY-MM-DD --from HH:MM --to HH:MM - Create an event');
   }

@@ -246,6 +246,65 @@ function printHelp() {
   console.log('       atris goal set "<sentence>" [--no-wish]');
   console.log('       atris goal metric <name> <value>');
   console.log('       atris goal metric <name> --rm');
+  console.log('       atris goal day|week [--date YYYY-MM-DD] [--json]');
+  console.log('       atris goal day|week set "<sentence>" [--date YYYY-MM-DD] [--json]');
+  console.log('       atris goal day|week clear [--date YYYY-MM-DD] [--json]');
+  console.log('  day goals key on the local date; week goals key on that week\'s monday.');
+}
+
+// Pull `--date X` / `--date=X` out of args. Returns { date, rest }.
+function takeDate(args) {
+  const rest = [];
+  let date = null;
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === '--date') {
+      if (i + 1 >= args.length) throw new Error('--date needs a value like 2026-11-16');
+      date = args[i + 1];
+      i += 1;
+    } else if (arg.startsWith('--date=')) {
+      date = arg.slice('--date='.length);
+    } else {
+      rest.push(arg);
+    }
+  }
+  return { date, rest };
+}
+
+function runPeriod(period, args, root, now) {
+  const periodGoals = require('../lib/period-goals');
+  const json = args.includes('--json');
+  const { date, rest } = takeDate(args.filter((arg) => arg !== '--json'));
+  const action = rest[0] || 'show';
+  const { agentMarker } = require('../lib/feed-core')._internal;
+  const marker = agentMarker(process.env);
+  const setBy = marker ? `agent:${marker}` : `user:${process.env.USER || process.env.USERNAME || 'local'}`;
+  let result;
+  if (action === 'show') {
+    if (rest.length > 1) throw new Error(`unexpected words after goal ${period}: ${rest.slice(1).join(' ')}`);
+    result = periodGoals.getPeriodGoal(root, period, { date, now });
+  } else if (action === 'set') {
+    const sentence = rest.slice(1).join(' ');
+    if (!sentence.trim()) {
+      console.error(`error: ${period} goal sentence is required`);
+      return 2;
+    }
+    result = periodGoals.setPeriodGoal(root, period, sentence, { date, now, setBy });
+  } else if (action === 'clear') {
+    result = periodGoals.clearPeriodGoal(root, period, { date, now });
+  } else {
+    console.error(`error: unknown goal ${period} command: ${action}. use set, clear, or no word to read it`);
+    return 2;
+  }
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return 0;
+  }
+  const when = period === 'week' ? `week of ${result.week_of}` : result.date;
+  if (action === 'set') console.log(`${period} goal set for ${when}.`);
+  else if (action === 'clear') console.log(result.cleared ? `${period} goal cleared for ${when}.` : `no ${period} goal was set for ${when}.`);
+  else console.log(result.text ? row(period, `${result.text} (${when})`) : row(period, `none set for ${when}. set it: atris goal ${period} set "<sentence>"`));
+  return 0;
 }
 
 function run(args = [], context = {}) {
@@ -272,6 +331,10 @@ function run(args = [], context = {}) {
       console.log('goal set.');
       if (!noWish) captureGoalWish(sentence, root);
       return 0;
+    }
+
+    if (command === 'day' || command === 'week') {
+      return runPeriod(command, args.slice(1), root, now);
     }
 
     if (command === 'metric') {

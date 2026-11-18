@@ -37,6 +37,9 @@ const {
   showText,
   parseGoalsArgs,
   goalsText,
+  parseStrategyArgs,
+  strategyText,
+  scorecardText,
   openInitialState,
   keyName,
   openReduce,
@@ -1192,4 +1195,180 @@ test('openReduce refuses edits on posted posts and ? toggles help', () => {
   help = openReduce(state, '?', view);
   help = openReduce(help.state, '?', view);
   assert.strictEqual(help.state.view, 'grid');
+});
+
+// ------------------------------------------------------------------ tie_id, strategy, scorecard, scoreboard
+
+test('add --tie sends tie_id and rejects missing or empty --tie', async () => {
+  const parsed = parseAddArgs(['x', 'swarm thread', '--tie', '  can-you-feel-the-swarm  ']);
+  assert.strictEqual(parsed.tieId, 'can-you-feel-the-swarm');
+  assert.ok(parseAddArgs(['x', 'hi', '--tie']).error);
+  assert.ok(parseAddArgs(['x', 'hi', '--tie', '   ']).error);
+
+  const { code, calls } = await run(['add', 'x', 'swarm thread', '--tie', 'can-you-feel-the-swarm'], {
+    result: {
+      ok: true,
+      status: 200,
+      data: { id: 'p1234567', platform: 'x', status: 'draft', text: 'swarm thread', tie_id: 'can-you-feel-the-swarm' },
+    },
+  });
+  assert.strictEqual(code, 0);
+  assert.strictEqual(calls[0].options.body.tie_id, 'can-you-feel-the-swarm');
+});
+
+test('edit --tie and --clear-tie patch tie_id cleanly', async () => {
+  const existing = { id: 'aaaa1111bbbb', platform: 'linkedin', status: 'draft', text: 'li post' };
+  const setRes = await run(['edit', 'aaaa11', '--tie', 'can-you-feel-the-swarm'], {
+    routes: [
+      ['/popshare/posts?', { ok: true, status: 200, data: { posts: [existing] } }],
+      ['/popshare/posts/aaaa1111bbbb', { ok: true, status: 200, data: { ...existing, tie_id: 'can-you-feel-the-swarm' } }],
+    ],
+  });
+  assert.strictEqual(setRes.code, 0);
+  assert.strictEqual(setRes.calls[1].options.body.tie_id, 'can-you-feel-the-swarm');
+
+  const clearRes = await run(['edit', 'aaaa11', '--clear-tie'], {
+    routes: [
+      ['/popshare/posts?', { ok: true, status: 200, data: { posts: [existing] } }],
+      ['/popshare/posts/aaaa1111bbbb', { ok: true, status: 200, data: { ...existing, tie_id: null } }],
+    ],
+  });
+  assert.strictEqual(clearRes.code, 0);
+  assert.strictEqual(clearRes.calls[1].options.body.tie_id, '');
+});
+
+test('list --tie passes tie_id query param and showText prints tie', async () => {
+  const tied = { id: 'aaaa1111bbbb', platform: 'x', status: 'draft', text: 'swarm post', tie_id: 'can-you-feel-the-swarm' };
+  assert.match(showText(tied), /tie: can-you-feel-the-swarm/);
+
+  const { code, out, calls } = await run(['list', '--tie', 'can-you-feel-the-swarm', '--json'], {
+    result: { ok: true, status: 200, data: { posts: [tied] } },
+  });
+  assert.strictEqual(code, 0);
+  assert.strictEqual(calls[0].path, '/popshare/posts?tie_id=can-you-feel-the-swarm');
+  const payload = JSON.parse(out);
+  assert.strictEqual(payload.ok, true);
+  assert.strictEqual(payload.posts[0].tie_id, 'can-you-feel-the-swarm');
+});
+
+test('interview --new --tie forwards tie_id', async () => {
+  const parsed = parseInterviewArgs(['--new', 'linkedin', 'swarm lessons', '--tie', 'can-you-feel-the-swarm']);
+  assert.strictEqual(parsed.tieId, 'can-you-feel-the-swarm');
+
+  const { code, calls } = await run(['interview', '--new', 'linkedin', 'swarm lessons', '--tie', 'can-you-feel-the-swarm'], {
+    routes: [
+      ['/popshare/interview', {
+        ok: true,
+        status: 200,
+        data: {
+          post: { id: 'int123', platform: 'linkedin', tie_id: 'can-you-feel-the-swarm' },
+          session: { status: 'done', topic: 'swarm lessons', outline: ['beat 1'] },
+        },
+      }],
+    ],
+  });
+  assert.strictEqual(code, 0);
+  assert.strictEqual(calls[0].options.body.tie_id, 'can-you-feel-the-swarm');
+});
+
+test('strategy prints and updates fields without dropping existing values', async () => {
+  const saved = {
+    north_star: 'earn inbound trust',
+    audience: 'builders',
+    cadence: 'daily x, 3x linkedin',
+    narrative_arcs: ['Founder lessons', 'Swarm builds'],
+    cadence_goals: { x: 14, linkedin: 7, blog: 1, instagram: 0, tiktok: 0 },
+  };
+  assert.match(strategyText(saved), /north star: earn inbound trust/);
+  assert.match(strategyText(saved), /- Founder lessons/);
+  assert.ok(parseStrategyArgs(['--arc', 'a', '--clear-arcs']).error);
+
+  const view = await run(['strategy', '--json'], {
+    result: { ok: true, status: 200, data: saved },
+  });
+  assert.strictEqual(view.code, 0);
+  assert.strictEqual(JSON.parse(view.out).strategy.north_star, 'earn inbound trust');
+
+  let putBody = null;
+  const update = await run(['strategy', '--north-star', '100x compounding', '--arc', 'Ship logs', 'x=10'], {
+    routes: [['/popshare/strategy', (_p, options) => {
+      if (options && options.method === 'PUT') {
+        putBody = options.body;
+        return { ok: true, status: 200, data: options.body };
+      }
+      return { ok: true, status: 200, data: saved };
+    }]],
+  });
+  assert.strictEqual(update.code, 0);
+  assert.strictEqual(putBody.north_star, '100x compounding');
+  assert.strictEqual(putBody.audience, 'builders');
+  assert.strictEqual(putBody.cadence, 'daily x, 3x linkedin');
+  assert.deepStrictEqual(putBody.narrative_arcs, ['Ship logs']);
+  assert.strictEqual(putBody.cadence_goals.x, 10);
+  assert.strictEqual(putBody.cadence_goals.linkedin, 7);
+});
+
+test('scorecard renders connections, totals, ties, and supports --tie and --json', async () => {
+  const sample = {
+    connected: true,
+    connections: { x: 'ok', linkedin: 'ok' },
+    totals: {
+      posts: 2,
+      arc_match_rate: 1,
+      metrics: { like_count: 25, comment_count: 4 },
+      by_platform: {
+        x: { posts: 1, metrics: { like_count: 10 } },
+        linkedin: { posts: 1, metrics: { like_count: 15, comment_count: 4 } },
+      },
+    },
+    ties: [
+      {
+        tie_id: 'can-you-feel-the-swarm',
+        posts: 2,
+        platforms: ['linkedin', 'x'],
+        metrics: { like_count: 25, comment_count: 4 },
+      },
+    ],
+    by_tie: {
+      'can-you-feel-the-swarm': {
+        tie_id: 'can-you-feel-the-swarm',
+        posts: 2,
+        platforms: ['linkedin', 'x'],
+        metrics: { like_count: 25, comment_count: 4 },
+      },
+    },
+    posts: [
+      { id: 'p1', platform: 'x', tie_id: 'can-you-feel-the-swarm', text_snippet: 'swarm tweet', arc_matched: 'Swarm builds', metrics: { like_count: 10 } },
+      { id: 'p2', platform: 'linkedin', tie_id: 'other-tie', text_snippet: 'other post', metrics: { like_count: 15 } },
+    ],
+  };
+
+  const rendered = scorecardText(sample);
+  assert.match(rendered, /connections: X: ok, LinkedIn: ok/);
+  assert.match(rendered, /scorecard: 2 posts, 100% on arc/);
+  assert.match(rendered, /can-you-feel-the-swarm \(linkedin, x\)/);
+  assert.match(rendered, /X \[can-you-feel-the-swarm\] \(Swarm builds\): swarm tweet/);
+
+  const res = await run(['scorecard', '--tie', 'can-you-feel-the-swarm', '--json'], {
+    result: { ok: true, status: 200, data: sample },
+  });
+  assert.strictEqual(res.code, 0);
+  assert.strictEqual(res.calls[0].path, '/popshare/scorecard');
+  const jsonOut = JSON.parse(res.out);
+  assert.strictEqual(jsonOut.tie_id, 'can-you-feel-the-swarm');
+  assert.strictEqual(jsonOut.ties.length, 1);
+  assert.strictEqual(jsonOut.posts.length, 1);
+  assert.strictEqual(jsonOut.posts[0].id, 'p1');
+});
+
+test('scoreboard aliases score against /popshare/scoreboard', async () => {
+  const units = [{ id: 'x', label: 'X', period: '28d', value: 4, target: 14 }];
+  const { code, out, calls } = await run(['scoreboard', '--weeks', '2', '--json'], {
+    result: { ok: true, status: 200, data: { units } },
+  });
+  assert.strictEqual(code, 0);
+  assert.strictEqual(calls[0].path, '/popshare/scoreboard?days=14&tz=UTC');
+  const payload = JSON.parse(out);
+  assert.strictEqual(payload.ok, true);
+  assert.strictEqual(payload.units[0].value, 4);
 });

@@ -3436,6 +3436,10 @@ if (command === 'guide') {
   const subcommand = process.argv[3] || 'build';
   const args = process.argv.slice(4);
   require('../commands/plugin').pluginCommand(subcommand, ...args);
+} else if (command === 'experiment') {
+  const subcommand = process.argv[3];
+  const args = process.argv.slice(4);
+  require('../commands/experiment').experimentCommand(subcommand, ...args);
 } else if (command === 'experiments') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
