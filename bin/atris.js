@@ -476,6 +476,10 @@ function printAtrisGoalBanner(workspaceDir = process.cwd(), label = 'Atris goal'
   return goal;
 }
 
+function showSearchHelp() {
+  require('../commands/search').showSearchHelp();
+}
+
 function consoleCmd() {
   const extractedCommand = path.join(__dirname, '..', 'commands', 'console.js');
   if (fs.existsSync(extractedCommand)) {
