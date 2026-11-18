@@ -1377,8 +1377,8 @@ test('over http: an answer and a say name the card on screen; a page that missed
   }
 });
 
-test('browser: the team table at phone and laptop size: five divided columns, nothing squashed, sideways scroll only on the phone, and a tap and Esc still work', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
-  for (const viewport of [trace.PHONE, trace.SMALL_PHONE, trace.LAPTOP]) {
+test('browser: the team table at phone and laptop size: five divided columns, nothing squashed, sideways scroll only on the phone, and a tap and Esc still work', { skip: !CHROME && 'no chrome on this machine', timeout: 120000, concurrency: 2 }, async t => {
+  await Promise.all([trace.PHONE, trace.SMALL_PHONE, trace.LAPTOP].map(viewport => t.test(`${viewport.width}x${viewport.height}`, async () => {
     const out = await trace.teamTableTrace({ chromePath: CHROME, viewport });
     const at = out.viewport;
     const look = out.look;
@@ -1426,7 +1426,7 @@ test('browser: the team table at phone and laptop size: five divided columns, no
     // the footer's team link from a talk card goes to the same place the same way
     assert.equal(out.footerTeam.kind, 'team', at);
     assert.equal(out.footerTeam.moved.plan === 'turn 420', turn, `${at}: ${out.footerTeam.moved.plan}`);
-  }
+  })));
 });
 
 test('browser: a long member name never takes over a phone: the held column stops short and the name breaks only at its hyphens', { skip: !CHROME && 'no chrome on this machine', timeout: 120000 }, async () => {
