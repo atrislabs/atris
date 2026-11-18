@@ -662,3 +662,10 @@ test('a malformed or ambiguous invitation never leaves the terminal', async () =
     assert.equal(w.httpCalls.length, 0);
   }
 });
+
+test('an inaccessible Nexus card is a CLI error even when Nexus replies in plain text', async () => {
+  const w = world({ doorAnswers: { nexus_person: rpcText('Not found. Get ids from nexus_search or nexus_today.') } });
+  const result = await run(w, ['card', 'missing', '--json']);
+  assert.equal(result.code, 1);
+  assert.equal(JSON.parse(result.text).ok, false);
+});

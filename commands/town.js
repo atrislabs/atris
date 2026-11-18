@@ -353,7 +353,13 @@ async function connectionCommand(ctx, sub, args) {
   if (opened.error) return fail(ctx, opened.error, { needs: 'developer_key' });
   const result = await door.callTool(tool, body, opened.options);
   if (!result.ok) return fail(ctx, door.doorMessage(result), { status: result.status || null });
-  if (sub === 'card') return say(ctx, [result.text], { ok: true, card: result.text });
+  if (sub === 'card') {
+    // Nexus replies in plain text, including when a card is private or unavailable.
+    if (!result.text || /^(Not found\. Get ids|Nexus (comes with|is (paused|personal|not reachable)))/.test(result.text) && !result.text.includes('\n')) {
+      return fail(ctx, result.text || 'The town returned an empty Nexus card.');
+    }
+    return say(ctx, [result.text], { ok: true, card: result.text });
+  }
   const data = result.data;
   if (!data || typeof data !== 'object') return fail(ctx, 'The town returned an unreadable connection.');
   let lines;
