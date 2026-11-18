@@ -16,6 +16,8 @@ The slow-answer and lost-answer retry checks in `test/gm-phone-hands.test.js` an
 
 The sleep and lost-look checks in `test/gm-phone-health.test.js` also overlap up to two independent Chrome sessions. The page keeps the same polling and response deadlines.
 
+The connection and navigation checks in `test/gm-phone-hands.test.js` overlap up to two independent sessions. The checks keep the real reconnect, polling and response timers.
+
 The calm-line checks in `test/gm-phone.test.js` overlap motion and reduced motion when closing the team, and sending and clearing a note while an idea waits. Each case keeps its own browser and desk.
 
 The detached mission check in `test/mission-status.test.js` uses a one-second cadence. The real child still runs past its first cycle and exits when its saved budget runs out.

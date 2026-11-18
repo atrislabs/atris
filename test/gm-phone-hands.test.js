@@ -212,121 +212,123 @@ test('browser: a Mac that errs or is starting again never reads as a dead link, 
   assert.deepEqual([out.after.has_card, out.after.title], [true, CARDS.b1.title], show);
 });
 
-test('browser: when the Mac stops answering, a quiet line in the card says so within about ten seconds, the page asks less often, and the line goes once the Mac answers', { skip, timeout: 90000 }, async () => {
-  const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
-  const net = (send, offline) => send('Network.emulateNetworkConditions', { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
-  const QUIET = 'the mac is not answering. still trying.';
-  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
-    // every look the page makes, on its own clock
-    await p.run("(function () { var real = window.fetch; window.__looks = []; window.fetch = function (url, opts) { if (String(url).indexOf('/card') >= 0) window.__looks.push(Date.now()); return real(url, opts); }; })()");
-    await send('Network.enable');
-    await net(send, true);
-    const t0 = Date.now();
-    await p.until(`document.querySelector('#bet .act .note').textContent === ${JSON.stringify(QUIET)}`, 'the quiet line', 13000).catch(() => {});
-    const down = { after_ms: Date.now() - t0, ...(await look(p)) };
-    // sixteen seconds more without the Mac: at every five seconds that would be three looks
-    const t1 = Date.now();
-    await wait(16000);
-    const downLooks = (await p.run('window.__looks')).filter(t => t > t1).length;
-    await net(send, false);
-    const t2 = Date.now();
-    await p.until("document.querySelector('#bet .act .note').textContent === ''", 'the line gone', 17000).catch(() => {});
-    return { down, downLooks, cleared_ms: Date.now() - t2, up: await look(p) };
-  });
-  const show = JSON.stringify(out, null, 1);
-  assert.equal(out.down.note, QUIET, show);
-  assert.ok(out.down.after_ms <= 12000, show);
-  // the card is still the one on screen, and still takes taps
-  assert.deepEqual([out.down.title, out.down.busy], [CARDS.b1.title, false], show);
-  // while down it asks every fifteen seconds, not every five
-  assert.ok(out.downLooks >= 1 && out.downLooks <= 2, show);
-  // back online, it looks at once and the line goes
-  assert.equal(out.up.note, '', show);
-  assert.ok(out.cleared_ms < 2000, show);
-});
-
-// the phone's own back button: one step back in the browser's history
-async function backButton(send) {
-  const h = await send('Page.getNavigationHistory');
-  if (h.currentIndex < 1) return false;
-  await send('Page.navigateToHistoryEntry', { entryId: h.entries[h.currentIndex - 1].id });
-  return true;
-}
-
-test('browser: the back button steps back a card, then to the big orb, and only then leaves the page', { skip, timeout: 90000 }, async () => {
-  const team = gmCard.team({ id: 'team~1', rows: [{ member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: the getting started page' }], line: null, deck: false });
-  const did = [];
-  const desk = trace.cardDesk(CARDS.b1, async (action) => { did.push(action); return { card: action === 'open:team' ? team : CARDS.b1 }; });
-  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
-    await p.tap('#working');
-    await p.until(titled('the team'), 'the team', 8000);
-    await wait(300);
-    await backButton(send);
-    await p.until(titled(CARDS.b1.title), 'the first card', 8000).catch(() => {});
-    await wait(300);
-    const one = await look(p);
-    await backButton(send);
-    await p.until("!document.body.hasAttribute('data-busy') && !document.body.classList.contains('has-card')", 'the big orb', 8000).catch(() => {});
-    await wait(300);
-    const two = await look(p);
-    const url = await p.run('location.pathname');
-    await backButton(send);
-    await wait(800);
-    const three = await p.run('location.href').catch(() => 'gone');
-    return { one, two, url, three, did };
-  });
-  const show = JSON.stringify(out, null, 1);
-  assert.deepEqual([out.one.has_card, out.one.title], [true, CARDS.b1.title], show);
-  assert.deepEqual([out.two.has_card, out.two.busy], [false, false], show);
-  assert.equal(out.url, '/', show);
-  assert.deepEqual(out.did, ['open:team', 'back'], show);
-  // from the big orb the back button leaves, as it always did
-  assert.doesNotMatch(out.three, /127\.0\.0\.1/, show);
-});
-
-test('browser: back from the lock screen, the page looks at once and shows the card the Mac has now', { skip, timeout: 90000 }, async () => {
-  const runs = [];
-  for (const how of ['visibilitychange', 'online']) {
+test.describe('phone connectivity and navigation', { concurrency: 2 }, () => {
+  test('browser: when the Mac stops answering, a quiet line in the card says so within about ten seconds, the page asks less often, and the line goes once the Mac answers', { skip, timeout: 90000 }, async () => {
     const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
-    const read = desk.card;
-    const reads = [];
-    desk.card = () => { reads.push(Date.now()); return read(); };
-    runs.push(await trace.onPhone(desk, CHROME, async (p) => {
-      await wait(800);
-      desk.current = CARDS.b2;
+    const net = (send, offline) => send('Network.emulateNetworkConditions', { offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1 });
+    const QUIET = 'the mac is not answering. still trying.';
+    const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+      // every look the page makes, on its own clock
+      await p.run("(function () { var real = window.fetch; window.__looks = []; window.fetch = function (url, opts) { if (String(url).indexOf('/card') >= 0) window.__looks.push(Date.now()); return real(url, opts); }; })()");
+      await send('Network.enable');
+      await net(send, true);
       const t0 = Date.now();
-      await p.run(how === 'online' ? "window.dispatchEvent(new Event('online'))" : "document.dispatchEvent(new Event('visibilitychange'))");
-      await p.until(titled(CARDS.b2.title), 'the Mac card', 3000).catch(() => {});
-      return { how, looked_ms: reads.filter(t => t >= t0).map(t => t - t0)[0], shown_ms: Date.now() - t0, title: (await look(p)).title };
-    }));
-  }
-  const show = JSON.stringify(runs, null, 1);
-  for (const r of runs) {
-    // the look comes at once, not on the next one five seconds on
-    assert.ok(r.looked_ms != null && r.looked_ms < 400, show);
-    assert.equal(r.title, CARDS.b2.title, show);
-  }
-});
-
-test('browser: a card the Mac changed never swaps in under a held finger; the press lands on the card it began on', { skip, timeout: 90000 }, async () => {
-  const did = [];
-  const desk = trace.cardDesk(CARDS.b1, async (action) => { did.push(action); return { card: CARDS.b2 }; });
-  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
-    const at = await middle(p, "#bet [data-option='skip']");
-    await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
-    desk.current = CARDS.b2;
-    // a look comes every five seconds; one passes while the finger is down
-    await wait(6200);
-    const held = await look(p);
-    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
-    await p.until(titled(CARDS.b2.title), 'the Mac card', 8000).catch(() => {});
-    return { held, after: await look(p), did };
+      await p.until(`document.querySelector('#bet .act .note').textContent === ${JSON.stringify(QUIET)}`, 'the quiet line', 13000).catch(() => {});
+      const down = { after_ms: Date.now() - t0, ...(await look(p)) };
+      // sixteen seconds more without the Mac: at every five seconds that would be three looks
+      const t1 = Date.now();
+      await wait(16000);
+      const downLooks = (await p.run('window.__looks')).filter(t => t > t1).length;
+      await net(send, false);
+      const t2 = Date.now();
+      await p.until("document.querySelector('#bet .act .note').textContent === ''", 'the line gone', 17000).catch(() => {});
+      return { down, downLooks, cleared_ms: Date.now() - t2, up: await look(p) };
+    });
+    const show = JSON.stringify(out, null, 1);
+    assert.equal(out.down.note, QUIET, show);
+    assert.ok(out.down.after_ms <= 12000, show);
+    // the card is still the one on screen, and still takes taps
+    assert.deepEqual([out.down.title, out.down.busy], [CARDS.b1.title, false], show);
+    // while down it asks every fifteen seconds, not every five
+    assert.ok(out.downLooks >= 1 && out.downLooks <= 2, show);
+    // back online, it looks at once and the line goes
+    assert.equal(out.up.note, '', show);
+    assert.ok(out.cleared_ms < 2000, show);
   });
-  const show = JSON.stringify(out, null, 1);
-  assert.equal(out.held.title, CARDS.b1.title, show);
-  // the release is on the old card, so the Mac refuses it and shows its own
-  assert.equal(out.after.title, CARDS.b2.title, show);
-  assert.deepEqual(out.did, [], show);
+
+  // the phone's own back button: one step back in the browser's history
+  async function backButton(send) {
+    const h = await send('Page.getNavigationHistory');
+    if (h.currentIndex < 1) return false;
+    await send('Page.navigateToHistoryEntry', { entryId: h.entries[h.currentIndex - 1].id });
+    return true;
+  }
+
+  test('browser: the back button steps back a card, then to the big orb, and only then leaves the page', { skip, timeout: 90000 }, async () => {
+    const team = gmCard.team({ id: 'team~1', rows: [{ member: 'builder', role: 'builder', ovr: '91', engine: 'tool one m-one', status: 'working', sentence: 'working: the getting started page' }], line: null, deck: false });
+    const did = [];
+    const desk = trace.cardDesk(CARDS.b1, async (action) => { did.push(action); return { card: action === 'open:team' ? team : CARDS.b1 }; });
+    const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+      await p.tap('#working');
+      await p.until(titled('the team'), 'the team', 8000);
+      await wait(300);
+      await backButton(send);
+      await p.until(titled(CARDS.b1.title), 'the first card', 8000).catch(() => {});
+      await wait(300);
+      const one = await look(p);
+      await backButton(send);
+      await p.until("!document.body.hasAttribute('data-busy') && !document.body.classList.contains('has-card')", 'the big orb', 8000).catch(() => {});
+      await wait(300);
+      const two = await look(p);
+      const url = await p.run('location.pathname');
+      await backButton(send);
+      await wait(800);
+      const three = await p.run('location.href').catch(() => 'gone');
+      return { one, two, url, three, did };
+    });
+    const show = JSON.stringify(out, null, 1);
+    assert.deepEqual([out.one.has_card, out.one.title], [true, CARDS.b1.title], show);
+    assert.deepEqual([out.two.has_card, out.two.busy], [false, false], show);
+    assert.equal(out.url, '/', show);
+    assert.deepEqual(out.did, ['open:team', 'back'], show);
+    // from the big orb the back button leaves, as it always did
+    assert.doesNotMatch(out.three, /127\.0\.0\.1/, show);
+  });
+
+  test('browser: back from the lock screen, the page looks at once and shows the card the Mac has now', { skip, timeout: 90000 }, async () => {
+    const runs = [];
+    for (const how of ['visibilitychange', 'online']) {
+      const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
+      const read = desk.card;
+      const reads = [];
+      desk.card = () => { reads.push(Date.now()); return read(); };
+      runs.push(await trace.onPhone(desk, CHROME, async (p) => {
+        await wait(800);
+        desk.current = CARDS.b2;
+        const t0 = Date.now();
+        await p.run(how === 'online' ? "window.dispatchEvent(new Event('online'))" : "document.dispatchEvent(new Event('visibilitychange'))");
+        await p.until(titled(CARDS.b2.title), 'the Mac card', 3000).catch(() => {});
+        return { how, looked_ms: reads.filter(t => t >= t0).map(t => t - t0)[0], shown_ms: Date.now() - t0, title: (await look(p)).title };
+      }));
+    }
+    const show = JSON.stringify(runs, null, 1);
+    for (const r of runs) {
+      // the look comes at once, not on the next one five seconds on
+      assert.ok(r.looked_ms != null && r.looked_ms < 400, show);
+      assert.equal(r.title, CARDS.b2.title, show);
+    }
+  });
+
+  test('browser: a card the Mac changed never swaps in under a held finger; the press lands on the card it began on', { skip, timeout: 90000 }, async () => {
+    const did = [];
+    const desk = trace.cardDesk(CARDS.b1, async (action) => { did.push(action); return { card: CARDS.b2 }; });
+    const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+      const at = await middle(p, "#bet [data-option='skip']");
+      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+      desk.current = CARDS.b2;
+      // a look comes every five seconds; one passes while the finger is down
+      await wait(6200);
+      const held = await look(p);
+      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: at.x, y: at.y, button: 'left', clickCount: 1 });
+      await p.until(titled(CARDS.b2.title), 'the Mac card', 8000).catch(() => {});
+      return { held, after: await look(p), did };
+    });
+    const show = JSON.stringify(out, null, 1);
+    assert.equal(out.held.title, CARDS.b1.title, show);
+    // the release is on the old card, so the Mac refuses it and shows its own
+    assert.equal(out.after.title, CARDS.b2.title, show);
+    assert.deepEqual(out.did, [], show);
+  });
 });
 
 test('browser: on the job deck a finger dragging the wide table sideways scrolls it and never flips; a swipe on the card still flips', { skip, timeout: 90000 }, async () => {
