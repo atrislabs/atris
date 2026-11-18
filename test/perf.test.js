@@ -59,6 +59,10 @@ test('real requests measure phases, failures, slow reads and append report histo
   assert.equal(failure.error, 'http 503');
   const timeout = await measure({ name: 'timeout', url: url + '/timeout' }, 30);
   assert.equal(timeout.error, 'timeout');
+  assert.ok(timeout.connect > 0);
+  assert.ok(timeout.wait > 0);
+  assert.equal(timeout.ttfb, timeout.total);
+  assert.ok(Math.abs(timeout.dns + timeout.connect + timeout.tls + timeout.wait + timeout.download - timeout.total) < 1);
   assert.ok(summarize(target, [failure, timeout]).findings.some(f => f.code === 'request failures'));
   process.env.ATRIS_PERF_TEST_KEY = 'local-only';
   t.after(() => delete process.env.ATRIS_PERF_TEST_KEY);
