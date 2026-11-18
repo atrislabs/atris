@@ -282,3 +282,70 @@ test('independent view: the member reads the owner\'s words, not teammates\' ans
   await team.askMember(ctx.root, { member: 'closer', cardId: card.id, env: ctx.env, deps: ctx.deps });
   assert.match(ctx.turns[ctx.turns.length - 1].prompt, /writer: Write a thank you note/, 'a normal ask still reads the thread');
 });
+
+test('explicit work keeps the tagged owner and post context even when suggestions match', (t) => {
+  const ctx = project(t, ['writer', 'closer']);
+  const first = post(ctx, 'Help the candle shop');
+  const second = post(ctx, 'Help the flower shop');
+  const a = memberSays(ctx, first.id, 'writer', 'Write a thank you note for the newest buyers.');
+  const b = memberSays(ctx, second.id, 'closer', 'Write a thank you note for the newest buyers.');
+  const one = work.startWork(ctx.root, first.id, { replyId: a.id, env: ctx.env, deps: ctx.deps });
+  const two = work.startWork(ctx.root, second.id, { replyId: b.id, env: ctx.env, deps: ctx.deps });
+  assert.notEqual(two.work.card_id, one.work.card_id);
+  assert.equal(two.work.member, 'closer');
+  assert.equal(ideaRows(ctx).length, 2);
+});
+
+test('a lost link recovers the exact completed task without creating or running another', (t) => {
+  const ctx = project(t, ['writer']);
+  const card = post(ctx);
+  const said = memberSays(ctx, card.id, 'writer', 'Write a thank you note for the newest buyers.');
+  const first = work.startWork(ctx.root, card.id, { replyId: said.id, env: ctx.env, deps: ctx.deps });
+  const id = first.work.card_id.split(':')[1];
+  ctx.db.prepare("UPDATE tasks SET status = 'done', done_at = ?, updated_at = ? WHERE id = ?").run(Date.now(), Date.now(), id);
+  fs.writeFileSync(work.workFile(ctx.root), '{}');
+  const recovered = work.startWork(ctx.root, card.id, { replyId: said.id, env: ctx.env, deps: ctx.deps });
+  assert.equal(recovered.work.card_id, first.work.card_id);
+  assert.equal(recovered.work.status, 'done');
+  assert.equal(ideaRows(ctx).length, 1);
+  assert.equal(ctx.spawned.length, 1);
+});
+
+test('an interrupted receipt save cannot hide a running or completed linked task', (t) => {
+  const ctx = project(t, ['writer']);
+  const card = post(ctx);
+  const said = memberSays(ctx, card.id, 'writer', 'Write a thank you note for the newest buyers.');
+  const first = work.startWork(ctx.root, card.id, { replyId: said.id, env: ctx.env, deps: ctx.deps });
+  const file = work.workFile(ctx.root);
+  const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  data[card.id][0].state = 'starting';
+  data[card.id][0].updated_at = new Date(0).toISOString();
+  fs.writeFileSync(file, JSON.stringify(data));
+  assert.equal(postCard(ctx, card.id).work[0].status, 'working');
+  const id = first.work.card_id.split(':')[1];
+  ctx.db.prepare("UPDATE tasks SET status = 'done', done_at = ?, updated_at = ? WHERE id = ?").run(Date.now(), Date.now(), id);
+  data[card.id][0].state = 'failed';
+  fs.writeFileSync(file, JSON.stringify(data));
+  const shown = postCard(ctx, card.id).work[0];
+  assert.equal(shown.status, 'done');
+  assert.match(shown.result_card_id, /:result$/);
+  assert.equal(shown.can_retry, false);
+});
+
+test('an interrupted protected-work receipt keeps the approval reason through retry', (t) => {
+  const ctx = project(t, ['closer']);
+  const card = post(ctx);
+  const said = memberSays(ctx, card.id, 'closer', 'Offer a refund to the three buyers who wrote in.');
+  work.startWork(ctx.root, card.id, { replyId: said.id, env: ctx.env, deps: ctx.deps });
+  const file = work.workFile(ctx.root);
+  const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  data[card.id][0].state = 'starting';
+  data[card.id][0].outcome = null;
+  data[card.id][0].updated_at = new Date(0).toISOString();
+  fs.writeFileSync(file, JSON.stringify(data));
+  assert.equal(postCard(ctx, card.id).work[0].status, 'needs_you');
+  const again = work.startWork(ctx.root, card.id, { replyId: said.id, retry: true, env: ctx.env, deps: ctx.deps });
+  assert.equal(again.work.status, 'needs_you');
+  assert.match(again.work.message, /money/);
+  assert.equal(ctx.spawned.length, 0);
+});
