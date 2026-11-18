@@ -302,3 +302,128 @@ test('cli: atris feed setup --json runs from a project folder and a rerun is qui
   assert.equal(again.status, 0, again.stderr);
   assert.deepEqual(JSON.parse(again.stdout).cards, []);
 });
+
+test('setup: the owner\'s own answer is saved to the lessons even with words a card may not use', async (t) => {
+  const ctx = project(t, ['scout']);
+  const { out } = await runSetup(ctx.root, ctx, ctx.deps);
+  const answer = 'The repo is our shop site, the code in src/app\u0007 runs the checkout';
+  const answered = room.reply(ctx.root, out.asks.waiting.card_id, answer, { env: ctx.env, deps: ctx.deps });
+  assert.equal(answered.setup.lesson_error, undefined, answered.setup.lesson_error);
+  assert.match(answered.setup.lesson.text, /in the owner's words: The repo is our shop site, the code in src\/app runs the checkout$/);
+  assert.match(lessons(ctx.root), /The repo is our shop site, the code in src\/app runs the checkout/);
+  assert.equal(answered.setup.next.key, 'audience');
+});
+
+test('setup: an answer that holds a key is refused for the lessons and said so', async (t) => {
+  const ctx = project(t, ['scout']);
+  const { out } = await runSetup(ctx.root, ctx, ctx.deps);
+  const answered = room.reply(ctx.root, out.asks.waiting.card_id, 'use sk-ant-abcdefghijklmnopqrstuvwxyz0123', { env: ctx.env, deps: ctx.deps });
+  assert.equal(answered.setup.lesson, null);
+  assert.match(answered.setup.lesson_error, /password or key/);
+  assert.doesNotMatch(lessons(ctx.root), /sk-ant-/);
+});
+
+test('setup and the desktop\'s own start at the same moment on one new folder: one team, one card each', async (t) => {
+  const ctx = project(t, []);
+  const folder = path.join(ctx.dir, 'race');
+  fs.mkdirSync(folder);
+  writeShop(folder);
+  const log = path.join(ctx.dir, 'race.log');
+  fs.writeFileSync(log, '');
+  const { spawn } = require('node:child_process');
+  const child = path.join(__dirname, 'helpers', 'feed-setup-race-child.js');
+  const env = { ...ctx.env, HOME: ctx.dir, ATRIS_FEED_BOARD: '0' };
+  const side = (mode) => new Promise((resolve) => {
+    const p = spawn(process.execPath, [child, mode, folder, log], { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    p.stdout.on('data', (d) => { stdout += d; });
+    p.stderr.on('data', (d) => { stderr += d; });
+    p.on('close', (code) => resolve({ code, stdout, stderr }));
+  });
+  const [a, b] = await Promise.all([side('setup'), side('start')]);
+  assert.equal(a.code, 0, a.stderr);
+  assert.equal(b.code, 0, b.stderr);
+  const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map((l) => l.split(' ').slice(1).join(' '));
+  assert.equal(calls.filter((c) => c === 'init --yes --no-commit').length, 1, calls.join('; '));
+  assert.equal(calls.filter((c) => c === 'git init').length, 1, calls.join('; '));
+  assert.equal(calls.filter((c) => c === 'member create scout').length, 1, calls.join('; '));
+  assert.equal(calls.filter((c) => c === 'member create builder').length, 1, calls.join('; '));
+  const titles = cardsOf(folder, ctx.env).map((c) => c.title);
+  assert.equal(new Set(titles).size, titles.length, `no card twice: ${titles.join(' | ')}`);
+});
+
+function writeFiles(dir, files) {
+  for (const [rel, text] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
+    fs.writeFileSync(path.join(dir, rel), text);
+  }
+}
+
+test('setup: a card names a framework only when the project depends on it, and counts only real test files', async (t) => {
+  const ctx = project(t, ['scout']);
+  writeFiles(ctx.root, {
+    'pyproject.toml': '[project]\nname = "x"\ndescription = "A small tool, unlike Django"\ndependencies = ["requests"]\n',
+    'app/main.py': 'import requests\n',
+    'test/test_main.py': 'def test_x():\n  pass\n',
+    'test/fixtures/one.json': '{}',
+    'test/fixtures/two.json': '{}',
+    'test/data.csv': 'a,b\n',
+    'node_modules/z/index.js': 'x',
+    '.venv/lib/x.py': 'x',
+    'build/out.js': 'x',
+    'vendor/lib.py': 'x',
+  });
+  const { events } = await runSetup(ctx.root, ctx, ctx.deps);
+  const found = events.filter((e) => e.kind === 'finding').map((e) => e.text);
+  assert.ok(found.every((text) => !/Django/.test(text)), found.join(' | '));
+  assert.ok(found.some((text) => /^I found 1 test file\b/.test(text)), found.join(' | '));
+  assert.ok(found.some((text) => /I counted 6 files/.test(text)), found.join(' | '));
+  // A real dependency line is named.
+  const real = project(t, ['scout']);
+  writeFiles(real.root, { 'requirements.txt': 'Django==4.2\nrequests\n', 'app/views.py': 'x = 1\n' });
+  const named = await runSetup(real.root, real, real.deps);
+  assert.match(named.events.find((e) => e.kind === 'finding').text, /^This looks like a Python project built with Django\./);
+});
+
+test('setup: a readme that opens with a picture and badges, a key in it or in .env, a binary readme: nothing leaks', async (t) => {
+  const ctx = project(t, ['scout']);
+  const key = 'sk-ant-abcdefghijklmnopqrstuvwxyz0123';
+  writeFiles(ctx.root, {
+    'README.md': `<p align="center"><img src="logo.png"></p>\n\n[![ci](https://x/b.svg)](https://x)\n\nSet the key ${key} before you run the tool here.\n`,
+    '.env': `API_KEY=${key}\n`,
+    'main.py': 'print(1)\n',
+  });
+  fs.symlinkSync(ctx.root, path.join(ctx.root, 'loop'));
+  const { events } = await runSetup(ctx.root, ctx, ctx.deps);
+  for (const e of events) {
+    assert.doesNotMatch(e.text, /sk-ant|API_KEY/, e.text);
+    assert.deepEqual(plumbingWords(e.text), [], e.text);
+  }
+  const other = project(t, ['scout']);
+  fs.writeFileSync(path.join(other.root, 'README.md'), Buffer.from(Array.from({ length: 3000 }, (_, i) => (i * 37 + 11) % 256)));
+  const binary = await runSetup(other.root, other, other.deps);
+  for (const e of binary.events) assert.doesNotMatch(e.text, /�|[\u0000-\u0008]/, e.text);
+});
+
+test('setup: killed after the team joined and before the read, a rerun finishes with nothing twice', async (t) => {
+  const ctx = project(t, []);
+  const folder = path.join(ctx.dir, 'killed');
+  fs.mkdirSync(folder);
+  writeShop(folder);
+  const log = path.join(ctx.dir, 'killed.log');
+  fs.writeFileSync(log, '');
+  const { spawnSync } = require('node:child_process');
+  const child = path.join(__dirname, 'helpers', 'feed-setup-race-child.js');
+  const died = spawnSync(process.execPath, [child, 'setup-die', folder, log], { env: { ...ctx.env, HOME: ctx.dir }, encoding: 'utf8' });
+  assert.equal(died.status, 9, died.stderr);
+  const calls = [];
+  const { out, events } = await runSetup(folder, ctx, { ...ctx.deps, runCli: fakeCli(calls), git: () => assert.fail('no second git step') });
+  assert.deepEqual(calls, [], 'no one is made twice');
+  assert.deepEqual(events.map((e) => e.kind), ['finding', 'finding', 'finding', 'finding', 'ask']);
+  const titles = cardsOf(folder, ctx.env).map((c) => c.title);
+  assert.equal(new Set(titles).size, titles.length, titles.join(' | '));
+  assert.ok(out.asks.waiting);
+  const again = await runSetup(folder, ctx, { ...ctx.deps, runCli: fakeCli(calls) });
+  assert.deepEqual(again.events, []);
+});
