@@ -16,10 +16,10 @@ const skip = !CHROME && 'no chrome on this machine';
 const only = (...names) => CASES.filter(c => names.includes(c.name));
 
 test('layout: measure after a delayed animation has finished, not after a fixed sleep', { skip, timeout: 90000 }, async () => {
-  const page = (...args) => phonePage(...args).replace('</head>', `<style>
+  const page = (...args) => phonePage(...args).replace('</style>', `
     @keyframes layout-test { from { margin-left: 0 } to { margin-left: 12px } }
     #bet { animation: layout-test 850ms 150ms both; }
-  </style></head>`);
+  </style>`);
   const rows = await layout({
     chromePath: CHROME, cases: only('idea'), viewports: ['phone'], page,
     probe: "getComputedStyle(document.getElementById('bet')).marginLeft",
