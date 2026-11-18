@@ -18,6 +18,7 @@ const VALUE_FLAGS = new Set([
   '--filter', '--limit', '--cursor', '--since', '--as', '--title', '--why', '--body', '--detail',
   '--visual', '--kind', '--lane', '--note', '--story', '--reason', '--card', '--proof', '--text', '--engine', '--choose', '--member', '--wait', '--cards', '--goal',
   '--reply',
+  '--session', '--ask',
 ]);
 const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask', '--retry', '--run', '--independent', '--confirm']);
 
@@ -25,12 +26,13 @@ function parse(args) {
   const positional = [];
   const flags = {};
   const story = [];
+  const waiting = args.find((arg) => !String(arg).startsWith('-')) === 'waiting';
   let json = false;
   for (let i = 0; i < args.length; i += 1) {
     const token = String(args[i]);
     if (token === '--json') { json = true; continue; }
     if (token === '--help' || token === '-h') { flags.help = true; continue; }
-    if (BOOL_FLAGS.has(token)) { flags[token.slice(2)] = true; continue; }
+    if (BOOL_FLAGS.has(token) && !(waiting && token === '--ask')) { flags[token.slice(2)] = true; continue; }
     if (token === '--') { positional.push(...args.slice(i + 1).map(String)); break; }
     const eq = token.indexOf('=');
     const name = token.startsWith('--') && eq > 0 ? token.slice(0, eq) : token;
@@ -70,6 +72,9 @@ const HELP = [
   '                          [--body "<text>"] [--detail "<technical notes>"] [--visual \'<json>\']',
   '                          [--kind proposal|question] [--lane money|billing|...] [--story "<line>"]',
   '       atris feed decide <card> approve|dismiss [--note "<text>"]',
+  '       atris feed waiting set --session <id> --ask "<one or two plain sentences>" [--title "<window name>"] [--engine <name>]',
+  '       atris feed waiting clear --session <id>',
+  '       atris feed waiting list [--json]',
   '       atris feed talk <card> "<message>" [--stream] [--as <member>]   or   atris feed talk <card> --choose <id>',
   '                          (the card\'s member answers at once, one tool-free turn on its model; --stream prints it as it comes)',
   '       atris feed talk --member <name> [--independent] [--stream] [--json] -- <card> ["<words>"]',
@@ -115,8 +120,10 @@ const HELP = [
 
 function textCard(card) {
   const note = card.kind === 'post' || card.kind === 'ask';
-  const mark = note ? card.kind : card.needs_decision ? 'decide' : card.state;
+  const waiting = card.source.type === 'session';
+  const mark = waiting ? 'waiting' : note ? card.kind : card.needs_decision ? 'decide' : card.state;
   const lines = [`${mark.padEnd(8)}${card.title}`];
+  if (waiting) lines.push(`        ${card.body}`);
   if (card.why) lines.push(`        why: ${card.why}`);
   if (card.kind === 'result' || card.proof.status !== 'none') lines.push(`        proof: ${card.proof.status}`);
   if (card.run && card.run.status === 'queued') lines.push(`        waiting to start, number ${card.run.position} in line`);
@@ -132,6 +139,13 @@ function textCard(card) {
 function printText(command, out) {
   if (command === 'clear') {
     console.log('Feed cleared. Project tasks and activity records remain.');
+    return;
+  }
+  if (command === 'waiting') {
+    if (Array.isArray(out.waiting)) {
+      for (const entry of out.waiting) console.log(`${entry.title || 'Chat window'} (${entry.session}): ${entry.ask}`);
+      if (!out.waiting.length) console.log('no chats waiting');
+    } else if (out.waiting) console.log('chat is waiting for your answer.');
     return;
   }
   if (command === 'cards') {
@@ -296,6 +310,12 @@ async function run(args = [], context = {}) {
     let out;
     if (sub === 'cards') {
       out = feed.listCards(root, { filter: flags.filter || 'all', limit: flags.limit, cursor: flags.cursor, since: flags.since, env });
+    } else if (sub === 'waiting') {
+      const action = positional[1];
+      if (action === 'set') out = feed.setWaiting(root, { session: flags.session, ask: flags.ask, title: flags.title, engine: flags.engine });
+      else if (action === 'clear') out = feed.clearWaiting(root, flags.session);
+      else if (action === 'list') out = feed.listWaiting(root);
+      else throw new feed.FeedError(400, 'usage: atris feed waiting set|clear|list');
     } else if (sub === 'theme') {
       if (positional[1] === 'set') {
         out = feed.setTheme(root, positional.slice(2).join(' '), { env });
@@ -473,6 +493,7 @@ async function run(args = [], context = {}) {
 }
 
 const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'talk', 'messages', 'revise', 'more', 'run', 'help',
+  'waiting',
   'settings', 'engines', 'members', 'member', 'ping', 'think', 'emit', 'events', 'start', 'doctor', 'repair', 'notes',
   'say', 'react', 'reply', 'replies', 'discuss', 'work', 'clear']);
 

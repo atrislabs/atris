@@ -92,7 +92,7 @@ test('the label is the folder name lowercased with each run of other characters 
   assert.equal(autoland.launchAgentLabel('/tmp/Atris.OS  Backend'), 'ai.atris.autoland.atris-os-backend');
 });
 
-test('on a Mac, on installs one LaunchAgent with the cron command, the short PATH and minute 14', (t) => {
+test('on a Mac, on installs one LaunchAgent with the cron command, a PATH that finds gh and minute 14', (t) => {
   const { home, root } = fixture(t);
   const fake = fakeScheduler({ home });
   const out = autoland.installSchedule(root, fake.deps);
@@ -105,7 +105,7 @@ test('on a Mac, on installs one LaunchAgent with the cron command, the short PAT
   const escaped = autoland.buildTickCommand(root).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   assert.ok(xml.includes(`<string>${escaped}</string>`), 'the plist runs the same command as the cron line');
   assert.ok(autoland.buildCronLine(root).includes(autoland.buildTickCommand(root)));
-  assert.match(xml, /<key>PATH<\/key>\s*<string>\/usr\/bin:\/bin<\/string>/);
+  assert.match(xml, /<key>PATH<\/key>\s*<string>\/opt\/homebrew\/bin:\/usr\/local\/bin:\/usr\/bin:\/bin:\/usr\/sbin:\/sbin<\/string>/);
   assert.match(xml, /<key>StartCalendarInterval<\/key>\s*<array>\s*<dict>\s*<key>Minute<\/key>\s*<integer>14<\/integer>/);
   assert.deepEqual(fake.calls.filter((c) => c[0] === 'launchctl' && c[1] === 'bootstrap'), [['launchctl', 'bootstrap', 'gui/501', plistFile(home)]]);
   assert.equal(fake.calls.some((c) => c[0] === 'crontab' && c[1] === '-'), false, 'an empty crontab is never rewritten');

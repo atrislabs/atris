@@ -349,3 +349,54 @@ test('an interrupted protected-work receipt keeps the approval reason through re
   assert.match(again.work.message, /money/);
   assert.equal(ctx.spawned.length, 0);
 });
+
+test('work receipts name the next actor and action through execution and review', (t) => {
+  const ctx = project(t, ['writer', 'closer']);
+  const card = post(ctx);
+  const said = memberSays(ctx, card.id, 'writer', 'Write a thank you note for the newest buyers.');
+  const out = work.startWork(ctx.root, card.id, { replyId: said.id, env: ctx.env, deps: ctx.deps });
+  assert.equal(out.work.receipt_state, 'running');
+  assert.equal(out.work.next_owner, 'agent:writer');
+  assert.equal(out.work.next_action, 'continue_work');
+  const id = out.work.card_id.split(':')[1];
+  ctx.db.prepare('UPDATE tasks SET claimed_by = ? WHERE id = ?').run('closer', id);
+  assert.equal(postCard(ctx, card.id).work[0].next_owner, 'agent:closer');
+  team.emit(ctx.root, { as: 'writer', type: 'result', card: out.work.card_id, proof: 'Read the note aloud twice.', env: ctx.env });
+  const review = postCard(ctx, card.id).work[0];
+  assert.equal(review.receipt_state, 'blocked');
+  assert.equal(review.next_owner, 'user:owner');
+  assert.equal(review.next_action, 'review_result');
+  ctx.db.prepare("UPDATE tasks SET status = 'done', done_at = ?, updated_at = ? WHERE id = ?").run(Date.now(), Date.now(), id);
+  const done = postCard(ctx, card.id).work[0];
+  assert.equal(done.receipt_state, 'done');
+  assert.equal(done.next_owner, null);
+  assert.equal(done.next_action, 'inspect_result');
+});
+
+test('protected work names the person as next actor without starting a runner', (t) => {
+  const ctx = project(t, ['closer']);
+  const card = post(ctx);
+  const said = memberSays(ctx, card.id, 'closer', 'Offer a refund to the three buyers who wrote in.');
+  const out = work.startWork(ctx.root, card.id, { replyId: said.id, env: ctx.env, deps: ctx.deps });
+  assert.equal(out.work.next_owner, 'user:owner');
+  assert.equal(out.work.next_action, 'resolve_approval');
+  assert.equal(out.work.receipt_state, 'blocked');
+  assert.equal(ctx.spawned.length, 0);
+});
+
+test('a runner that cannot start blocks on the person and an explicit retry resumes the same task', (t) => {
+  const ctx = project(t, ['writer']);
+  const card = post(ctx);
+  const said = memberSays(ctx, card.id, 'writer', 'Write a thank you note for the newest buyers.');
+  const out = work.startWork(ctx.root, card.id, { replyId: said.id, env: ctx.env, deps: { ...ctx.deps, spawnRunner: () => { throw new Error('runner unavailable'); } } });
+  assert.equal(out.work.receipt_state, 'blocked');
+  assert.equal(out.work.next_owner, 'user:owner');
+  assert.equal(out.work.next_action, 'retry_work');
+  assert.equal(out.work.can_retry, true);
+  assert.equal(work.startWork(ctx.root, card.id, { replyId: said.id, env: ctx.env, deps: ctx.deps }).replayed, true);
+  const retried = work.startWork(ctx.root, card.id, { replyId: said.id, retry: true, env: ctx.env, deps: ctx.deps });
+  assert.equal(retried.work.receipt_state, 'running');
+  assert.equal(retried.work.card_id, out.work.card_id);
+  assert.equal(ideaRows(ctx).length, 1);
+  assert.equal(ctx.spawned.length, 1);
+});

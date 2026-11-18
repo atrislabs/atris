@@ -105,3 +105,9 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 96 | A plain-words slip gets one rewrite before a drop, and every drop is logged in feed events | keep: a plain-words slip gets one rewrite by the member before it is dropped, and drops are logged | yes |
 | 97 | found: a card could be passed before it was ever seen; new or unseen cards are left alone | pass: a card made seconds ago, or one never on screen, is not passed; old calls keep working | yes |
 | 98 | Every finished card is a real task a fresh process reads back | keep: every finished card is a real task that a fresh process reads back | yes |
+
+## Waiting chat windows
+
+`feed waiting set --session <id> --ask "<question>"` reports a stopped chat, with an optional window title and engine. Setting it again replaces the ask and keeps the first waiting time; `feed waiting clear --session <id>` removes it. `feed waiting list --json` lists the live entries, oldest first.
+
+Waiting chats appear before every other card in both `all` and `needs_decision`. Answer in the original chat: deciding here is refused, passing never hides them, and they do not count as ideas. Entries older than 24 hours disappear. The feed's existing author object carries the window name in `author.name`. Entries live in `.atris/state/feed/waiting.json`, saved atomically under `waiting.lock` with the feed's retryable busy errors. Run `node --test test/feed-waiting.test.js` for the CLI, ordering, expiry, safety and simultaneous writer checks.

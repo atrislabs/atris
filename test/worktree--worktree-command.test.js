@@ -62,6 +62,7 @@ test('worktreeCommand help prints the usage block and returns 0', () => {
     assert.strictEqual(result.code, 0, arg);
     assert.match(result.out, /^Usage: atris worktree <guide\|start\|ship\|status\|doctor\|guard\|prune\|cleanup\|sweep>$/m);
     assert.match(result.out, /atris worktree guard \[--allow-primary\] \[--allow-dirty\]/);
+    assert.match(result.out, /atris worktree status.*--agent <name>.*--member <name>.*copies/i);
   }
 });
 
@@ -98,6 +99,32 @@ test('worktreeCommand status lists the primary checkout with staged, unstaged an
     assert.strictEqual(spawnSync('git', ['add', 'notes.txt'], { cwd: repo }).status, 0);
     result = captureOutput(() => worktreeCommand(['status']));
     assert.strictEqual(result.out, `${repo} [primary current] branch=main staged=1 unstaged=0 untracked=0`);
+  });
+});
+
+test('worktreeCommand status filters copies by folder or branch prefix', () => {
+  withSandbox((base) => {
+    const repo = initRepo(path.join(base, 'repo'));
+    const git = (args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+    assert.strictEqual(git(['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '--allow-empty', '-qm', 'initial']).status, 0);
+    const folderMatch = path.join(base, 'alice-folder');
+    const branchMatch = path.join(base, 'other-folder');
+    const noMatch = path.join(base, 'malice-folder');
+    assert.strictEqual(git(['worktree', 'add', '-qb', 'other-branch', folderMatch]).status, 0);
+    assert.strictEqual(git(['worktree', 'add', '-qb', 'alice-branch', branchMatch]).status, 0);
+    assert.strictEqual(git(['worktree', 'add', '-qb', 'malice-branch', noMatch]).status, 0);
+    process.chdir(repo);
+
+    for (const flag of ['--agent', '--member']) {
+      const result = captureOutput(() => worktreeCommand(['status', flag, 'alice']));
+      assert.strictEqual(result.code, 0);
+      assert.match(result.out, /alice-folder/);
+      assert.match(result.out, /other-folder/);
+      assert.doesNotMatch(result.out, /malice-folder|branch=main/);
+      assert.strictEqual(result.out.split('\n').length, 2);
+    }
+    const missing = captureOutput(() => worktreeCommand(['status', '--agent', 'nobody']));
+    assert.strictEqual(missing.out, 'no copies for nobody');
   });
 });
 

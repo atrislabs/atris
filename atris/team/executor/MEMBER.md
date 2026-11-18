@@ -49,6 +49,7 @@ When navigator or the orchestrator hands you a build spec or idea:
 4. **Pass cross-model review**: Fix any referee feedback before marking work ready for human review
 5. **Final summary**: Report exact files changed, check command run, and plain-language outcome
 6. **Keep wiki and member memory honest**: Append the lesson to `logs/<today>.md` and update `atris/MAP.md` when routes change
+7. **Land through the check**: where the project has `atris/checks.json`, run `atris check`, then `atris check --push`; `atris check --verify` shows whether a receipt still holds. The lander accepts only a receipt it can work out again
 
 **Never claim progress without a passing check. Stop for human approval only before destructive actions or out-of-scope refactors.**
 
@@ -186,3 +187,7 @@ Your log compounds context. The next executor session reads your learnings and s
 ---
 
 **Executor = The Trigger. Pull once. Execute precisely. Validate constantly.**
+
+## Code I own
+
+- `commands/task/steps/`: Working a task step by step: step options, running a step, the current step, and step. Moved out of `commands/task.js` on 2026-11-16; read its README.md before changing it.

@@ -283,6 +283,18 @@ test('ls lists files with sizes and folders with counts', async () => {
   assert.deepEqual(j, { ok: true, folder: 'wiki', items: [{ name: 'lease.md', size: 24 }, { name: 'people/', files: 1 }] });
 });
 
+test('ls points to a folder index in plain output only', async () => {
+  const server = fakeServer({ files: { 'MAP.md': 'map', 'files/index.md': 'index', 'files/sends.md': 'sends', 'other/index.md/nested.md': 'nested' } });
+  const root = await run(['ls'], server);
+  assert.match(root.text, /what each file holds is in MAP\.md: atris memory read MAP\.md$/);
+  const folder = await run(['ls', 'files/'], server);
+  assert.match(folder.text, /what each file holds is in index\.md: atris memory read files\/index\.md$/);
+  const noIndex = await run(['ls', 'other'], server);
+  assert.doesNotMatch(noIndex.text, /what each file holds/);
+  const json = JSON.parse((await run(['ls', 'files', '--json'], server)).text);
+  assert.deepEqual(json, { ok: true, folder: 'files', items: [{ name: 'index.md', size: 5 }, { name: 'sends.md', size: 5 }] });
+});
+
 test('remember saves one line to the person\'s notes, tagged with the agent', async () => {
   const server = fakeServer();
   const r = await run(['remember', 'prefers', 'short answers'], server, { env: { ATRIS_AGENT: 'codex' } });
@@ -665,4 +677,21 @@ test('the fast path loads only what memory needs', async () => {
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
+});
+
+// Seen live 2026-11-17: four of ten plain searches printed a line from files/people.json
+// with a name and an amount; agents read what search prints.
+test('search and ask leave out raw data files unless asked with --all-files', async () => {
+  const server = fakeServer({ files: { ...FILES, 'files/people.json': '[{"name":"Pat","paid":200,"rent":"due"}]\n', 'logs/2026/11-17.md': 'rent talk with Pat\n' } });
+  const r = await run(['search', 'rent'], server);
+  assert.equal(r.code, 0);
+  assert.match(r.text, /^wiki\/people\/sam\.md:3: works on rent tools$/m);
+  assert.doesNotMatch(r.text, /people\.json|logs\//);
+  assert.match(r.text, /2 lines from raw data files left out\. Add --all-files to see them\./);
+  const all = await run(['search', 'rent', '--all-files'], server);
+  assert.match(all.text, /^files\/people\.json:1: /m);
+  assert.doesNotMatch(all.text, /left out/);
+  const ask = await run(['ask', 'who is busy'], server);
+  assert.equal(ask.code, 0);
+  assert.doesNotMatch(ask.text, /left out/, 'a clean answer says nothing extra');
 });

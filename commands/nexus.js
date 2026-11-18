@@ -15,8 +15,13 @@ const model = require('../lib/nexus-model');
 const S = require('../lib/nexus-store');
 const store = require('./nexus-store');
 const columns = require('./nexus-columns');
+const review = require('./nexus-review');
 const mail = require('./nexus-mail');
 const local = require('./nexus-local');
+const capture = require('./nexus-capture');
+const importer = require('./nexus-import');
+const hour = require('./nexus-hour');
+const experiments = require('./nexus-experiments');
 
 const USAGE = [
   'atris nexus: your people, the same cards as atris.ai/dashboard/nexus',
@@ -28,8 +33,11 @@ const USAGE = [
   '    list and search take --stage <stage>, --closeness <direct|intro>, --group "<list>", --limit <1-200>, --offset <n>',
   '  atris nexus note "<name>" "<text>"  add a note',
   '  atris nexus stage "<name>" <found|reached|replied|met|paying|partner>',
-  '  atris nexus add "<name>" [--title --company --city --email --note]',
+  '  atris nexus add "<name>" [--title --company --city --email --linkedin --x --website --note]',
+  '    a new card is Found with no closeness or list; say more with --stage met, --closeness direct, --group "<list>"',
   '  atris nexus due "<name>" <date> ["next move"]   set the follow-up (YYYY-MM-DD, today, tomorrow, clear)',
+  '  atris nexus review [--stage <stage>] [--list "<name>"] [--search "<words>"] [--due] [--restart]',
+  '                                      your people one card at a time: n next, p back, s stage, t note, d follow-up day (fri, +3, a date), o everything, q quit; it remembers where you stopped. With --json or off a terminal it prints the matching people and leaves',
   '  atris nexus paid "<name>" <amount> [--checked]  record a payment. Only checked money counts.',
   '  atris nexus wall                    the war room numbers: sent, replied, follow-ups, paid money, groups, cities',
   '  atris nexus goal [amount] [date]    show or set the money goal',
@@ -49,6 +57,10 @@ const USAGE = [
   '  atris nexus local show "<name or id>"   one card from that copy',
   '  atris nexus local note "<name or id>" "<text>"   a note kept on this computer until you send it',
   '  atris nexus push-notes              send the notes written offline, then clear them',
+  ...capture.HELP,
+  ...importer.HELP,
+  ...hour.HELP,
+  ...experiments.HELP,
   '  --json on any of these prints one JSON object for agents (the store\'s own answer when it answers)',
   'The store is tried first. If it does not answer, reads use the saved list; changes are never saved there (wall, goal, due, paid, city, bring-over and the filters need the store).',
 ].join('\n');
@@ -64,7 +76,8 @@ const STORE_NEEDED = 'The people store did not answer, and this command needs it
 // else, so the saved list and the store never drift apart. Reading the saved list is fine.
 const WRITES = new Set(['note', 'stage', 'add']);
 const NOT_SAVED = 'The people store did not answer, so nothing was saved. Try again in a moment.';
-const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note', 'stage', 'closeness', 'group', 'limit', 'offset', 'source', 'with', 'where', 'from', 'thread', 'message', 'body', 'ref']);
+const VALUE_FLAGS = new Set(['title', 'company', 'city', 'email', 'note', 'linkedin', 'x', 'website', 'stage', 'closeness', 'group', 'limit', 'offset', 'source', 'with', 'where', 'from', 'thread', 'message', 'body', 'ref']);
+const FILTERED = new Set(['list', 'find', 'search']);
 const FILTERS_NEED_STORE = 'The people store did not answer, and --stage, --closeness and --group need it. Try again in a moment.';
 const STAGE_WORDS = { found: 'prospect', reached: 'sent', replied: 'replied', met: 'met', paying: 'paying', partner: 'partner' };
 const NAME_LIMIT = 10;
@@ -135,7 +148,7 @@ function stageText(row) {
 }
 
 function brief(row) {
-  return { name: row.name, company: row.company, close: row.close, stage: row.loop.label, move: row.tableMove };
+  return { name: row.name, company: row.company, close: row.close, stage: row.loop.label === 'Found' ? '' : row.loop.label, move: row.tableMove };
 }
 
 function card(people, row, now) {
@@ -173,7 +186,8 @@ function cardLines(c) {
   const facts = [c.title, c.company, c.city].filter(Boolean).join(' · ');
   if (facts) lines.push(facts);
   if (c.closeness) lines.push(`Closeness: ${c.closeness}`);
-  lines.push(`Stage: ${c.stage}${c.date ? `, ${c.date}` : ''}${c.off ? ` (got as far as ${c.stageReached})` : ''}`);
+  // Found is where every card starts, so it says nothing; a stage shows once something happened.
+  if (c.stage !== 'Found' || c.off) lines.push(`Stage: ${c.stage}${c.date ? `, ${c.date}` : ''}${c.off ? ` (got as far as ${c.stageReached})` : ''}`);
   lines.push(`Next: ${c.move}.`);
   if (c.path) lines.push(`Way in: ${c.path.join(' → ')}`);
   if (!c.email) lines.push('No email yet');
@@ -225,6 +239,20 @@ async function nexusCommand(args = [], deps = {}) {
     return 2;
   };
 
+  // The one-by-one walk: its own file, signed in and through the store like the commands above.
+  if (words[0] === 'review') return review.run({ rawArgs: args, json, log, fail, usage, deps, request: deps.apiRequestJson || apiRequestJson, getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN, view: { card, cardLines, tableLines } });
+
+  // The hour: one outbound sprint on a saved list. Its own file, its own flags.
+  if (words[0] === 'hour') {
+    return hour.run({ rawArgs: args, log, err, now, deps, request: deps.apiRequestJson || apiRequestJson, getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN });
+  }
+
+  // Saved lists as experiments: lists, experiment, score, guess, learned, common, alike, compare, drafts.
+  // Before the person-search fallback, so "atris nexus score" never looks up a person called "score".
+  if (experiments.SUBS.has(words[0])) {
+    return experiments.run({ rawArgs: args, log, err, now, request: deps.apiRequestJson || apiRequestJson, getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN, confirm: deps.confirm });
+  }
+
   // The local copy: pull and push-notes sign in; local reads only files on this computer.
   if (local.SUBS.has(words[0])) {
     return local.run({
@@ -236,6 +264,15 @@ async function nexusCommand(args = [], deps = {}) {
       now, dir: local.localDir(deps), request: deps.apiRequestJson || apiRequestJson,
       getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN,
       findPerson, view: { card, cardLines, tableLines },
+    });
+  }
+
+  // capture and import read their own flags from the raw words, so pasted text never mixes with a flag value.
+  const intake = [capture, importer].find((m) => m.SUBS.has(words[0]));
+  if (intake) {
+    return intake.run({
+      rawArgs: args, log, err, now, request: deps.apiRequestJson || apiRequestJson, getToken: deps.getToken || defaultToken,
+      notLoggedIn: NOT_LOGGED_IN, view: { card, cardLines }, stdin: deps.stdin, ask: deps.ask, isTTY: deps.isTTY,
     });
   }
 
@@ -333,11 +370,11 @@ async function nexusCommand(args = [], deps = {}) {
     }
     if (STORE_ONLY.has(sub)) return fail(STORE_NEEDED);
     if (WRITES.has(sub)) return fail(NOT_SAVED);
-    if (prep.args.stage || prep.args.closeness || prep.args.group) return fail(FILTERS_NEED_STORE);
+    if (FILTERED.has(sub) && (prep.args.stage || prep.args.closeness || prep.args.group)) return fail(FILTERS_NEED_STORE);
     err(FALLBACK_LINE);
   } else if (STORE_ONLY.has(sub)) {
     return fail(STORE_NEEDED);
-  } else if (prep.args.stage || prep.args.closeness || prep.args.group) {
+  } else if (FILTERED.has(sub) && (prep.args.stage || prep.args.closeness || prep.args.group)) {
     return fail(FILTERS_NEED_STORE);
   }
 

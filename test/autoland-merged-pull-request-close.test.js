@@ -107,7 +107,7 @@ function lastEvent(fx, id, type) {
   return events.length ? events[events.length - 1].payload : null;
 }
 
-function tick(fx, args = [], { outage = false } = {}) {
+function tick(fx, args = [], { outage = false, expectStatus = 0, seen = null } = {}) {
   fs.writeFileSync(fx.answers, JSON.stringify({ pulls: fx.pulls, outage }));
   const env = {
     ...process.env,
@@ -120,7 +120,8 @@ function tick(fx, args = [], { outage = false } = {}) {
   delete env.NODE_TEST_CONTEXT;
   delete env.ATRIS_AGENT_PROOF_ONLY;
   const res = spawnSync(process.execPath, [CLI, 'autoland', 'tick', '--json', ...args], { cwd: fx.repo, encoding: 'utf8', env, timeout: 240000 });
-  assert.equal(res.status, 0, res.stderr || res.stdout);
+  assert.equal(res.status, expectStatus, res.stderr || res.stdout);
+  if (seen) seen.stderr = res.stderr;
   return JSON.parse(res.stdout.trim().split('\n').pop());
 }
 
@@ -212,9 +213,12 @@ test('with GitHub unreachable nothing is closed or sent back', () => {
   try {
     pull(fx, LINK('repo', 30), { state: 'MERGED', mergedAt: '2026-11-15T09:00:00Z', title: 'merged work' });
     const merged = reviewJob(fx, { title: 'merged work', proof: ready(LINK('repo', 30)) });
-    const receipt = tick(fx, [], { outage: true });
+    // gh that cannot start (a shim exiting 127) fails the run out loud.
+    const seen = {};
+    const receipt = tick(fx, [], { outage: true, expectStatus: 1, seen });
     assert.equal(statusOf(fx, merged), 'review');
     assert.ok(receipt.merged_close.github_outage, JSON.stringify(receipt.merged_close));
+    assert.equal(seen.stderr.split('\n').filter((l) => /gh not found/.test(l)).length, 1, seen.stderr);
   } finally {
     cleanup(fx);
   }

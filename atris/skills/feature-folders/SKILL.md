@@ -47,6 +47,17 @@ Write one script that parses the file. The TypeScript compiler API parses plain 
 
 This table drives every later step.
 
+For a plain CommonJS file, that script already exists: atris ships it as `lib/split-file.js` (in a global install, `$(npm root -g)/atris/lib/split-file.js`). The next file needs only a plan, not new code. It needs the TypeScript parser once, kept outside the repo: `npm i --prefix ~/.cache/atris-split typescript`.
+
+```
+node lib/split-file.js analyze --plan <dir>/split-plan.json --verbose   # what moves where, writes nothing
+node lib/split-file.js split   --plan <dir>/split-plan.json             # every move, READMEs, order file, MEMBER.md pointers
+node lib/split-file.js rebuild --plan <dir>/split-plan.json --out /tmp/original.js
+node lib/split-file.js verify  --plan <dir>/split-plan.json             # rebuild diff, node --check, loads, wiring, unresolved names
+```
+
+The plan names each feature, its owner and its functions, by exact name, by a span from one function through another, or by pattern. `commands/task/split-plan.json` is a worked example: it split `commands/task.js` from 12,519 lines to 829 on 2026-11-16. The tool moves function declarations only, not inline request handlers.
+
 ## 2. Decide what may move
 
 Safe to move:

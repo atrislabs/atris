@@ -107,7 +107,10 @@ function runTickBudget(args, budgetSeconds) {
   if (explicit) return Math.floor(explicit);
   // A timed run is a loop contract: keep picking the next useful move until
   // the wall clock spends the budget (same rule as member run).
-  return budgetSeconds ? Math.max(4, Math.ceil(budgetSeconds / 300)) : 4;
+  // The time is the limit; the round cap is only a runaway guard, one round a minute.
+  // Seen 2026-11-17: a cap of one round per 5 minutes ended 3-hour runs after 1.5 hours,
+  // since real rounds took about 2.5 minutes.
+  return budgetSeconds ? Math.max(4, Math.ceil(budgetSeconds / 60)) : 4;
 }
 
 async function runMissionFront(args = []) {
