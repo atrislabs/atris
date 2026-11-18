@@ -365,6 +365,17 @@ test('setup: an answer that holds a key is refused before anything is written; t
   assert.equal(saved.card.replies.length, 1);
 });
 
+test('setup: an answer with a document link or a commit is saved, comment and lesson both', async (t) => {
+  const ctx = project(t, ['scout']);
+  const { out } = await runSetup(ctx.root, ctx, ctx.deps);
+  const answer = 'Our plan is in https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit and the shop launched at 523d8abeb1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6';
+  const saved = room.reply(ctx.root, out.asks.waiting.card_id, answer, { env: ctx.env, deps: ctx.deps });
+  assert.equal(saved.reply.text, answer);
+  assert.equal(saved.setup.lesson_error, undefined, saved.setup.lesson_error);
+  assert.equal(saved.setup.answered, 'purpose');
+  assert.match(lessons(ctx.root), /1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/);
+});
+
 test('cli: atris feed reply with a key on a setup question answers with the reason, exit 0, and saves nothing', async (t) => {
   const ctx = project(t, ['scout']);
   const { out } = await runSetup(ctx.root, ctx, ctx.deps);
