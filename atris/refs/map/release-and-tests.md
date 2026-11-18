@@ -18,6 +18,8 @@ The sleep and lost-look checks in `test/gm-phone-health.test.js` also overlap up
 
 The calm-line checks in `test/gm-phone.test.js` overlap motion and reduced motion when closing the team, and sending and clearing a note while an idea waits. Each case keeps its own browser and desk.
 
+The detached mission check in `test/mission-status.test.js` uses a one-second cadence. The real child still runs past its first cycle and exits when its saved budget runs out.
+
 `test/gm-phone-layout.test.js` measures card line wrapping and footer geometry in the same Chrome render where the card and viewport match. Each assertion still covers its original cards and screen sizes.
 
 `test/engine-resource.test.js` counts bytes as it fills large log fixtures. The task history and archive checks in `test/commands-4.test.js` and `test/commands-6.test.js` make the first entry through the CLI and add the rest through the task store.
