@@ -91,8 +91,8 @@ const HELP = [
   '       atris feed more                     (wakes up to 3 ON members to look for ideas: a ping with reason scroll)',
   '       atris feed settings [set default-engine <id>]   the one default model for members with none of their own',
   '       atris feed engines                  the models usable on this computer right now',
-  '       atris feed members                  the team: on or off, model in effect, last active, what it is doing',
-  '       atris feed member on|off <name>',
+  '       atris feed members                  the team: on or off, model in effect, last active, what it is doing; [cloud on|off] when the cloud wake switch disagrees',
+  '       atris feed member on|off <name>          also sets waking on notes in the cloud, in a business folder',
   '       atris feed ping [<member>] [--reason scroll|heartbeat|event|refresh] [--stream]',
   '                          (members think up ideas in one fast turn each, up to 3 at once; --stream prints cards as they are written)',
   '       atris feed settings set local-pings-per-day <n> | cloud-pings-per-day <n> | member-gap-seconds <n>',
@@ -229,11 +229,13 @@ function printText(command, out, { streamed = false } = {}) {
     return;
   }
   if (command === 'members') {
-    for (const m of out.members) console.log(`${m.on ? 'on ' : 'off'}  ${m.name.padEnd(14)} ${m.engine_name}${m.engine_available ? '' : ' (cannot run here)'}${m.doing ? `  · ${m.doing}` : ''}`);
+    const { mismatchMark } = require('../lib/wake-sync');
+    for (const m of out.members) console.log(`${m.on ? 'on ' : 'off'}  ${m.name.padEnd(14)} ${m.engine_name}${m.engine_available ? '' : ' (cannot run here)'}${m.doing ? `  · ${m.doing}` : ''}${mismatchMark(m)}`);
     return;
   }
   if (command === 'member') {
     printText('members', out);
+    if (out.cloud && out.cloud.line) console.log(out.cloud.line);
     return;
   }
   if (command === 'engines') {
@@ -458,11 +460,15 @@ async function run(args = [], context = {}) {
     } else if (sub === 'engines') {
       out = { version: feed.FEED_VERSION, engines: team().listEngines({ env }), ...team().settingsView(root, { env }) };
     } else if (sub === 'members') {
-      out = team().listMembers(root, { env });
+      // One on/off per member, marked when the cloud note-wake switch disagrees.
+      const sync = require('../lib/wake-sync');
+      out = sync.markMembers(team().listMembers(root, { env }), await sync.cloudSwitches(root, deps));
     } else if (sub === 'member') {
       const [, onOff, name] = positional;
       if (!['on', 'off'].includes(onOff) || !name) throw new feed.FeedError(400, 'usage: atris feed member on|off <name>');
       out = team().setOn(root, name, onOff === 'on', { env });
+      // The same switch in the cloud, best effort: the local one already flipped.
+      out.cloud = await require('../lib/wake-sync').setCloudWake(root, String(name).trim(), onOff === 'on', deps);
     } else if (sub === 'ping' || sub === 'think') {
       // ping: wake members to think up ideas. --stream prints each event as it
       // happens (member_started, card_started, card_text, card_visual,
