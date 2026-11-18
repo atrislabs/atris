@@ -20,6 +20,8 @@ The calm-line checks in `test/gm-phone.test.js` overlap motion and reduced motio
 
 The detached mission check in `test/mission-status.test.js` uses a one-second cadence. The real child still runs past its first cycle and exits when its saved budget runs out.
 
+The phone checks for words kept after a failed send, replies that keep the card's action, and returning to the orb in `test/gm-phone.test.js` run up to two card cases together. Each still has its own Chrome session and desk.
+
 `test/gm-phone-layout.test.js` measures card line wrapping and footer geometry in the same Chrome render where the card and viewport match. Each assertion still covers its original cards and screen sizes.
 
 `test/engine-resource.test.js` counts bytes as it fills large log fixtures. The task history and archive checks in `test/commands-4.test.js` and `test/commands-6.test.js` make the first entry through the CLI and add the rest through the task store.
