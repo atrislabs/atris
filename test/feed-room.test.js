@@ -135,6 +135,66 @@ test('react: toggles for the caller, shows who and mine, only the five, and move
   assert.ok(reacts.length >= 5, 'every tap is in the events log');
 });
 
+function snapshot(root) {
+  const out = {};
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile()) out[path.relative(root, full)] = fs.readFileSync(full).toString('base64');
+    }
+  };
+  walk(root);
+  return out;
+}
+
+const FAKE_KEY = `sk-test-${'0123456789abcdef'.repeat(3)}`;
+
+test('reply and say: on a project linked to a business, a person\'s key is refused before any write and never posted', (t) => {
+  const ctx = project(t, ['scout']);
+  const post = say(ctx, 'scout', 'Which supplier should we call first?', { ask: true }).card;
+  const posted = [];
+  const deps = { ...ctx.deps, board: (event) => posted.push(event) };
+  const before = snapshot(ctx.root);
+  const refused = (e) => e.status === 400 && e.message === 'That looks like it holds a password or key, so it was not saved.';
+  assert.throws(() => room.reply(ctx.root, post.id, `the login is ${FAKE_KEY}`, { env: ctx.env, deps }), refused);
+  assert.throws(() => room.reply(ctx.root, post.id, 'password: "hunter2-not-real"', { env: ctx.env, deps }), refused);
+  assert.throws(() => room.say(ctx.root, { text: `new key ${FAKE_KEY}`, env: ctx.env, deps }), refused);
+  assert.deepEqual(snapshot(ctx.root), before, 'no comment, note, event or member log was written');
+  assert.deepEqual(posted, []);
+  // Ordinary words still save and post, including ones that name a key or a password.
+  const fine = [
+    'Yes, call the Fremont supplier first.',
+    'The key point is speed, and the password reset page can wait.',
+    'Fixed in 523d8abeb, see the change.',
+    'https://atris.ai/pricing?plan=pro&ref=feed',
+    'https://github.com/atrislabs/atris/pull/1995',
+  ];
+  for (const text of fine) assert.equal(room.reply(ctx.root, post.id, text, { env: ctx.env, deps }).reply.text, text);
+  assert.equal(room.say(ctx.root, { text: 'Our API key lives in the vault, never paste it here.', env: ctx.env, deps }).card.title.length > 0, true);
+  assert.equal(posted.length, fine.length + 1);
+});
+
+test('reply: on a project not linked to a business, a long code in a comment stays on this computer and is kept', (t) => {
+  const ctx = project(t, ['scout']);
+  const post = say(ctx, 'scout', 'Which change fixed the checkout?', { ask: true }).card;
+  const hash = '523d8abeb1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6';
+  const out = room.reply(ctx.root, post.id, `It was ${hash}`, { env: ctx.env });
+  assert.equal(out.reply.text, `It was ${hash}`);
+});
+
+test('talk --member: a person\'s key is refused before the model is asked or anything is written', async (t) => {
+  const ctx = project(t, ['scout']);
+  const post = say(ctx, 'scout', 'Which supplier should we call first?', { ask: true }).card;
+  const before = snapshot(ctx.root);
+  await assert.rejects(
+    team.askMember(ctx.root, { member: 'scout', cardId: post.id, text: `try ${FAKE_KEY}`, env: ctx.env, deps: ctx.deps }),
+    (e) => e.status === 400 && /password or key/.test(e.message),
+  );
+  assert.deepEqual(snapshot(ctx.root), before);
+  assert.equal(ctx.turns.length, 0, 'no model was asked');
+});
+
 test('reply: the newest three show, oldest first, with the total; members write plainly; limits hold', (t) => {
   const ctx = project(t, ['scout', 'writer']);
   const post = say(ctx, 'scout', 'Does anyone know which candle sold best last week?', { ask: true }).card;
