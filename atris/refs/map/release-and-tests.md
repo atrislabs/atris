@@ -16,6 +16,8 @@ The slow-answer check in `test/gm-phone-hands.test.js` and the team-table viewpo
 
 `test/gm-phone-layout.test.js` measures card line wrapping and footer geometry in the same Chrome render where the card and viewport match. Each assertion still covers its original cards and screen sizes.
 
+`test/gm-phone-motion-paths.test.js` runs the full path matrix at both motion settings. The other motion checks stay in `test/gm-phone-motion.test.js` so the two files can run in different full-suite groups.
+
 ## Feature: Release (`atris release`)
 
 **Purpose:** Tag a release, bump version, create GitHub release, draft /launch post
