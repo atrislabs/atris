@@ -629,3 +629,36 @@ test('the atris binary routes town and lists it in help', () => {
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('invite, inbox, decision, Nexus save and read use the same authenticated MCP door as chat', async () => {
+  const row = { id: 'invite-7', status: 'pending', person: { id: 'user-8', name: 'Nova' }, learned: 'Builds games', opportunity: 'Make a map' };
+  const actions = [
+    [['invite', '--shop', 'map-shop', '--learned', row.learned, '--opportunity', row.opportunity], 'town_invite',
+      { business_slug: 'map-shop', learned: row.learned, opportunity: row.opportunity }, rpcStructured(row)],
+    [['invite', 'user-8', '--learned', row.learned, '--opportunity', row.opportunity], 'town_invite',
+      { user_id: 'user-8', learned: row.learned, opportunity: row.opportunity }, rpcStructured(row)],
+    [['inbox'], 'town_connections', {}, rpcStructured({ incoming: [row], outgoing: [], accepted: [] })],
+    [['accept', row.id], 'town_decide_connection', { request_id: row.id, accept: true }, rpcStructured({ ...row, status: 'accepted' })],
+    [['decline', row.id], 'town_decide_connection', { request_id: row.id, accept: false }, rpcStructured({ ...row, status: 'declined' })],
+    [['save', row.id], 'town_save_connection', { request_id: row.id }, rpcStructured({ person_id: 'nexus-4' })],
+    [['card', 'nexus-4'], 'nexus_person', { person_id: 'nexus-4' }, rpcText('Nova: Make a map')],
+  ];
+  for (const [args, name, expected, answer] of actions) {
+    const w = world({ doorAnswers: { [name]: answer } });
+    const output = await run(w, [...args, '--json']);
+    assert.equal(output.code, 0, output.text);
+    assert.equal(JSON.parse(output.text).ok, true);
+    assert.equal(w.httpCalls.length, 1);
+    assert.deepEqual(w.httpCalls[0].body.params, { name, arguments: expected });
+    assert.equal(w.httpCalls[0].headers.Authorization, 'Bearer ' + KEY);
+    assert.equal(w.apiCalls.length, 0);
+  }
+});
+
+test('a malformed or ambiguous invitation never leaves the terminal', async () => {
+  for (const args of [['invite', 'u', '--shop', 'shop', '--learned', 'a', '--opportunity', 'b'], ['invite', 'u']]) {
+    const w = world();
+    assert.equal((await run(w, args)).code, 1);
+    assert.equal(w.httpCalls.length, 0);
+  }
+});

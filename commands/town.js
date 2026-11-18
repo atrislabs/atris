@@ -27,7 +27,7 @@ const { parseFlags, errorText, cleanText } = require('../lib/night-shift');
 const door = require('../lib/town-door');
 const view = require('../lib/town-view');
 
-const SUBCOMMANDS = ['look', 'go', 'map', 'who', 'night', 'grow', 'streets'];
+const SUBCOMMANDS = ['look', 'go', 'map', 'who', 'night', 'grow', 'streets', 'invite', 'inbox', 'accept', 'decline', 'save', 'card'];
 const HERE_TTL_MS = 24 * 60 * 60 * 1000; // the town remembers a walker's street for a day
 const NOT_BUILT = 'The town does not take street requests from here yet. It is still being built. Nothing was sent.';
 const NIGHTS_MAX = 3;
@@ -42,6 +42,12 @@ function showTownHelp(log = console.log) {
   log('       atris town grow "<name>" "<what it is>" [--layout <words>] [--mood <day|dusk|night>]');
   log('                                          ask the town for a new street');
   log('       atris town streets                 the streets you have asked for, and their status');
+  log('       atris town invite <user-id> --learned "..." --opportunity "..."');
+  log('       atris town invite --shop <slug> --learned "..." --opportunity "..."');
+  log('       atris town inbox                   incoming, outgoing and accepted invitations');
+  log('       atris town accept|decline <id>     answer an incoming invitation');
+  log('       atris town save <id>               keep an accepted connection in your private Nexus');
+  log('       atris town card <person-id>        read the saved Nexus card');
   log('add --json to any of these for machine output.');
   log('');
   log('look, go, grow and streets use the town\'s text door, which needs a developer key');
@@ -114,9 +120,9 @@ function makeContext(deps, io, json) {
     async facts() {
       return (await ctx.loadFacts()).data;
     },
-    async doorOptions() {
+    async doorOptions(scopes) {
       const creds = await ctx.creds();
-      const key = door.townKey(creds, env, deps.keyDeps);
+      const key = door.townKey(creds, env, deps.keyDeps, scopes);
       if (!key) return { error: tokenFrom(creds) ? door.NEEDS_KEY : door.NEEDS_LOGIN_AND_KEY };
       return { options: { key, httpRequest: deps.httpRequest, base: deps.apiBase, timeoutMs: deps.timeoutMs } };
     },
@@ -314,6 +320,58 @@ async function streetsCommand(ctx) {
   return say(ctx, ['Your street requests', ...view.renderRequests(rows)], { ok: true, requests: rows.map(view.requestPayload) });
 }
 
+function connectionLines(row) {
+  return [
+    [row.person?.name, row.business_slug, row.status, row.id].filter(Boolean).map(value => cleanText(value, 200)).join(' · '),
+    row.learned && `Learned: ${cleanText(row.learned, 1000)}`,
+    row.opportunity && `Opportunity: ${cleanText(row.opportunity, 1000)}`,
+  ].filter(Boolean);
+}
+
+async function connectionCommand(ctx, sub, args) {
+  const { flags, positionals } = parseFlags(args, ['--learned', '--opportunity', '--shop']);
+  const [id] = positionals;
+  let tool;
+  let body;
+  if (sub === 'invite') {
+    if (positionals.length > 1 || Boolean(id) === Boolean(flags.shop) || !flags.learned?.trim() || !flags.opportunity?.trim()) {
+      return fail(ctx, 'Choose one user ID or --shop <slug>, and supply --learned "..." and --opportunity "...".');
+    }
+    tool = 'town_invite';
+    body = { ...(id ? { user_id: id } : { business_slug: flags.shop }), learned: flags.learned, opportunity: flags.opportunity };
+  } else {
+    const count = sub === 'inbox' ? 0 : 1;
+    if (Object.keys(flags).length || positionals.length !== count || id?.startsWith('--')) {
+      return fail(ctx, `Usage: atris town ${sub}${count ? ' <id>' : ''}`);
+    }
+    tool = { inbox: 'town_connections', accept: 'town_decide_connection', decline: 'town_decide_connection', save: 'town_save_connection', card: 'nexus_person' }[sub];
+    body = sub === 'inbox' ? {} : sub === 'card' ? { person_id: id } : { request_id: id };
+    if (sub === 'accept' || sub === 'decline') body.accept = sub === 'accept';
+  }
+  const scopes = ['save', 'card'].includes(sub) ? ['mcp:publish', 'mcp:workspace:read'] : ['mcp:plaza'];
+  const opened = await ctx.doorOptions(scopes);
+  if (opened.error) return fail(ctx, opened.error, { needs: 'developer_key' });
+  const result = await door.callTool(tool, body, opened.options);
+  if (!result.ok) return fail(ctx, door.doorMessage(result), { status: result.status || null });
+  if (sub === 'card') return say(ctx, [result.text], { ok: true, card: result.text });
+  const data = result.data;
+  if (!data || typeof data !== 'object') return fail(ctx, 'The town returned an unreadable connection.');
+  let lines;
+  if (sub === 'inbox') {
+    lines = [];
+    for (const group of ['incoming', 'outgoing', 'accepted']) {
+      const rows = data[group] || [];
+      if (rows.length) lines.push(group[0].toUpperCase() + group.slice(1), ...rows.flatMap(connectionLines));
+    }
+    if (!lines.length) lines.push('Your town inbox is empty.');
+  } else if (sub === 'save') {
+    lines = [`Saved to your private Nexus. Read it with atris town card ${cleanText(data.person_id, 100)}`];
+  } else {
+    lines = connectionLines(data);
+  }
+  return say(ctx, lines, { ok: true, ...data });
+}
+
 async function townCommand(args = [], deps = {}) {
   const io = { log: deps.log || console.log, err: deps.err || console.error };
   if (wantsHelp(args)) {
@@ -334,7 +392,8 @@ async function townCommand(args = [], deps = {}) {
   if (sub === 'who') return whoCommand(ctx);
   if (sub === 'night') return nightCommand(ctx, parseFlags(tail, ['--agent'], []).flags);
   if (sub === 'grow') return growCommand(ctx, tail);
-  return streetsCommand(ctx);
+  if (sub === 'streets') return streetsCommand(ctx);
+  return connectionCommand(ctx, sub, tail);
 }
 
 module.exports = { townCommand, showTownHelp };
