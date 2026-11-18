@@ -379,3 +379,52 @@ test('review: a round the feed started by itself counts its second try toward th
   assert.equal(capped.pinged, 0);
   assert.match(capped.reason, /brought in 6 times in the last hour/);
 });
+
+test('second review: approved work keeps the member\'s own model, a reopened outcome starts nothing, a correction is still answered, and a teammate turned on is new', async (t) => {
+  const fs = require('fs');
+  const path = require('path');
+  const { changed } = require('./helpers/feed-project');
+  const ctx = project(t, ['asker', 'scout', 'writer'], { engine: null });
+  // Comments never land on a costly model by default; work a person approved runs on the member's own line.
+  fs.writeFileSync(path.join(ctx.root, 'atris', 'ROSTER.md'), '# roster\n\n## team\n- scout: claude\n');
+  const env = { env: { ...ctx.env, ATRIS_FEED_INSTALLED: 'claude' }, authToken: () => 'signed-in' };
+  const forComments = team.memberEngine(ctx.root, 'scout', env);
+  assert.deepEqual([forComments.id, forComments.skipped], ['atris-fast', 'claude']);
+  assert.equal(team.memberEngine(ctx.root, 'scout', { ...env, purpose: 'work' }).id, 'claude');
+  // With nothing chosen, work goes to a model that can change files here, and still never a costly one.
+  assert.equal(team.memberEngine(ctx.root, 'writer', { ...env, purpose: 'work' }).id, 'haiku');
+  assert.equal(team.memberEngine(ctx.root, 'writer', env).id, 'atris-fast');
+  // The owner talked past an outcome: it no longer starts work.
+  const card = ask(ctx);
+  comment(ctx, card.id, 'scout', 'idea', 'Show the whole night as one short list.');
+  const out = rules.close(ctx.root, card.id, { answer: 'One short list.', next: 'Write the list.', owner: 'scout' }, { as: 'asker', env: ctx.env, deps: ctx.deps }).card.outcome;
+  room.reply(ctx.root, card.id, 'Not a list. Try again.', { env: ctx.env });
+  assert.throws(() => work.startWork(ctx.root, card.id, { replyId: out.reply_id, env: ctx.env, deps: ctx.deps }), (e) => e.status === 409 && /opened again/.test(e.message));
+  // The owner corrects themselves; an answer to the older comment does not use up the newer one.
+  const idea = feed.proposeCard(ctx.root, { as: 'scout', title: 'Call the warm leads today', why: 'They answer', env: ctx.env }).card;
+  const six = room.reply(ctx.root, idea.id, 'Make it six calls.', { env: ctx.env }).reply;
+  const seven = room.reply(ctx.root, idea.id, 'Make it seven calls.', { env: ctx.env }).reply;
+  room.reply(ctx.root, idea.id, 'Six calls it is.', { as: 'scout', answering: six.id, env: ctx.env, deps: ctx.deps });
+  room.reply(ctx.root, idea.id, 'Seven calls, starting at ten.', { as: 'writer', answering: seven.id, env: ctx.env, deps: ctx.deps });
+  assert.throws(() => room.reply(ctx.root, idea.id, 'Seven it is then.', { as: 'asker', answering: seven.id, env: ctx.env, deps: ctx.deps }), refused(/already answered/));
+  // A note written for a feed cleared since is not posted onto the empty one.
+  const epoch = room.clearedAt(ctx.root);
+  room.clear(ctx.root, { env: ctx.env, confirmed: true });
+  assert.throws(() => room.say(ctx.root, { as: 'scout', text: 'Orders doubled on the weekend.', fromAsk: true, feedEpoch: epoch, env: ctx.env, deps: ctx.deps }), (e) => e.code === 'feed_cleared');
+});
+
+test('second review: a round the feed started by itself makes no second model call to reword a card', async (t) => {
+  const ctx = project(t, ['scout']);
+  let rewrites = 0;
+  ctx.deps.rewriteTurn = async () => { rewrites += 1; return { ok: true, text: 'TITLE: Bring the change in today\nWHY: It is ready' }; };
+  const text = 'IDEA\nTITLE: Merge the checkout branch into the repo\nWHY: Buyers ask for it\nSOURCE: From the shop notes\nEND\n';
+  const turn = async ({ onText }) => { onText(text); return { ok: true, text }; };
+  const env = { ...ctx.env, ATRIS_FEED_MEMBER_GAP_SECONDS: '0' };
+  const byItself = [];
+  await team.pingStream(ctx.root, { reason: 'scroll', noRetry: true, env, deps: { ...ctx.deps, turn }, onEvent: (e) => byItself.push(e) });
+  assert.equal(rewrites, 0, 'left out, not reworded');
+  assert.ok(byItself.some((e) => e.type === 'card_dropped'));
+  const asked = [];
+  await team.pingStream(ctx.root, { reason: 'more', noRetry: true, env, deps: { ...ctx.deps, turn }, onEvent: (e) => asked.push(e) });
+  assert.equal(rewrites, 1, 'a round the person asked for still gets its one rewrite');
+});

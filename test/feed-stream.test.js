@@ -63,7 +63,8 @@ test('stream: a card cut off mid-way, or one that fails the checks, is dropped a
     for (const piece of text.match(/.{1,6}/gs)) onText(piece);
     return { ok: false, text, error: 'the connection dropped' };
   };
-  const { events } = await streamPing(ctx);
+  // The person asked for more: a slip gets its one rewrite. (A round the feed started by itself makes no second model call.)
+  const { events } = await streamPing(ctx, { reason: 'more' });
   const dropped = events.filter((e) => e.type === 'card_dropped');
   assert.ok(dropped.some((e) => /plain words/.test(e.reason) && /One rewrite did not fix it/.test(e.reason)), 'one rewrite was tried first');
   assert.ok(dropped.some((e) => /stopped before the card was finished/.test(e.reason)));
