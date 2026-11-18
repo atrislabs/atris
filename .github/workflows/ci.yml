@@ -60,7 +60,13 @@ jobs:
         id: pick
         env:
           TARGET_READ: ${{ steps.target.outcome }}
-        run: node scripts/ci-test-plan.js
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+            node -e 'console.log("matrix=" + JSON.stringify({include: Array.from({length: 10}, (_, i) => ({group: (i + 1) + "/10"}))}))' >> "$GITHUB_OUTPUT"
+          else
+            node scripts/ci-test-plan.js
+          fi
 
   unit:
     needs: plan
