@@ -1,3 +1,47 @@
+# real backend routes
+
+`atris perf routes [--top 10]` fetches real request timings from the backend.
+Set `ATRIS_INTERNAL_SECRET` in your shell environment before running it. The
+value is read only from the environment and sent as a bearer authorization
+header. Never put the secret in the targets file or a command argument.
+
+The targets list also accepts one route source, seeded as:
+
+```json
+{"name":"routes","type":"routes","url":"https://atrisos.onrender.com/internal/perf/routes"}
+```
+
+Edit that entry to use a different backend endpoint. Existing targets lists
+without a route entry use this production source by default. URL checks ignore
+the route source entry; add, list and remove preserve the rest of the list.
+Names must be unique across URL targets and the route source. The name `routes`
+is reserved for the route source. Multiple route sources fail route collection
+with one message; the default flow still completes its URL checks and report.
+Only http/https source URLs without credentials, query strings or fragments are
+accepted. Redirects are not followed, so the bearer token is never forwarded.
+
+Bare `atris perf` runs URL checks then fetches routes and reports both. Without
+the secret it prints one setup line and still completes URL checks. `perf run`
+alone remains URL-only. A 401 means the secret is wrong; a 404 means the backend
+endpoint is not deployed yet. Other failures are reported without response
+bodies or credentials and do not stop the default URL report.
+Explicit `atris perf routes` failures exit with status 1, including missing
+credentials and history write failures. Successful collection exits with 0.
+
+Routes rank by `p95 × count`, recomputed locally rather than trusting a supplied
+score. The top ten show method, template, lifetime count, p50/p95/p99 in
+milliseconds, error rate and score. Use `--top N` to change the display limit,
+including on `perf report`. The full snapshot is saved regardless of this limit.
+Empty snapshots are valid. Counts are per worker since the displayed `since`
+time and reset on deploy; latency percentiles cover the backend's recent ring
+of samples, not a fixed weekly window.
+
+Successful snapshots append to `atris/perf/routes.jsonl`, ignored automatically
+in git projects. `atris perf report --html` includes the latest saved snapshot
+as a routes table with its collection and since times. It does not fetch fresh
+data or need the secret. URL run history and `report --json` retain their existing
+format. Request failures never replace the last successful snapshot.
+
 # endpoint speed checks
 
 Run `atris perf` for ten sequential samples per endpoint and a ranked text report.
