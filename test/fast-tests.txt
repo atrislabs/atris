@@ -104,6 +104,7 @@ test/mission-tick-prompt.test.js
 test/mission-verifier.test.js
 test/mission-worktree-baseline.test.js
 test/mission-worktree-receipt.test.js
+test/model-name-ratchet.test.js
 test/moves.test.js
 test/ninety-nine.test.js
 test/now.test.js
@@ -126,6 +127,7 @@ test/radar.test.js
 test/readme-engines.test.js
 test/recap.test.js
 test/reel.test.js
+test/repo-hygiene.test.js
 test/repo-shape.test.js
 test/report.test.js
 test/review-integrity.test.js
