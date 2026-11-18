@@ -98,6 +98,10 @@ Partial socket scan warning: `lib/engine-resource.js:278` names agent sockets un
 
 - Cleanup scan warnings: `commands/engine.js:2347` merges unread initial and final readers for text and JSON; `lib/engine-resource.js:347` records unread final readers and an unknown remaining count. `test/engine-resource.test.js:2410` covers changed readers across scans; `test/engine-resource.test.js:2427` exercises the real CLI with process execution denied.
 
+## Scout time limits
+
+- `commands/scout.js` uses the same `lib/fleet.js` (`spawnWithOutputChunks`) process-group timeout as fleet dispatch. The timeout stops the engine and children holding its output open on Linux and macOS. `test/engine-resource.test.js` verifies that a real child cannot finish after the timeout and that the receipt distinguishes a timeout from a crash.
+
 ## Mercury 3 test model and the model picker
 
 `ax --mercury [--diffuse] "<prompt>"` follows `flags -> request -> snapshots replace -> final text -> stderr timing`.

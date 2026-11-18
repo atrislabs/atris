@@ -1065,9 +1065,12 @@ test('atris scout records each engine run with a time limit kill and a crash tol
     fake('echo "it is in lib/fleet.js:1"');
     const answered = scout(30);
     assert.strictEqual(answered.status, 0, answered.stderr);
-    fake('sleep 30');
+    fake('(echo running > scout-child-started; sleep 30; echo survived > scout-child-finished) &\nwait');
     const slow = scout(1);
     assert.strictEqual(slow.status, 1);
+    assert.match(slow.stdout, /timed out after 1s/);
+    assert.ok(fs.existsSync(path.join(root, 'scout-child-started')), 'the shell started a real descendant');
+    assert.ok(!fs.existsSync(path.join(root, 'scout-child-finished')), 'the timed-out scout let its descendant finish');
     fake('kill -9 $$');
     const crashed = scout(30);
     assert.strictEqual(crashed.status, 1);
