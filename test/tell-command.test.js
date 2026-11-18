@@ -96,8 +96,33 @@ test('send prints saved, delivered, wakes, and the check command', async () => {
   ]);
   const sent = h.calls.find((c) => c.method === 'POST');
   assert.equal(sent.pathname, `${BASE}/tell`);
-  assert.deepEqual(sent.body, { member: 'arjun', text: 'check the signup page', task_key: null, channel: null });
+  const { idempotency_key: key, ...rest } = sent.body;
+  assert.deepEqual(rest, { member: 'arjun', text: 'check the signup page', task_key: null, channel: null });
+  assert.match(key, /^[0-9a-f-]{36}$/);
   assert.equal(sent.token, TOKEN);
+});
+
+test('each send carries its own retry key, so a retried request never sends twice', async () => {
+  const keys = [];
+  for (let i = 0; i < 2; i += 1) {
+    const h = harness();
+    assert.equal(await tellCommand(['arjun', 'hello'], h.deps), 0, h.all());
+    keys.push(h.calls.find((c) => c.method === 'POST').body.idempotency_key);
+  }
+  assert.ok(keys[0] && keys[1] && keys[0] !== keys[1]);
+});
+
+test('saved but not confirmed says so, never claims delivery, and exits zero', async () => {
+  const note = 'Saved. Could not confirm it reached the inbox yet; check with channel_receipt before sending again.';
+  const h = harness({ handler: fakeServer({ [`POST ${BASE}/tell`]: () => ({ ok: true, status: 201, data: { ...SENT, delivered: null, seq: null, state: 'saved', wakes: false, wake_reason: 'unknown', note } }) }) });
+  const code = await tellCommand(['arjun', 'hello'], h.deps);
+  assert.equal(code, 0, h.all());
+  assert.deepEqual(h.stdout, [
+    'saved      in #general for arjun',
+    'delivered  saved, not confirmed yet. check status before sending again',
+    'check      atris tell status 6c0b6823 --business atris-labs',
+  ]);
+  assert.ok(!/it is in arjun's inbox|not delivered/.test(h.all()));
 });
 
 test('--task, --channel and --as go to the server; a leading @ is dropped', async () => {
@@ -105,7 +130,9 @@ test('--task, --channel and --as go to the server; a leading @ is dropped', asyn
   const code = await tellCommand(['@arjun', 'ship it', '--task', 'signup-1', '--channel', '#ops', '--as', 'walsh'], h.deps);
   assert.equal(code, 0, h.all());
   const sent = h.calls.find((c) => c.method === 'POST');
-  assert.deepEqual(sent.body, { member: 'arjun', text: 'ship it', task_key: 'signup-1', channel: 'ops', agent_id: 'agent-walsh-id' });
+  const { idempotency_key: key, ...rest } = sent.body;
+  assert.deepEqual(rest, { member: 'arjun', text: 'ship it', task_key: 'signup-1', channel: 'ops', agent_id: 'agent-walsh-id' });
+  assert.ok(key);
 });
 
 test('--json passes the server reply through untouched', async () => {
@@ -312,6 +339,49 @@ test('--wait runs out of time, survives missing fields, and exits non-zero', asy
   assert.deepEqual(h.stdout.slice(-2), ['  12s  arjun no word on it yet', 'no answer from arjun after 12 seconds']);
 });
 
+// The server's receipt rows carry name and member_id, not to.
+const MEMBERS = (rows) => ({ post_id: '6c0b6823', recipients: rows });
+
+test('--wait watches the member the note went to by id, not the first row', async () => {
+  const sent = { ...SENT, to: 'Arjun', member_id: 'agent-arjun' };
+  const h = stopwatch([MEMBERS([
+    { name: 'Walsh', member_id: 'agent-walsh', state: 'completed' },
+    { name: 'Arjun', member_id: 'agent-arjun', state: 'seen' },
+  ]), MEMBERS([
+    { name: 'Walsh', member_id: 'agent-walsh', state: 'completed' },
+    { name: 'Arjun', member_id: 'agent-arjun', state: 'completed' },
+  ])]);
+  h.deps.apiRequestJson = ((inner) => async (p, o = {}) => (o.method === 'POST' && p === `${BASE}/tell`
+    ? { ok: true, status: 201, data: sent } : inner(p, o)))(h.deps.apiRequestJson);
+  const code = await tellCommand(['arjun', 'ping', '--wait', '60'], h.deps);
+  assert.equal(code, 0, h.all());
+  assert.deepEqual(h.stdout.slice(-3), ['   5s  Arjun seen, not picked up yet', '  10s  Arjun finished', 'finished in 10 seconds']);
+});
+
+test('--wait matches a name in any case when the row has no id', async () => {
+  const h = stopwatch([MEMBERS([{ name: 'Walsh', state: 'delivered' }, { name: 'ARJUN', state: 'completed' }])]);
+  assert.equal(await tellCommand(['arjun', 'ping', '--wait', '20'], h.deps), 0, h.all());
+  assert.equal(h.stdout.at(-1), 'finished in 5 seconds');
+});
+
+test('--wait stops plainly when the receipt does not list the member', async () => {
+  const sent = { ...SENT, member_id: 'agent-arjun' };
+  const h = stopwatch([MEMBERS([{ name: 'arjun', member_id: 'agent-other-arjun', state: 'completed' }, { name: 'Walsh', member_id: 'agent-walsh', state: 'completed' }])]);
+  h.deps.apiRequestJson = ((inner) => async (p, o = {}) => (o.method === 'POST' && p === `${BASE}/tell`
+    ? { ok: true, status: 201, data: sent } : inner(p, o)))(h.deps.apiRequestJson);
+  const code = await tellCommand(['arjun', 'ping', '--wait', '20'], h.deps);
+  assert.equal(code, 1);
+  assert.deepEqual(h.stderr, ['the receipt does not list arjun, so --wait stopped here. check: atris tell status 6c0b6823 --business atris-labs']);
+  assert.ok(!/finished/.test(h.stdout.join('\n')));
+});
+
+test('status names each person from the server rows', async () => {
+  const receipt = MEMBERS([{ name: 'Nova', member_id: 'agent-nova', state: 'seen' }]);
+  const h = harness({ handler: fakeServer({ [`GET ${BASE}/posts/6c0b6823/receipt`]: () => ({ ok: true, status: 200, data: receipt }) }) });
+  assert.equal(await tellCommand(['status', '6c0b6823'], h.deps), 0, h.all());
+  assert.deepEqual(h.stdout, ['Nova  seen, not picked up yet']);
+});
+
 test('--wait on an old server without receipts says so', async () => {
   const h = stopwatch([() => ({ ok: false, status: 404, data: { detail: 'Not Found' } })]);
   assert.equal(await tellCommand(['arjun', 'ping', '--wait'], h.deps), 1);
@@ -381,7 +451,9 @@ test('the installed command sends through a real HTTP server with the stored sig
     assert.equal(run.status, 0, run.stderr);
     assert.match(run.stdout, /saved {6}in #general for arjun\ndelivered {2}it is in arjun's inbox\n/);
     const sent = seen.find((s) => s.method === 'POST' && s.url.endsWith('/tell'));
-    assert.deepEqual(JSON.parse(sent.body), { member: 'arjun', text: 'check the signup page', task_key: null, channel: null });
+    const { idempotency_key: key, ...rest } = JSON.parse(sent.body);
+    assert.deepEqual(rest, { member: 'arjun', text: 'check the signup page', task_key: null, channel: null });
+    assert.match(key, /^[0-9a-f-]{36}$/);
     assert.equal(sent.auth, `Bearer ${TOKEN}`);
     assert.ok(!(run.stdout + run.stderr).includes(TOKEN));
   } finally {
