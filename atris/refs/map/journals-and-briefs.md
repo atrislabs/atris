@@ -71,7 +71,7 @@ rg "ensureNowFile|nowJsonPayload|nowAtris|renderDefaultNow|renderPortfolioNow|fo
 - **Ranking:** `commands/launchpad.js` (`chooseNextAction`) own-claimed task > mission needing a tick > proof needing agent review > certified human-accept queue > open claim > endgame seed > brain next move > ask-for-work; `taskIsHumanGatedClaimed` skips claimed work gated on human accept; no `atris init` bootstrap
 - **Suggestions:** `commands/launchpad.js` (`suggestedNextMoves`) returns up to 3 plain-language moves
 - **Render:** `commands/launchpad.js` (`renderLaunchpad`) draws the ASCII card; `commands/launchpad.js` (`showLaunchpadHelp`)
-- **Help:** `bin/atris.js:580` help line; **Routing:** `bin/atris.js:2479` dispatch, `lib/known-commands.js` `knownCommands`
+- **Help:** `bin/atris.js:565` help line; **Routing:** `bin/atris.js:2438` dispatch, `lib/known-commands.js` `knownCommands`
 - **Regression:** `test/first-minute.test.js` (empty first-talk, file names the file, post-mint already yours, post-init claim); `test/dogfood-p0-safety.test.js` `26d`/`26e`/`26h`/`26i`; `test/commands-7.test.js:1255` (actor-claimed first), `test/commands-7.test.js:1329` (clean queue to endgame seed), `test/commands-7.test.js:1365` (verifier mission when no claimed task); `--help` smoke at `test/commands-7.test.js:1199`
 - **Value:** Answers "who is doing what, what needs review, what is blocked, what should start next" in one card without cloud auth
 
@@ -82,7 +82,7 @@ rg "ensureNowFile|nowJsonPayload|nowAtris|renderDefaultNow|renderPortfolioNow|fo
 **Purpose:** Productivity insights from existing journal data
 
 - **Entry point:** `commands/analytics.js:4-147` (analyticsAtris function)
-- **Help:** `bin/atris.js` (`showAnalyticsHelp`) and `bin/atris.js:1479-1478` short-circuit `analytics --help` before workspace reads
+- **Help:** `bin/atris.js` (`showAnalyticsHelp`) and `bin/atris.js:1437-1438` short-circuit `analytics --help` before workspace reads
 - **Regression:** `test/commands-2.test.js:1476-1491` covers `analytics --help` without `atris/` or `$HOME/.atris`
 - **Pareto insight:** No new instrumentation - parses existing markdown
 - **Data sources:**
