@@ -4,7 +4,7 @@ Packs, apps, buying, Google and Slack integrations and outside CLI wrappers. Cod
 
 ## Quick Reference Index
 
-**Explicit Pack recovery:** `commands/pack.js:2699` handles `pack run <existing-dir> --recover <receipt.json>`; `lib/pack-capabilities.js:488` validates the authoritative journal and prior failed exit, and `lib/pack-capabilities.js:890` prevents writes to completed files during recovery. `test/pack-run.test.js:2091` covers corrupt history and `test/pack-run.test.js:2232` exercises process exit and empty arguments. Contract and limits: `atris/features/pack-recovery/plan.md`.
+**Explicit Pack recovery:** `commands/pack.js:2693` handles `pack run <existing-dir> --recover <receipt.json>`; `lib/pack-capabilities.js:488` validates the authoritative journal and prior failed exit, and `lib/pack-capabilities.js:890` prevents writes to completed files during recovery. `test/pack-run.test.js:2091` covers corrupt history and `test/pack-run.test.js:2232` exercises process exit and empty arguments. Contract and limits: `atris/features/pack-recovery/plan.md`.
 
 ## Search shortcuts: Modular commands
 
