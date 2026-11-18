@@ -274,6 +274,9 @@ async function tellCommand(args = [], deps = {}) {
         ? `${target} now wakes when sent a note. Each wake runs ${target}'s computer on the business's credits, up to the daily limit.`
         : `${target} no longer wakes for notes.`);
     }
+    // Inside this business's project folder, the feed switch follows (best effort).
+    const local = require('../lib/wake-sync').setLocalSwitch(deps.cwd || process.cwd(), business, target, on, deps);
+    if (local.line) err(local.line);
     return 0;
   }
 
