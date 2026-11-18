@@ -221,7 +221,8 @@ function main(args, root = path.resolve(__dirname, '..')) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
   delete env.ATRIS_TEST_SPLIT;
-  const run = spawnSync(process.execPath, ['--test', ...files], {
+  // Most quick tests wait on children or timers; use eight slots on four CPUs.
+  const run = spawnSync(process.execPath, ['--test', '--test-concurrency=8', ...files], {
     cwd: root,
     stdio: 'inherit',
     env,
