@@ -365,80 +365,82 @@ test('browser: on the job deck a finger dragging the wide table sideways scrolls
 // a team table with one member
 const teamOf = (n = 1) => gmCard.team({ id: `team~${n}`, rows: [{ member: 'navigator', role: 'system navigator', ovr: '84', engine: 'tool one m-small', status: 'waiting for your yes', sentence: 'waiting for your yes: plan the pricing page, waiting 2 hours' }], line: null, deck: false });
 
-test('browser: a tap anywhere in the model cell of a team row opens that model\'s swap, not the member\'s talk card', { skip, timeout: 90000 }, async () => {
-  const taps = [];
-  const desk = trace.cardDesk(teamOf(), async (action, { option }) => { taps.push(option.id); return { card: teamOf(taps.length + 1) }; });
-  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
-    const td = await p.rect('#bet td.engine');
-    const b = await p.rect('#bet td.engine button');
-    const engine = await p.run("document.querySelector('#bet td.engine button').getAttribute('data-option')");
-    const member = await p.run("document.querySelector('#bet td.member button').getAttribute('data-option')");
-    // in the cell, just under the model's words
-    await tapAt(send, b.x + b.w / 2, Math.min(td.y + td.h - 3, b.y + b.h + 6));
-    await wait(1500);
-    return { engine, member, taps, gap: Math.round(td.y + td.h - (b.y + b.h)) };
-  }, trace.LAPTOP);
-  const show = JSON.stringify(out, null, 1);
-  assert.ok(out.gap >= 6, show);
-  assert.notEqual(out.engine, out.member, show);
-  assert.deepEqual(out.taps, [out.engine], show);
-});
-
-test('browser: dragging to select words in a team row selects them and opens nothing, a drag that selects nothing opens nothing too; a plain tap on the row still opens it', { skip, timeout: 90000 }, async () => {
-  const taps = [];
-  const desk = trace.cardDesk(teamOf(), async (action, { option }) => { taps.push(action); return { card: teamOf(taps.length + 1) }; });
-  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
-    // the status cell's line of words, wherever this machine's font puts it
-    const line = await p.run("(function () { var g = document.createRange(); g.selectNodeContents(document.querySelector('#bet td.status')); var b = g.getClientRects()[0]; return { x: b.left, y: b.top + b.height / 2 }; })()");
-    // a mouse that rests on the first word, presses, and drags along the line
-    const drag = async () => {
-      const { x, y } = line;
-      await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + 4, y });
-      await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: x + 4, y, button: 'left', buttons: 1, clickCount: 1 });
-      for (const dx of [60, 120, 180]) await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + dx, y, button: 'left', buttons: 1 });
-      await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x + 180, y, button: 'left', buttons: 0, clickCount: 1 });
-      await wait(1200);
-    };
-    await drag();
-    const selected = await p.run('String(window.getSelection())');
-    const afterDrag = [...taps];
-    // the same drag where the browser selects nothing, as a drag over a
-    // cell's margin can: it moved, so it is still not a tap
-    await p.run("getSelection().removeAllRanges(); window.noSelect = function (e) { e.preventDefault(); }; document.addEventListener('selectstart', window.noSelect); true");
-    await drag();
-    const blank = await p.run('String(window.getSelection())');
-    const afterBlank = [...taps];
-    await p.run("document.removeEventListener('selectstart', window.noSelect); true");
-    // a plain tap on the row, away from the words picked
-    const role = await middle(p, '#bet td.role');
-    await tapAt(send, role.x, role.y);
-    await wait(1500);
-    return { selected, afterDrag, blank, afterBlank, taps };
-  }, trace.LAPTOP);
-  const show = JSON.stringify(out, null, 1);
-  assert.ok(out.selected.length > 3, show);
-  assert.deepEqual(out.afterDrag, [], show);
-  assert.equal(out.blank, '', show);
-  assert.deepEqual(out.afterBlank, [], show);
-  assert.deepEqual(out.taps, ['member'], show);
-});
-
-test('browser: a short quiet link like no on a yes card answers a tap 44px wide, and its words stay where they were', { skip, timeout: 90000 }, async () => {
-  const taps = [];
-  const desk = trace.cardDesk(CARDS.yes, async (action) => { taps.push(action); return { card: CARDS.b2 }; });
-  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
-    const r = await p.rect("#bet [data-option='no']");
-    const hits = await p.run(`(function () { var y = ${r.y + r.h / 2}, c = ${r.x + r.w / 2}; return [-21, -16, 16, 21].map(function (dx) { var n = document.elementFromPoint(c + dx, y); return Boolean(n && n.closest && n.closest("[data-option='no']")); }); })()`);
-    // a tap 20px left of the middle of the words, outside them
-    await tapAt(send, r.x + r.w / 2 - 20, r.y + r.h / 2);
-    await wait(1500);
-    return { w: r.w, h: r.h, hits, taps };
+test.describe('independent tap and drag checks', { concurrency: 2 }, () => {
+  test('browser: a tap anywhere in the model cell of a team row opens that model\'s swap, not the member\'s talk card', { skip, timeout: 90000 }, async () => {
+    const taps = [];
+    const desk = trace.cardDesk(teamOf(), async (action, { option }) => { taps.push(option.id); return { card: teamOf(taps.length + 1) }; });
+    const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+      const td = await p.rect('#bet td.engine');
+      const b = await p.rect('#bet td.engine button');
+      const engine = await p.run("document.querySelector('#bet td.engine button').getAttribute('data-option')");
+      const member = await p.run("document.querySelector('#bet td.member button').getAttribute('data-option')");
+      // in the cell, just under the model's words
+      await tapAt(send, b.x + b.w / 2, Math.min(td.y + td.h - 3, b.y + b.h + 6));
+      await wait(1500);
+      return { engine, member, taps, gap: Math.round(td.y + td.h - (b.y + b.h)) };
+    }, trace.LAPTOP);
+    const show = JSON.stringify(out, null, 1);
+    assert.ok(out.gap >= 6, show);
+    assert.notEqual(out.engine, out.member, show);
+    assert.deepEqual(out.taps, [out.engine], show);
   });
-  const show = JSON.stringify(out, null, 1);
-  // the words themselves are narrower than a finger: the button box did not grow
-  assert.ok(out.w < 44 && out.h >= 44, show);
-  assert.deepEqual(out.hits, [true, true, true, true], show);
-  assert.deepEqual(out.taps, ['no'], show);
+
+  test('browser: dragging to select words in a team row selects them and opens nothing, a drag that selects nothing opens nothing too; a plain tap on the row still opens it', { skip, timeout: 90000 }, async () => {
+    const taps = [];
+    const desk = trace.cardDesk(teamOf(), async (action, { option }) => { taps.push(action); return { card: teamOf(taps.length + 1) }; });
+    const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+      // the status cell's line of words, wherever this machine's font puts it
+      const line = await p.run("(function () { var g = document.createRange(); g.selectNodeContents(document.querySelector('#bet td.status')); var b = g.getClientRects()[0]; return { x: b.left, y: b.top + b.height / 2 }; })()");
+      // a mouse that rests on the first word, presses, and drags along the line
+      const drag = async () => {
+        const { x, y } = line;
+        await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + 4, y });
+        await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: x + 4, y, button: 'left', buttons: 1, clickCount: 1 });
+        for (const dx of [60, 120, 180]) await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: x + dx, y, button: 'left', buttons: 1 });
+        await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: x + 180, y, button: 'left', buttons: 0, clickCount: 1 });
+        await wait(1200);
+      };
+      await drag();
+      const selected = await p.run('String(window.getSelection())');
+      const afterDrag = [...taps];
+      // the same drag where the browser selects nothing, as a drag over a
+      // cell's margin can: it moved, so it is still not a tap
+      await p.run("getSelection().removeAllRanges(); window.noSelect = function (e) { e.preventDefault(); }; document.addEventListener('selectstart', window.noSelect); true");
+      await drag();
+      const blank = await p.run('String(window.getSelection())');
+      const afterBlank = [...taps];
+      await p.run("document.removeEventListener('selectstart', window.noSelect); true");
+      // a plain tap on the row, away from the words picked
+      const role = await middle(p, '#bet td.role');
+      await tapAt(send, role.x, role.y);
+      await wait(1500);
+      return { selected, afterDrag, blank, afterBlank, taps };
+    }, trace.LAPTOP);
+    const show = JSON.stringify(out, null, 1);
+    assert.ok(out.selected.length > 3, show);
+    assert.deepEqual(out.afterDrag, [], show);
+    assert.equal(out.blank, '', show);
+    assert.deepEqual(out.afterBlank, [], show);
+    assert.deepEqual(out.taps, ['member'], show);
+  });
+
+  test('browser: a short quiet link like no on a yes card answers a tap 44px wide, and its words stay where they were', { skip, timeout: 90000 }, async () => {
+    const taps = [];
+    const desk = trace.cardDesk(CARDS.yes, async (action) => { taps.push(action); return { card: CARDS.b2 }; });
+    const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+      const r = await p.rect("#bet [data-option='no']");
+      const hits = await p.run(`(function () { var y = ${r.y + r.h / 2}, c = ${r.x + r.w / 2}; return [-21, -16, 16, 21].map(function (dx) { var n = document.elementFromPoint(c + dx, y); return Boolean(n && n.closest && n.closest("[data-option='no']")); }); })()`);
+      // a tap 20px left of the middle of the words, outside them
+      await tapAt(send, r.x + r.w / 2 - 20, r.y + r.h / 2);
+      await wait(1500);
+      return { w: r.w, h: r.h, hits, taps };
+    });
+    const show = JSON.stringify(out, null, 1);
+    // the words themselves are narrower than a finger: the button box did not grow
+    assert.ok(out.w < 44 && out.h >= 44, show);
+    assert.deepEqual(out.hits, [true, true, true, true], show);
+    assert.deepEqual(out.taps, ['no'], show);
+  });
 });
 
 async function press(send, key, code, text) {
@@ -446,172 +448,174 @@ async function press(send, key, code, text) {
   await send('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: code });
 }
 
-test('browser: with the keyboard alone, the next card takes the focus on the card itself, one Tab from its first action, and going home puts it on the big orb', { skip, timeout: 90000 }, async () => {
-  const did = [];
-  const desk = trace.cardDesk(CARDS.q1, async (action) => { did.push(action); return { card: action === 'orb' ? CARDS.b2 : CARDS.b1 }; });
-  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
-    // Tab to the first answer and press Enter
-    let tabs = 0;
-    while ((await look(p)).active !== 'BUTTON:money' && tabs++ < 10) await press(send, 'Tab', 9);
-    await press(send, 'Enter', 13, '\r');
-    await p.until(titled(CARDS.b1.title), 'the next card', 8000);
-    await wait(300);
-    const next = await look(p);
-    // on to the small orb, and Enter goes home
-    tabs = 0;
-    while ((await look(p)).active !== 'DIV#lava' && tabs++ < 12) await press(send, 'Tab', 9);
-    await press(send, 'Enter', 13, '\r');
-    await p.until("!document.body.hasAttribute('data-busy') && !document.body.classList.contains('has-card')", 'the big orb', 8000);
-    await wait(300);
-    const home = await look(p);
-    // Enter on the big orb brings the next card, and the focus goes with it
-    await press(send, 'Enter', 13, '\r');
-    await p.until(titled(CARDS.b2.title), 'the card after', 8000).catch(() => {});
-    await wait(300);
-    const after = await look(p);
-    await press(send, 'Tab', 9);
-    return { next, home, after, tabbed: await look(p), did };
+test.describe('independent keyboard checks', { concurrency: 2 }, () => {
+  test('browser: with the keyboard alone, the next card takes the focus on the card itself, one Tab from its first action, and going home puts it on the big orb', { skip, timeout: 90000 }, async () => {
+    const did = [];
+    const desk = trace.cardDesk(CARDS.q1, async (action) => { did.push(action); return { card: action === 'orb' ? CARDS.b2 : CARDS.b1 }; });
+    const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+      // Tab to the first answer and press Enter
+      let tabs = 0;
+      while ((await look(p)).active !== 'BUTTON:money' && tabs++ < 10) await press(send, 'Tab', 9);
+      await press(send, 'Enter', 13, '\r');
+      await p.until(titled(CARDS.b1.title), 'the next card', 8000);
+      await wait(300);
+      const next = await look(p);
+      // on to the small orb, and Enter goes home
+      tabs = 0;
+      while ((await look(p)).active !== 'DIV#lava' && tabs++ < 12) await press(send, 'Tab', 9);
+      await press(send, 'Enter', 13, '\r');
+      await p.until("!document.body.hasAttribute('data-busy') && !document.body.classList.contains('has-card')", 'the big orb', 8000);
+      await wait(300);
+      const home = await look(p);
+      // Enter on the big orb brings the next card, and the focus goes with it
+      await press(send, 'Enter', 13, '\r');
+      await p.until(titled(CARDS.b2.title), 'the card after', 8000).catch(() => {});
+      await wait(300);
+      const after = await look(p);
+      await press(send, 'Tab', 9);
+      return { next, home, after, tabbed: await look(p), did };
+    });
+    const show = JSON.stringify(out, null, 1);
+    // the card itself, never its do it, so an Enter too many starts nothing; one Tab is its first action
+    assert.equal(out.next.active, 'ARTICLE#bet', show);
+    assert.equal(out.home.active, 'CANVAS#orb', show);
+    assert.equal(out.after.active, 'ARTICLE#bet', show);
+    assert.equal(out.tabbed.active, 'BUTTON:do', show);
+    assert.deepEqual(out.did, ['answer', 'orb'], show);
   });
-  const show = JSON.stringify(out, null, 1);
-  // the card itself, never its do it, so an Enter too many starts nothing; one Tab is its first action
-  assert.equal(out.next.active, 'ARTICLE#bet', show);
-  assert.equal(out.home.active, 'CANVAS#orb', show);
-  assert.equal(out.after.active, 'ARTICLE#bet', show);
-  assert.equal(out.tabbed.active, 'BUTTON:do', show);
-  assert.deepEqual(out.did, ['answer', 'orb'], show);
-});
 
-// where the focus is, and whether a keyboard user can see it there
-const RING = "(function () { var a = document.activeElement, s = getComputedStyle(a); return { visible: a.matches(':focus-visible'), ring: s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2 ? s.outlineColor : null }; })()";
+  // where the focus is, and whether a keyboard user can see it there
+  const RING = "(function () { var a = document.activeElement, s = getComputedStyle(a); return { visible: a.matches(':focus-visible'), ring: s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) >= 2 ? s.outlineColor : null }; })()";
 
-test('browser: after a note sent with Enter the next card takes the focus on the card itself with a ring to see, never on do it, so two more Enters arm and start nothing', { skip, timeout: 90000 }, async () => {
-  const did = [];
-  const desk = trace.cardDesk(CARDS.b1, async (action) => { did.push(action); return { card: CARDS.b2 }; });
-  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
-    // the keyboard alone: Tab to the box's button, Enter opens it, type, Enter sends
-    let tabs = 0;
-    while (!(await p.run("document.activeElement.textContent === 'or say something'")) && tabs++ < 12) await press(send, 'Tab', 9);
-    await press(send, 'Enter', 13, '\r');
-    await p.until("document.activeElement && document.activeElement.tagName === 'INPUT'", 'the box', 5000);
-    await p.type('make it about schools');
-    await press(send, 'Enter', 13, '\r');
-    await p.until(titled(CARDS.b2.title), 'the next card', 8000);
-    await wait(300);
-    const landed = { ...(await look(p)), ...(await p.run(RING)) };
-    // the Enter presses a keyboard user may still be making, a deliberate second tap apart
-    await press(send, 'Enter', 13, '\r');
-    await wait(450);
-    await press(send, 'Enter', 13, '\r');
-    await wait(600);
-    return { landed, after: await look(p), did };
+  test('browser: after a note sent with Enter the next card takes the focus on the card itself with a ring to see, never on do it, so two more Enters arm and start nothing', { skip, timeout: 90000 }, async () => {
+    const did = [];
+    const desk = trace.cardDesk(CARDS.b1, async (action) => { did.push(action); return { card: CARDS.b2 }; });
+    const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+      // the keyboard alone: Tab to the box's button, Enter opens it, type, Enter sends
+      let tabs = 0;
+      while (!(await p.run("document.activeElement.textContent === 'or say something'")) && tabs++ < 12) await press(send, 'Tab', 9);
+      await press(send, 'Enter', 13, '\r');
+      await p.until("document.activeElement && document.activeElement.tagName === 'INPUT'", 'the box', 5000);
+      await p.type('make it about schools');
+      await press(send, 'Enter', 13, '\r');
+      await p.until(titled(CARDS.b2.title), 'the next card', 8000);
+      await wait(300);
+      const landed = { ...(await look(p)), ...(await p.run(RING)) };
+      // the Enter presses a keyboard user may still be making, a deliberate second tap apart
+      await press(send, 'Enter', 13, '\r');
+      await wait(450);
+      await press(send, 'Enter', 13, '\r');
+      await wait(600);
+      return { landed, after: await look(p), did };
+    });
+    const show = JSON.stringify(out, null, 1);
+    // before: the focus landed on do it, and the next two Enters armed it and started the job
+    assert.equal(out.landed.active, 'ARTICLE#bet', show);
+    assert.equal(out.landed.visible, true, show);
+    assert.equal(out.landed.ring, 'rgb(255, 140, 66)', show);
+    assert.deepEqual(out.did, ['say'], show);
+    assert.deepEqual(out.after.armed, [], show);
+    assert.equal(out.after.title, CARDS.b2.title, show);
   });
-  const show = JSON.stringify(out, null, 1);
-  // before: the focus landed on do it, and the next two Enters armed it and started the job
-  assert.equal(out.landed.active, 'ARTICLE#bet', show);
-  assert.equal(out.landed.visible, true, show);
-  assert.equal(out.landed.ring, 'rgb(255, 140, 66)', show);
-  assert.deepEqual(out.did, ['say'], show);
-  assert.deepEqual(out.after.armed, [], show);
-  assert.equal(out.after.title, CARDS.b2.title, show);
-});
 
-test('browser: Tab from an open box goes to its send, and Esc in the box puts the focus back on the button it came from', { skip, timeout: 90000 }, async () => {
-  const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
-  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
-    const where = () => p.run("(function () { var a = document.activeElement; return { tag: a.tagName, cls: a.className, text: a.textContent, field: Boolean(document.querySelector('#bet .field')) }; })()");
-    await p.tap('#bet .sayline .quiet');
-    await wait(200);
-    const open = await where();
-    await press(send, 'Tab', 9);
-    await wait(150);
-    const tabbed = await where();
-    await press(send, 'Tab', 9);
-    await wait(150);
-    const away = await where();
-    await p.tap('#bet .sayline .quiet');
-    await wait(200);
-    await p.type('take the readme first');
-    await press(send, 'Escape', 27);
-    await wait(150);
-    const escaped = await where();
-    return { open, tabbed, away, escaped };
+  test('browser: Tab from an open box goes to its send, and Esc in the box puts the focus back on the button it came from', { skip, timeout: 90000 }, async () => {
+    const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
+    const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+      const where = () => p.run("(function () { var a = document.activeElement; return { tag: a.tagName, cls: a.className, text: a.textContent, field: Boolean(document.querySelector('#bet .field')) }; })()");
+      await p.tap('#bet .sayline .quiet');
+      await wait(200);
+      const open = await where();
+      await press(send, 'Tab', 9);
+      await wait(150);
+      const tabbed = await where();
+      await press(send, 'Tab', 9);
+      await wait(150);
+      const away = await where();
+      await p.tap('#bet .sayline .quiet');
+      await wait(200);
+      await p.type('take the readme first');
+      await press(send, 'Escape', 27);
+      await wait(150);
+      const escaped = await where();
+      return { open, tabbed, away, escaped };
+    });
+    const show = JSON.stringify(out, null, 1);
+    assert.deepEqual([out.open.tag, out.open.field], ['INPUT', true], show);
+    // Tab moves to send, and the box stays open
+    assert.deepEqual([out.tabbed.tag, out.tabbed.cls, out.tabbed.field], ['BUTTON', 'send', true], show);
+    // Tab again leaves the empty box, which turns back into its button; the focus goes on
+    assert.equal(out.away.field, false, show);
+    assert.notEqual(out.away.tag, 'BODY', show);
+    // Esc: the words go, the box closes, and its button has the focus
+    assert.deepEqual([out.escaped.tag, out.escaped.text, out.escaped.field], ['BUTTON', 'or say something', false], show);
   });
-  const show = JSON.stringify(out, null, 1);
-  assert.deepEqual([out.open.tag, out.open.field], ['INPUT', true], show);
-  // Tab moves to send, and the box stays open
-  assert.deepEqual([out.tabbed.tag, out.tabbed.cls, out.tabbed.field], ['BUTTON', 'send', true], show);
-  // Tab again leaves the empty box, which turns back into its button; the focus goes on
-  assert.equal(out.away.field, false, show);
-  assert.notEqual(out.away.tag, 'BODY', show);
-  // Esc: the words go, the box closes, and its button has the focus
-  assert.deepEqual([out.escaped.tag, out.escaped.text, out.escaped.field], ['BUTTON', 'or say something', false], show);
-});
 
-test('browser: Enter while a word is still being composed on a Japanese or Chinese keyboard is left to the keyboard and sends nothing', { skip, timeout: 90000 }, async () => {
-  const said = [];
-  const desk = trace.cardDesk(CARDS.b1, async (a, { text, card }) => { said.push(text); return { card: CARDS.b2 }; });
-  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
-    await p.tap('#bet .sayline .quiet');
-    await wait(200);
-    await send('Input.imeSetComposition', { text: 'にほん', selectionStart: 3, selectionEnd: 3 });
-    // the Enter that picks the word, while it is still being composed
-    await p.run("document.querySelector('#bet .field input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, isComposing: true, bubbles: true, cancelable: true }))");
-    await wait(600);
-    const composing = { said: [...said], ...(await look(p)) };
-    await send('Input.insertText', { text: 'にほん' });
-    await p.run("document.querySelector('#bet .field input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true, cancelable: true }))");
-    await p.until(titled(CARDS.b2.title), 'the next card', 8000).catch(() => {});
-    return { composing, said };
+  test('browser: Enter while a word is still being composed on a Japanese or Chinese keyboard is left to the keyboard and sends nothing', { skip, timeout: 90000 }, async () => {
+    const said = [];
+    const desk = trace.cardDesk(CARDS.b1, async (a, { text, card }) => { said.push(text); return { card: CARDS.b2 }; });
+    const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+      await p.tap('#bet .sayline .quiet');
+      await wait(200);
+      await send('Input.imeSetComposition', { text: 'にほん', selectionStart: 3, selectionEnd: 3 });
+      // the Enter that picks the word, while it is still being composed
+      await p.run("document.querySelector('#bet .field input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, isComposing: true, bubbles: true, cancelable: true }))");
+      await wait(600);
+      const composing = { said: [...said], ...(await look(p)) };
+      await send('Input.insertText', { text: 'にほん' });
+      await p.run("document.querySelector('#bet .field input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true, cancelable: true }))");
+      await p.until(titled(CARDS.b2.title), 'the next card', 8000).catch(() => {});
+      return { composing, said };
+    });
+    const show = JSON.stringify(out, null, 1);
+    assert.deepEqual(out.composing.said, [], show);
+    assert.deepEqual([out.composing.field, out.composing.title], [true, CARDS.b1.title], show);
+    // the Enter after the word is picked sends it
+    assert.equal(out.said.length, 1, show);
   });
-  const show = JSON.stringify(out, null, 1);
-  assert.deepEqual(out.composing.said, [], show);
-  assert.deepEqual([out.composing.field, out.composing.title], [true, CARDS.b1.title], show);
-  // the Enter after the word is picked sends it
-  assert.equal(out.said.length, 1, show);
-});
 
-test('browser: Esc on an armed do it steps back to do it at once, and the next tap arms it again rather than starting it', { skip, timeout: 90000 }, async () => {
-  const did = [];
-  const desk = trace.cardDesk(CARDS.b1, async (action) => { did.push(action); return { card: CARDS.b2 }; });
-  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
-    await tapText(p, send, 'do it');
-    await wait(150);
-    const armed = await look(p);
-    await press(send, 'Escape', 27);
-    await wait(150);
-    const esc = await look(p);
-    const label = await p.run("document.querySelector('#bet .pill').textContent");
-    // a tap after Esc arms it again rather than starting it
-    await wait(500);
-    await tapText(p, send, 'do it');
-    await wait(300);
-    return { armed: armed.armed, esc: esc.armed, label, again: (await look(p)).armed, did };
+  test('browser: Esc on an armed do it steps back to do it at once, and the next tap arms it again rather than starting it', { skip, timeout: 90000 }, async () => {
+    const did = [];
+    const desk = trace.cardDesk(CARDS.b1, async (action) => { did.push(action); return { card: CARDS.b2 }; });
+    const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+      await tapText(p, send, 'do it');
+      await wait(150);
+      const armed = await look(p);
+      await press(send, 'Escape', 27);
+      await wait(150);
+      const esc = await look(p);
+      const label = await p.run("document.querySelector('#bet .pill').textContent");
+      // a tap after Esc arms it again rather than starting it
+      await wait(500);
+      await tapText(p, send, 'do it');
+      await wait(300);
+      return { armed: armed.armed, esc: esc.armed, label, again: (await look(p)).armed, did };
+    });
+    const show = JSON.stringify(out, null, 1);
+    assert.deepEqual(out.armed, ['tap again to start'], show);
+    assert.deepEqual([out.esc, out.label], [[], 'do it'], show);
+    assert.deepEqual([out.again, out.did], [['tap again to start'], []], show);
   });
-  const show = JSON.stringify(out, null, 1);
-  assert.deepEqual(out.armed, ['tap again to start'], show);
-  assert.deepEqual([out.esc, out.label], [[], 'do it'], show);
-  assert.deepEqual([out.again, out.did], [['tap again to start'], []], show);
-});
 
-test('browser: send is dim while its box is empty and lights up with the first word, also for words put back after a failed send', { skip, timeout: 90000 }, async () => {
-  let fail = true;
-  const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => { if (fail) { fail = false; return { ok: false, reason: 'steer_failed', message: 'it did not reach them. try again in a minute.' }; } return { card }; });
-  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
-    const dim = () => p.run("Number(getComputedStyle(document.querySelector('#bet .field .send')).opacity)");
-    await p.tap('#bet .sayline .quiet');
-    await wait(200);
-    const empty = await dim();
-    await p.type('take the readme first');
-    const typed = await dim();
-    await press(send, 'Enter', 13, '\r');
-    await p.until(`${titled(CARDS.b1.title)} && Boolean(document.querySelector('#bet .field input')) && document.querySelector('#bet .field input').value === 'take the readme first'`, 'the words back', 8000);
-    await wait(200);
-    return { empty, typed, back: await dim() };
+  test('browser: send is dim while its box is empty and lights up with the first word, also for words put back after a failed send', { skip, timeout: 90000 }, async () => {
+    let fail = true;
+    const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => { if (fail) { fail = false; return { ok: false, reason: 'steer_failed', message: 'it did not reach them. try again in a minute.' }; } return { card }; });
+    const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+      const dim = () => p.run("Number(getComputedStyle(document.querySelector('#bet .field .send')).opacity)");
+      await p.tap('#bet .sayline .quiet');
+      await wait(200);
+      const empty = await dim();
+      await p.type('take the readme first');
+      const typed = await dim();
+      await press(send, 'Enter', 13, '\r');
+      await p.until(`${titled(CARDS.b1.title)} && Boolean(document.querySelector('#bet .field input')) && document.querySelector('#bet .field input').value === 'take the readme first'`, 'the words back', 8000);
+      await wait(200);
+      return { empty, typed, back: await dim() };
+    });
+    const show = JSON.stringify(out, null, 1);
+    assert.ok(out.empty < 0.6, show);
+    assert.equal(out.typed, 1, show);
+    assert.equal(out.back, 1, show);
   });
-  const show = JSON.stringify(out, null, 1);
-  assert.ok(out.empty < 0.6, show);
-  assert.equal(out.typed, 1, show);
-  assert.equal(out.back, 1, show);
 });
 
 test('browser: a tap shows no system flash box, a double tap never zooms, and a long press on a button selects nothing, while card words stay selectable', { skip, timeout: 90000 }, async () => {
@@ -681,42 +685,44 @@ test('browser: a note on the calm line that takes a while reads sending in place
   assert.deepEqual(out.notes, ['make it about schools'], show);
 });
 
-test('browser: when the phone keyboard leaves only a strip of screen, the box being typed in comes back into view', { skip, timeout: 90000 }, async () => {
-  const small = { width: 320, height: 568, deviceScaleFactor: 2, mobile: true };
-  const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
-  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
-    await p.tap('#bet .sayline .quiet');
-    await wait(200);
-    const where = () => p.run("(function () { var r = document.querySelector('#bet .field').getBoundingClientRect(); var vv = window.visualViewport; return { top: Math.round(r.top), bottom: Math.round(r.bottom), shows: Math.round(vv.offsetTop + vv.height), typing: document.activeElement === document.querySelector('#bet .field input') }; })()");
-    const before = await where();
-    // the keyboard takes the bottom of the screen
-    await send('Emulation.setDeviceMetricsOverride', { ...small, height: 300 });
-    await wait(600);
-    return { before, after: await where() };
-  }, small);
-  const show = JSON.stringify(out, null, 1);
-  // the box sat below what the keyboard leaves showing
-  assert.ok(out.before.bottom > 300, show);
-  assert.ok(out.after.top >= 0 && out.after.bottom <= out.after.shows, show);
-  assert.equal(out.after.typing, true, show);
-});
-
-test('browser: a paste longer than the box holds says so under the card, and the line goes once there is room', { skip, timeout: 90000 }, async () => {
-  const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
-  const out = await trace.onPhone(desk, CHROME, async (p, send) => {
-    await p.tap('#bet .sayline .quiet');
-    await wait(200);
-    await send('Input.insertText', { text: 'a long note about the twelve schools. '.repeat(11) });
-    await wait(100);
-    const full = await p.run("({ length: document.querySelector('#bet .field input').value.length, note: document.querySelector('#bet .act .note').textContent })");
-    for (let i = 0; i < 5; i++) await press(send, 'Backspace', 8);
-    await wait(100);
-    const room = await p.run("({ length: document.querySelector('#bet .field input').value.length, note: document.querySelector('#bet .act .note').textContent })");
-    return { full, room };
+test.describe('independent text input checks', { concurrency: 2 }, () => {
+  test('browser: when the phone keyboard leaves only a strip of screen, the box being typed in comes back into view', { skip, timeout: 90000 }, async () => {
+    const small = { width: 320, height: 568, deviceScaleFactor: 2, mobile: true };
+    const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
+    const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+      await p.tap('#bet .sayline .quiet');
+      await wait(200);
+      const where = () => p.run("(function () { var r = document.querySelector('#bet .field').getBoundingClientRect(); var vv = window.visualViewport; return { top: Math.round(r.top), bottom: Math.round(r.bottom), shows: Math.round(vv.offsetTop + vv.height), typing: document.activeElement === document.querySelector('#bet .field input') }; })()");
+      const before = await where();
+      // the keyboard takes the bottom of the screen
+      await send('Emulation.setDeviceMetricsOverride', { ...small, height: 300 });
+      await wait(600);
+      return { before, after: await where() };
+    }, small);
+    const show = JSON.stringify(out, null, 1);
+    // the box sat below what the keyboard leaves showing
+    assert.ok(out.before.bottom > 300, show);
+    assert.ok(out.after.top >= 0 && out.after.bottom <= out.after.shows, show);
+    assert.equal(out.after.typing, true, show);
   });
-  const show = JSON.stringify(out, null, 1);
-  assert.deepEqual(out.full, { length: 280, note: 'that is as much as fits in the box.' }, show);
-  assert.deepEqual(out.room, { length: 275, note: '' }, show);
+
+  test('browser: a paste longer than the box holds says so under the card, and the line goes once there is room', { skip, timeout: 90000 }, async () => {
+    const desk = trace.cardDesk(CARDS.b1, async (a, { card }) => ({ card }));
+    const out = await trace.onPhone(desk, CHROME, async (p, send) => {
+      await p.tap('#bet .sayline .quiet');
+      await wait(200);
+      await send('Input.insertText', { text: 'a long note about the twelve schools. '.repeat(11) });
+      await wait(100);
+      const full = await p.run("({ length: document.querySelector('#bet .field input').value.length, note: document.querySelector('#bet .act .note').textContent })");
+      for (let i = 0; i < 5; i++) await press(send, 'Backspace', 8);
+      await wait(100);
+      const room = await p.run("({ length: document.querySelector('#bet .field input').value.length, note: document.querySelector('#bet .act .note').textContent })");
+      return { full, room };
+    });
+    const show = JSON.stringify(out, null, 1);
+    assert.deepEqual(out.full, { length: 280, note: 'that is as much as fits in the box.' }, show);
+    assert.deepEqual(out.room, { length: 275, note: '' }, show);
+  });
 });
 
 test('browser: a button looks pressed the moment it is pressed, and comes back when the press lifts away', { skip, timeout: 90000 }, async () => {
