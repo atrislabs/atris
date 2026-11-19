@@ -20,7 +20,7 @@ rg "computeRevisionMetric|appendDailySummary|revisionsCommand|showRevisionsHelp|
 
 ```bash
 rg "hasFlag|readFlag|readIntFlag|readNumberFlag" lib/arg-parser.js commands test/arg-parser.test.js test/repo-hygiene.test.js  # Shared CLI flag parsing, explicit per-command quirk wrappers, focused behavior tests, and dead-export ratchet
-- **Plain-English concierge:** `lib/intents.js:3` owns the intent map and `lib/intents.js:151` scores normalized token overlap; `commands/guide.js:16` prints the list, match, and JSON forms; `bin/atris.js:504` exposes help, `bin/atris.js:1831` adds the empty-project suggestion, and `bin/atris.js:1860` dispatches the command; `commands/init.js:15` renders the shared table and `commands/init.js:662` adds the generated `## You translate` rules.
+- **Plain-English concierge:** `lib/intents.js:3` owns the intent map and `lib/intents.js:158` scores normalized token overlap; `commands/guide.js:16` prints the list, match, and JSON forms; `bin/atris.js:489` exposes help, `bin/atris.js:1790` adds the empty-project suggestion, and `bin/atris.js:1819` dispatches the command; `commands/init.js:15` renders the shared table and `commands/init.js:662` adds the generated `## You translate` rules.
   **Search:** `rg "INTENTS|matchIntent|guideCommand|## You translate|your agent translates" lib/intents.js commands/guide.js commands/init.js bin/atris.js test/guide.test.js test/init-for-agents.test.js`
 rg "valuesForRoot|extractValues|values" lib/values.js bin/atris.js atris.md test/four-a-values.test.js  # the four values (acceleration, accuracy, ambition, agency): shipped in atris.md, copied by atris init, and shown on every boot with their first sentence, falling back to the package copy for a workspace that predates them
 rg "agentDoctor|inspectAgentCliWiring|agent dogfood|agentDogfoodCommand|agentSpawnCommand|agent_spawns" bin/atris.js commands/agent-spawn.js test/commands-1.test.js test/agent-spawn.test.js commands/init.js # Local AI CLI wiring doctor, Devin/Droid GLM 5.2 dogfood smoke, durable worker spawn requests, and Devin init scaffold
@@ -30,11 +30,11 @@ rg "planFeedbackTriage|dispatchFeedbackTriage|recordFeedbackTriageVerdict|triage
 rg "Codex Executor|Start Here - Codex Executor" atris/team/codex-executor/MEMBER.md atris/team/codex-executor/START_HERE.md atris/team/codex-executor/README.md  # Codex Executor member profile, first-work contract, and setup notes
 rg "verifyAtris|verifyRubric|verifyArtifact|showVerifyHelp|issues.length" bin/atris.js commands/verify.js test/dogfood-p1.test.js # Verify exits 1 when any check fails; rubric + artifact substance pre-filter
 rg "serveAtris|showServeHelp|command === 'serve'" bin/atris.js commands/serve.js test/commands-1.test.js  # Local AI Computer bridge routing + help guard
-rg "balanceCommand|usageCommand|apiKeyCommand|topupCommand|developer-api" commands/balance.js commands/usage.js commands/api-key.js commands/topup.js lib/developer-api.js bin/atris.js lib/known-commands.js test/developer-api.test.js  # Developer API: `commands/balance.js:21` GET /credits/balance with dollars first, `commands/usage.js:44` GET /developer/usage, `commands/api-key.js:87` create|list|rotate|revoke, `commands/topup.js:22` POST /credits/purchase and print checkout url, `lib/developer-api.js` normalizeBalance, `bin/atris.js:657` help, `bin/atris.js:2219` dispatch, `lib/known-commands.js:6` registry, `test/developer-api.test.js:1` coverage; 404 on /developer/* prints backend rolling out; --json stays headless
+rg "balanceCommand|usageCommand|apiKeyCommand|topupCommand|developer-api" commands/balance.js commands/usage.js commands/api-key.js commands/topup.js lib/developer-api.js bin/atris.js lib/known-commands.js test/developer-api.test.js  # Developer API: `commands/balance.js:21` GET /credits/balance with dollars first, `commands/usage.js:44` GET /developer/usage, `commands/api-key.js:87` create|list|rotate|revoke, `commands/topup.js:22` POST /credits/purchase and print checkout url, `lib/developer-api.js` normalizeBalance, `bin/atris.js:643` help, `bin/atris.js:2178` dispatch, `lib/known-commands.js:6` registry, `test/developer-api.test.js:1` coverage; 404 on /developer/* prints backend rolling out; --json stays headless
 rg "radarCommand|collectRadar|parseScopeFlag|scope|Operator radar|--global" commands/radar.js lib/cli-scope.js bin/atris.js test/radar.test.js test/dogfood-p1.test.js  # Radar defaults to workspace scope; --global for machine PIDs/other-repo dirt; JSON includes scope
 rg "axLogDirs|chat scan|--global|scope: 'workspace'" lib/chat-log-scan.js commands/chat-scan.js test/dogfood-pass4.test.js  # chat scan defaults to ./atris/runs + this workspace; --global reads ~/.atris/runs and unbound folders need --account; axLogDirs (lib/chat-log-scan.js:71) is internal
 rg "teachRoot|atris/teach|only reads" commands/teach.js test/dogfood-pass2-t1-t5.test.js  # teach reads ./atris/teach only
-rg "Start here:|memberReadiness|MEMBER_TOOL_BINS|teamMembers" bin/atris.js commands/doctor.js test/start-here-doctor.test.js  # Stranger start: `bin/atris.js:523` prints the three first steps (init, doctor, say it) atop short help; `commands/doctor.js:109` checks what members need (team, git, a coding tool or sign-in) and names the first missing piece; `test/start-here-doctor.test.js:1` pins both
+rg "Start here:|memberReadiness|MEMBER_TOOL_BINS|teamMembers" bin/atris.js commands/doctor.js test/start-here-doctor.test.js  # Stranger start: `bin/atris.js:508` prints the three first steps (init, doctor, say it) atop short help; `commands/doctor.js:109` checks what members need (team, git, a coding tool or sign-in) and names the first missing piece; `test/start-here-doctor.test.js:1` pins both
 rg "alignAtris" commands/align.js           # Business workspace alignment
 - Human CLI timeline states saved proof once at the current landing instead of repeating it on every history row; current budget work overrides premature receipt actions and hides stale historical completion commands; ordinary historical next steps are labeled `at the time`; JSON retains exact paths per row.
 - Mission `status`, `report`, and `timeline` accept `--help`, `-h`, or `help` as read-only usage instead of resolving a mission named help.
@@ -43,8 +43,8 @@ rg "alignAtris" commands/align.js           # Business workspace alignment
 rg "Ship Cash Proof Mission Room|one-screen Mission Room proof|What Keshav Approves" atris/reports/2026-06-30-ship-cash-proof-mission-room.md # Cash Proof Mission Room: one-screen approval landing, no-send boundary, linked Mission Room receipt, verifier
 rg "integrationsStatus|--global|scope: 'workspace'" bin/atris.js commands/integrations.js test/dogfood-p1.test.js # Integrations default workspace; --global for account hosts
 - Typo-plus-args: `bin/atris.js` `unknownCommandToken` refuses `taks list` / `misson status` without creating a task. Regression: `test/dogfood-p0-safety.test.js` (`30:`).
-- Lone unknown verbs: `bin/atris.js:1226` also refuses `atris build` / `atris fix` (not in `help --json`) so they cannot mint `First useful step: build`. Quoted `atris "<request>"` and multiword `atris build a thing` still create work after init. Empty-folder `task new` and `wish` talk like first-minute and do not mint. Regression: `test/dogfood-pass2.test.js` (`14:`), `test/one-lap-router.test.js`, and `test/first-minute.test.js`.
-- x help: `bin/atris.js:2928` treats a lone `--help`/`-h`/`help` as usage and does not POST `/api/agent-sdk/execute`. Regression: `test/dogfood-p0-safety.test.js` (`33:`).
+- Lone unknown verbs: `bin/atris.js:1213` also refuses `atris build` / `atris fix` (not in `help --json`) so they cannot mint `First useful step: build`. Quoted `atris "<request>"` and multiword `atris build a thing` still create work after init. Empty-folder `task new` and `wish` talk like first-minute and do not mint. Regression: `test/dogfood-pass2.test.js` (`14:`), `test/one-lap-router.test.js`, and `test/first-minute.test.js`.
+- x help: `bin/atris.js:2892` treats a lone `--help`/`-h`/`help` as usage and does not POST `/api/agent-sdk/execute`. Regression: `test/dogfood-p0-safety.test.js` (`33:`).
 - write start help: `commands/write.js:129` treats help tokens as usage and does not create `atris/writing/help`. Regression: `test/dogfood-p0-safety.test.js` (`34:`) and `test/write.test.js`.
 rg "truthCommand|loadWorkspaceLoops|loadHeartbeats|--global" commands/truth.js lib/cli-scope.js test/dogfood-pass3-27-28.test.js test/truth.test.js # truth loops from atris/loops; --global for machine heartbeats
 rg "ciCommand|runnerAssetName|buildJitConfigRequest|parseRunnerMarker|runJobLoop|runCiRunner|summarizeUsage" bin/atris.js commands/ci.js lib/ci-runner.js lib/known-commands.js test/ci.test.js # Self-hosted GitHub Actions runner: offline argument and asset selection, per-version local cache, concurrent per-repo job loops with isolated warm work folders, marker-based job-time and result metering, and a per-repo build-minute view
@@ -53,13 +53,13 @@ rg "atris.cloud_next_work|ATRIS_LABS_CLOUD_NEXT_SYNC|cloud-self-improve-tick|cla
 
 ## By-Feature Map
 
-- **atris developer api:** `commands/balance.js:21` GET `/credits/balance` and prints dollars first; `commands/usage.js:44` GET `/developer/usage`; `commands/api-key.js:87` create/list/rotate/revoke; `commands/topup.js:22` POST `/credits/purchase` and prints the Stripe checkout url. Shared helpers: `lib/developer-api.js:65`. Help: `bin/atris.js:657`. Dispatch: `bin/atris.js:2219`. Registry: `lib/known-commands.js:6`. 404 on `/developer/*` prints `backend rolling out, try again shortly`. Tests: `test/developer-api.test.js:1`.
+- **atris developer api:** `commands/balance.js:21` GET `/credits/balance` and prints dollars first; `commands/usage.js:44` GET `/developer/usage`; `commands/api-key.js:87` create/list/rotate/revoke; `commands/topup.js:22` POST `/credits/purchase` and prints the Stripe checkout url. Shared helpers: `lib/developer-api.js:65`. Help: `bin/atris.js:643`. Dispatch: `bin/atris.js:2178`. Registry: `lib/known-commands.js:6`. 404 on `/developer/*` prints `backend rolling out, try again shortly`. Tests: `test/developer-api.test.js:1`.
 
 ## Feature: Natural Language Interface (`atris [anything]`)
 
 **Purpose:** Make one plain sentence the complete scoped path from intent to verified Review.
 
-- **Entry point:** `lib/known-commands.js:3` (knownCommands list), `bin/atris.js:994` (dispatch check)
+- **Entry point:** `lib/known-commands.js:3` (knownCommands list), `bin/atris.js:981` (dispatch check)
 - **Cold-start handler:** `bin/atris.js` (`interactiveEntry`; active missions/work outrank completed history)
 - **Regression:** `test/commands-8.test.js:1762-1779` covers parseable JSON errors for unknown top-level commands
 - **How it works:**
@@ -73,21 +73,21 @@ rg "atris.cloud_next_work|ATRIS_LABS_CLOUD_NEXT_SYNC|cloud-self-improve-tick|cla
 - `atris fix the auth bug` → Hot start with task
 - `atris build user dashboard` → Hot start with feature
 - **Value:** Single command for everything, natural language input
-- **Argument routing:** `bin/atris.js:134-165` strips only recognized controls, preserves the operator sentence, and keeps single-word command typo behavior.
-- **Natural entry:** `bin/atris.js:1052-1074` routes multiword unknown input into the one-lap path; `bin/atris.js` `interactiveEntry` keeps a placeholder or missing MAP on first-minute, gathers first-contact only after MAP is real, and uses one lap only after MAP/context readiness.
+- **Argument routing:** `bin/atris.js:125-150` strips only recognized controls, preserves the operator sentence, and keeps single-word command typo behavior.
+- **Natural entry:** `bin/atris.js:1039-1061` routes multiword unknown input into the one-lap path; `bin/atris.js` `interactiveEntry` keeps a placeholder or missing MAP on first-minute, gathers first-contact only after MAP is real, and uses one lap only after MAP/context readiness.
 - **Coordinator:** `commands/one-lap.js:1-361` resumes matching active wishes, requires one exact task and mission, blocks protected actions, selects a ready executor, requires an allowlisted mission verifier, and renders text or `atris.one_lap.v1` JSON.
 - **Execution gate:** `lib/fleet.js:757-1076` atomically claims the exact task, builds in an isolated worktree, reruns the coordinator-owned verifier without a shell, leaves master unchanged, moves passing work to Review, and writes `atris.dispatch_receipt.v1`.
 - **Proof gate:** `lib/receipt-evidence.js:31-66` treats missing verifier state as non-passing.
 - **Regression:** `test/one-lap-router.test.js:1-90` covers flag/alias/JSON routing; `test/one-lap-runtime.test.js:1-236` proves the real task DB, engine process, git worktree, verifier pass/fail, dedupe, receipt, and unchanged master paths.
-- **Argument routing:** `bin/atris.js:139-183` strips only recognized controls and preserves the operator sentence; `bin/atris.js:1046-1086` keeps known commands, voice triggers, one-word work intents, and typo JSON behavior distinct.
-- **Natural entry:** `bin/atris.js:1154-1260` preserves fresh-workspace context gathering and calls one lap only after MAP/context readiness.
+- **Argument routing:** `bin/atris.js:129-168` strips only recognized controls and preserves the operator sentence; `bin/atris.js:1033-1073` keeps known commands, voice triggers, one-word work intents, and typo JSON behavior distinct.
+- **Natural entry:** `bin/atris.js:1141-1247` preserves fresh-workspace context gathering and calls one lap only after MAP/context readiness.
 - **Coordinator:** `commands/one-lap.js:184-218` selects distinct ready validators and blocks local requests containing compound outbound actions; `commands/one-lap.js:258-319` accepts only matching complete receipts; `commands/one-lap.js:363-748` leases one normalized ask, resumes its exact wish/task/mission, freezes its verifier, and renders text or `atris.one_lap.v1` JSON.
 - **Execution boundary:** `lib/fleet.js:219-299` supervises sealed process groups with control and exit-status paths outside the sandbox, passes status only on file descriptor 4, and fails closed when the lifecycle dies; `lib/fleet.js:805-920` builds the credential-stripped macOS sandbox environment; `lib/fleet.js:788-947` creates a bundle-seeded temp worktree whose only remote is a local quarantine and compares every quarantine/protected ref.
 - **Leftover process sweep:** `lib/sandbox-pids.js:76` runs the group, lease, and worktree-cwd scans side by side for both sealed supervisors and `lib/fleet.js:288`; `lib/sandbox-pids.js:86` is the sync form; a failed scan reruns the sweep one by one; `test/sandbox-pids.test.js`.
 - **Trusted import:** `lib/fleet.js:948-1157` ignores worker/global Git config, reads verified blobs directly, creates the protected-origin review worktree only after all untrusted processes exit, and materializes the exact tree without hooks or clean/smudge filters.
 - **Validator:** `lib/one-lap-validator.js:1-60` defines the fresh-context read-only verdict contract; `lib/fleet.js:1201-1387` snapshots source plus git metadata, runs a distinct validator engine without write access, and fails closed on reject, outage, invalid verdict, or mutation attempts.
 - **Execution gate:** `lib/fleet.js:1727-2280` atomically claims the exact task, builds in the sealed worktree, requires a committed change, reruns the frozen verifier without a shell or network, validates independently, leaves every protected ref unchanged, then materializes passing work in Review and writes `atris.dispatch_receipt.v1` before task proof references it.
-- **Proof gate:** `commands/mission.js:653-751` freezes the verifier and requires the exact one-lap mission/task/verifier/ready row, master boundary, and independent validator receipt; `lib/fleet.js:3380-3440` hands the already-run check to `task ready` as receipt-backed proof without making a second process claim it ran the command; `lib/receipt-evidence.js:16-43` makes aggregate failure, missing master proof, or missing validator proof non-passing.
+- **Proof gate:** `commands/mission.js:637-735` freezes the verifier and requires the exact one-lap mission/task/verifier/ready row, master boundary, and independent validator receipt; `lib/fleet.js:3380-3440` hands the already-run check to `task ready` as receipt-backed proof without making a second process claim it ran the command; `lib/receipt-evidence.js:16-43` makes aggregate failure, missing master proof, or missing validator proof non-passing.
 - **Regression:** `test/one-lap-router.test.js:1-210` covers safety plus flag/alias/JSON routing; `test/one-lap-runtime.test.js:1-704` proves the real task DB/processes, atomic dedupe, verifier freeze/pass/fail, every-ref quarantine, OS isolation, raw import, filter/sidecar attacks, mutation/reject gates, receipt, and protected master; `test/one-lap-mission-ready.test.js:1-106` proves mission certification rejects arbitrary receipts.
 - **Examples:** `atris "fix the failing test"`; `atris "fix the failing test" --engine codex --json`.
 
@@ -97,8 +97,8 @@ rg "atris.cloud_next_work|ATRIS_LABS_CLOUD_NEXT_SYNC|cloud-self-improve-tick|cla
 
 **Purpose:** Install latest Atris version from npm
 
-- **Entry point:** `bin/atris.js:2945-2990` (upgradeAtris function)
-- **Dispatch/help:** `bin/atris.js:1439-1438` handles `upgrade --help` before npm checks or global installs
+- **Entry point:** `bin/atris.js:2909-2954` (upgradeAtris function)
+- **Dispatch/help:** `bin/atris.js:2422-2428` handles `upgrade --help` before npm checks or global installs
 - **Logic:**
 - Shows current version
 - Checks npm registry for latest
@@ -131,7 +131,7 @@ rg "atris.cloud_next_work|ATRIS_LABS_CLOUD_NEXT_SYNC|cloud-self-improve-tick|cla
 
 **Purpose:** Real-time conversation with selected agent
 
-- **Entry point:** `bin/atris.js:3238-3319` (chatAtris function)
+- **Entry point:** `bin/atris.js:3202-3283` (chatAtris function)
 - **Requires:** Valid credentials + selected agent
 - **Modes:**
 - One-shot: `atris chat "message"`
@@ -146,7 +146,7 @@ rg "atris.cloud_next_work|ATRIS_LABS_CLOUD_NEXT_SYNC|cloud-self-improve-tick|cla
 **Purpose:** Search journal history for keywords across all log files
 
 - **Entry point:** `bin/atris.js` (`showSearchHelp` + `searchJournal`)
-- **Routing:** `bin/atris.js:764`
+- **Routing:** `bin/atris.js:750`
 - **Logic:**
 - `--help` and `-h` short-circuit before `atris/logs` checks; regression: `test/commands-2.test.js:903-917`
 - Recursively walks `atris/logs/` directory
@@ -235,7 +235,7 @@ rg "atris.cloud_next_work|ATRIS_LABS_CLOUD_NEXT_SYNC|cloud-self-improve-tick|cla
 
 - Command routing (lines 783-1212)
 - `interactiveEntry()`: Natural language entry (line 525)
-- `showWelcomeVisualization()`: Boot status; spec-file trigger at `bin/atris.js:950`, function at `bin/atris.js:1383` (plain rows, banner only on TTY)
+- `showWelcomeVisualization()`: Boot status; spec-file trigger at `bin/atris.js:937`, function at `bin/atris.js:1370` (plain rows, banner only on TTY)
 - `upgradeAtris()`: npm upgrade (line 1214)
 **Modular commands (in commands/):**
 
@@ -302,7 +302,7 @@ cd /path/to/project
 atris init
 ```
 
-**Flow:** `bin/atris.js:181` → `commands/init.js:initAtris()` → creates `atris/` structure
+**Flow:** `bin/atris.js:166` → `commands/init.js:initAtris()` → creates `atris/` structure
 
 ## Entry Point 3: Natural Language Entry
 
@@ -330,7 +330,7 @@ atris build user dashboard
 atris update
 ```
 
-**Flow:** `bin/atris.js:197` → `commands/sync.js:syncAtris()` → copies latest atris.md
+**Flow:** `bin/atris.js:182` → `commands/sync.js:syncAtris()` → copies latest atris.md
 
 ## Architecture Flows
 
@@ -493,4 +493,4 @@ npm publish
 
 ## Engine dispatch default branch and refusals
 
-Sweep output through a pipe: `bin/atris.js:38` waits for queued stdout before exiting the engine command at `bin/atris.js:3256`; regression `test/engine-resource.test.js:483` reads more than 96 KB from the real CLI and parses the complete report.
+Sweep output through a pipe: `bin/atris.js:38` waits for queued stdout before exiting the engine command at `bin/atris.js:3220`; regression `test/engine-resource.test.js:483` reads more than 96 KB from the real CLI and parses the complete report.

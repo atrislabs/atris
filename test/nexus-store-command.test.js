@@ -144,9 +144,9 @@ test('today asks the store with the time zone and prints each reason with its da
       { ...data.people[0], reason: 'reply_waiting', days: 3 },
       { ...data.people[1], reason: 'follow_up_overdue', days: 2 },
       { ...mineCard(CY, 'Cy Placeholder'), reason: 'follow_up_due', days: 0 },
-      { ...mineCard(CY, 'Di Four'), reason: 'no_follow_up_yet', days: 5 },
-      { ...mineCard(CY, 'Ed Five'), reason: 'met_then_quiet', days: 4 },
-      { ...mineCard(CY, 'Flo Six'), reason: 'gone_quiet', days: 45 },
+      { ...mineCard('55555555-5555-4555-8555-555555555555', 'Di Four'), reason: 'no_follow_up_yet', days: 5 },
+      { ...mineCard('66666666-6666-4666-8666-666666666666', 'Ed Five'), reason: 'met_then_quiet', days: 4 },
+      { ...mineCard('77777777-7777-4777-8777-777777777777', 'Flo Six'), reason: 'gone_quiet', days: 45 },
     ],
   };
   const server = backend({ data });

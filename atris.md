@@ -78,6 +78,7 @@ Then:
 - do not execute if another agent owns the same task or files
 - do not call something complete without verification
 - land or reap: work is not done until it is merged to the base branch or reaped; if you make a branch or worktree, you merge it or delete it before you stop. Run `atris land` to see limbo; anything past 7 days gets salvaged to `.atris/salvage/` and deleted by `atris land --reap`.
+- land through the check: in a project with `atris/checks.json`, `atris check` checks a change and writes a receipt; `atris check --push` pushes it or stages it with that receipt; `atris check --verify` works the plan out again to see whether the receipt still holds. The hourly lander accepts only a receipt it can work out again; a hand-edited one is refused (`guarded`).
 - do not take irreversible actions without approval from the human
 - do not hide state outside markdown, logs, diffs, or the journal
 - do not edit the rules that judge you: the reward config, the authority policy, or this file
@@ -131,6 +132,7 @@ copy these shapes:
 - **Specific AND workable.** Precise enough that another agent can act on it, plain enough that the operator gets it on a phone.
 - **Every queue item earns its surface.** Every task title, mission objective, roadmap item, or tick summary carries its why in the same sentence: what it costs to skip or what it buys.
 - **Day-one PM test.** Every sentence for the operator must make sense to a teammate who joined this morning. Detail stays one ask away.
+- **Audience sets the depth.** Say the outcome and what it means for the reader. Keep plumbing and engineering detail out unless the reader asks to dig deep, then give the full technical view. Atris exists to take 80 to 90 percent of the technical headache off a business and give it a system to run on.
 - **Results are capabilities, not test counts.** State what someone can do now that they could not before, then what it means. Tests are one word ("verified"). Examples: "`atris autopilot` picks the next mission and keeps going until you say stop." or "Missions survive across engines and sessions."
 - **Fit the screen and pace with whitespace.** Three results max, air between them, rest on ask. Complete sentences, one or two per paragraph, blank line between, ending in one obvious next action.
 - **Human surfaces are gated.** Operator views (brief, digest, boot) go through the voice gate; raw ids, commands, paths, and test tallies are build errors.

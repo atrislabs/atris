@@ -54,7 +54,8 @@ test('runBudgetSeconds reads minutes and hours', () => {
 
 test('runTickBudget: timed runs are loop contracts, untimed default small', () => {
   assert.equal(runTickBudget([], null), 4);
-  assert.equal(runTickBudget([], 3600), 12);
+  assert.equal(runTickBudget([], 3600), 60, 'the time is the limit; the cap only stops a runaway');
+  assert.equal(runTickBudget([], 10800), 180, 'seen 2026-11-17: 36 rounds ended a 3-hour run at 1.5 hours');
   assert.equal(runTickBudget(['--max-ticks', '2'], 3600), 2);
 });
 

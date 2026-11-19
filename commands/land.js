@@ -1086,7 +1086,10 @@ function landCommand(args = []) {
       let policy = null;
       try { policy = require('../lib/autoland').readPolicy(owner); } catch { policy = null; }
       const suitesRaw = Number(policy && policy.green_landing_local_suites);
+      const { receiptGateSetting, checkSecondsSetting } = require('../lib/land-receipt-gate');
       const result = landStaleGreenBranches(root, {
+        receipts: receiptGateSetting(policy),
+        checkSeconds: checkSecondsSetting(policy),
         ttlDays,
         base,
         dryRun: args.includes('--dry-run'),

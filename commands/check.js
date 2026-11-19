@@ -17,11 +17,17 @@
 //   atris check sweep              remove staged refs that landed over 7 days ago
 //   atris check fix [--dry-run]    hand a failed receipt to CodeOps, one job per receipt
 //   atris check init               write a starter atris/checks.json
+//   atris check --lint-map         check atris/checks.json itself (also done at
+//                                  the start of every check)
+//   atris check replay --last <n>  the plan each of the last n commits on the
+//                                  default branch would get; runs nothing
 //
 // Exit codes: 0 proven, 3 partly or staged (needs a lane), 1 failed,
 // 2 usage or map error. A check that did not run is never a pass.
-// Rules: lib/check-plan.js. Receipt: lib/check-receipt.js. Proof and key scan:
-// lib/check-proof.js. Reverse imports: lib/check-imports.js.
+// Rules and tiers: lib/check-plan.js. Test selection: lib/check-select.js.
+// Time budget: lib/check-budget.js. Receipt: lib/check-receipt.js. Proof and
+// key scan: lib/check-proof.js. Import graph: lib/check-imports.js. What the
+// planner sees of a repo: lib/check-context.js. Replay: lib/check-replay.js.
 
 const fs = require('fs');
 const os = require('os');
@@ -31,12 +37,15 @@ const { spawn, spawnSync } = require('child_process');
 const plan = require('../lib/check-plan');
 const receipts = require('../lib/check-receipt');
 const proofs = require('../lib/check-proof');
-const { reverseImporters } = require('../lib/check-imports');
+const budget = require('../lib/check-budget');
+const recompute = require('../lib/check-recompute');
+const receiptRefs = require('../lib/check-receipt-ref');
+const { planOptions, mainCheckout } = require('../lib/check-context');
 
 const { EXIT } = receipts;
-const VALUE_FLAGS = new Set(['--base', '--files', '--lane', '--receipt', '--gate', '--parallel', '--timeout', '--proof']);
-const LOCAL_FLAGS = new Set([...VALUE_FLAGS, '--explain', '--verify', '--allow-paid', '--push', '--deep', '--dry-run']);
-const SUBCOMMANDS = new Set(['init', 'push', 'land', 'sweep', 'fix']);
+const VALUE_FLAGS = new Set(['--base', '--files', '--lane', '--receipt', '--gate', '--parallel', '--timeout', '--proof', '--last', '--map']);
+const LOCAL_FLAGS = new Set([...VALUE_FLAGS, '--explain', '--verify', '--allow-paid', '--push', '--deep', '--dry-run', '--lint-map']);
+const SUBCOMMANDS = new Set(['init', 'push', 'land', 'sweep', 'fix', 'replay']);
 const LANES = ['here', 'no-screen'];
 // A receipt keeps no logs: only the last 40 lines of a failed check.
 const TAIL_LINES = 40;
@@ -57,12 +66,16 @@ function usage(log) {
   log('       atris check sweep             remove landed staged refs older than 7 days, list the rest');
   log('       atris check fix [--receipt <file>] [--dry-run]   hand a failed receipt to CodeOps');
   log('       atris check init [--print]');
+  log('       atris check --lint-map        check the map itself');
+  log('       atris check replay --last <n> [--json] [--map <file>]   plans for recent commits, runs nothing');
   log('       atris check <mission-id> [--json]   checks of a cloud mission');
   log('');
   log('Picks checks from atris/checks.json by rule, runs the ones that may run on this machine,');
   log("checks the change's own proof, scans the change for keys, and writes one receipt in");
   log(".atris/receipts/. Checks marked no-screen or paid never run on a person's machine; they");
-  log('are recorded as needing that lane, and that is never a pass.');
+  log('are recorded as needing that lane, and that is never a pass. Each change gets a risk tier:');
+  log('low (docs, comments, styles, tests) runs only quick checks, normal runs the few tests that');
+  log('cover it, high runs those first and then the whole release gate. Every plan shows its seconds.');
   log('Exit: 0 proven, 3 needs a lane (or staged), 1 failed, 2 usage or map error.');
 }
 
@@ -96,6 +109,9 @@ function parseArgs(args) {
     else if (arg === '--push') options.push = true;
     else if (arg === '--deep') options.deep = true;
     else if (arg === '--dry-run') options.dryRun = true;
+    else if (arg === '--lint-map') options.lintMap = true;
+    else if (arg === '--last') options.last = Number(value());
+    else if (arg === '--map') options.mapFile = value();
     else if (arg === '--base') options.base = value();
     else if (arg === '--files') options.files = value().split(',').map((file) => file.trim().replace(/^\.\//, '')).filter(Boolean);
     else if (arg === '--lane') options.lane = value();
@@ -111,6 +127,7 @@ function parseArgs(args) {
   if (options.push && (options.files || options.base || options.gate)) throw new UsageError('--push checks the whole change against the default branch; drop --files, --base and --gate');
   if (options.parallel !== undefined && !(Number.isInteger(options.parallel) && options.parallel > 0)) throw new UsageError('--parallel needs a whole number above 0');
   if (options.timeout !== undefined && !(options.timeout > 0)) throw new UsageError('--timeout needs seconds above 0');
+  if (options.last !== undefined && !(Number.isInteger(options.last) && options.last > 0)) throw new UsageError('--last needs a whole number above 0');
   return options;
 }
 
@@ -152,7 +169,27 @@ function cageEnv(entry, context) {
     if (!entry.needsElectron) env.ELECTRON_RUN_AS_NODE = '1';
   }
   if (entry.port && context.port) env.PORT = String(context.port);
-  return { ...env, ...(context.extraEnv || {}) };
+  // The map's own env for the check (a selector's test settings) comes first;
+  // the cage's window guards above cannot be undone by it.
+  const own = { ...(entry.env || {}) };
+  for (const key of ['ATRIS_CHECK', 'CI', 'BROWSER', 'ELECTRON_RUN_AS_NODE', 'OBELISK_ALLOW_APP_LAUNCH']) delete own[key];
+  return { ...env, ...own, ...(context.extraEnv || {}) };
+}
+
+// Every running check's process group, so a stop from outside (the lander's
+// time limit sends SIGTERM) takes the checks down with atris check.
+const RUNNING = new Set();
+let stopHandler = false;
+
+function stopRunningOnSignal() {
+  if (stopHandler) return;
+  stopHandler = true;
+  process.once('SIGTERM', () => {
+    for (const pid of RUNNING) {
+      try { if (process.platform !== 'win32') process.kill(-pid, 'SIGKILL'); else process.kill(pid, 'SIGKILL'); } catch {}
+    }
+    process.exit(143);
+  });
 }
 
 function runCaged(command, root, env, timeoutSeconds) {
@@ -167,6 +204,7 @@ function runCaged(command, root, env, timeoutSeconds) {
     });
     let out = '';
     let timedOut = false;
+    if (child.pid) RUNNING.add(child.pid);
     const keep = (chunk) => { out = (out + chunk).slice(-64 * 1024); };
     child.stdout.on('data', keep);
     child.stderr.on('data', keep);
@@ -183,6 +221,7 @@ function runCaged(command, root, env, timeoutSeconds) {
     child.on('exit', (code, signal) => {
       clearTimeout(timer);
       killGroup();
+      RUNNING.delete(child.pid);
       setImmediate(() => resolve({ code: Number.isInteger(code) ? code : null, signal: signal || null, timedOut, out, ms: Date.now() - startedAt }));
     });
   });
@@ -224,40 +263,110 @@ function timeoutFor(entry, options) {
   return Math.max(120, (entry.seconds || 0) * 4);
 }
 
-function loadMap(root, log) {
+function readMapFile(file) {
+  if (!fs.existsSync(file)) return { missing: true };
   try {
+    return { raw: JSON.parse(fs.readFileSync(file, 'utf8')) };
+  } catch (error) {
+    return { error: `${path.basename(file)} is not valid JSON: ${error.message}` };
+  }
+}
+
+// Every check starts here, so a bad map (a slow always, a chained command)
+// stops it before anything runs.
+function loadMap(root, log, options = {}) {
+  try {
+    if (options.mapFile) {
+      const read = readMapFile(path.resolve(options.mapFile));
+      if (read.missing) { log(`atris check: no map at ${options.mapFile}`); return null; }
+      if (read.error) { log(`atris check: ${read.error}`); return null; }
+      return plan.validateMap(read.raw);
+    }
     const map = plan.loadMap(root);
     if (!map) log('atris check: this project has no atris/checks.json yet. Run atris check init to write a starter.');
     return map;
   } catch (error) {
-    if (error instanceof plan.CheckMapError) { log(`atris check: ${error.message}`); return null; }
+    if (error instanceof plan.CheckMapError) { log(`atris check: ${error.message}`); log('atris check: the map was refused, so nothing ran (atris check --lint-map lists every problem)'); return null; }
     throw error;
   }
 }
 
-function lister(root) {
-  let cached = null;
-  return () => {
-    if (!cached) {
-      const result = spawnSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
-      cached = String(result.stdout || '').split('\0').filter(Boolean);
-    }
-    return cached;
-  };
+function lintMapCommand(root, options, log) {
+  const file = options.mapFile ? path.resolve(options.mapFile) : path.join(root, plan.MAP_PATH);
+  const read = readMapFile(file);
+  if (read.missing) { log('atris check --lint-map: no atris/checks.json here. Run atris check init to write a starter.'); return EXIT.usage; }
+  if (read.error) { log(`atris check --lint-map: ${read.error}`); return EXIT.usage; }
+  const history = budget.loadDurations(root);
+  const result = plan.lintMap(read.raw, { durations: (name) => (history[name] ? budget.median(history[name].s) : null) });
+  if (options.json) log(JSON.stringify(result, null, 2));
+  else {
+    for (const error of result.errors) log(`  refused  ${error}`);
+    for (const warning of result.warnings) log(`  note     ${warning}`);
+    log(result.errors.length ? `atris check --lint-map: ${result.errors.length} problem(s); every check refuses this map until they are fixed` : `atris check --lint-map: the map is fine (${Object.keys(read.raw.checks).length} checks)`);
+  }
+  return result.errors.length ? EXIT.usage : EXIT.proven;
 }
 
-// The plan for this change: changed files, one hop of importers, the picks.
-function makePlan(root, map, options) {
+function replayCommand(root, map, options, log) {
+  const { replay, summaryLines: replayLines, rowLine } = require('../lib/check-replay');
+  const base = options.base || receipts.defaultBase(root);
+  if (!base) { log('atris check replay: could not find the default branch; pass --base <ref>'); return EXIT.usage; }
+  const result = replay(root, map, { last: options.last || 20, base, onRow: options.json ? null : (row) => log(rowLine(row)) });
+  if (options.json) log(JSON.stringify(result, null, 2));
+  else for (const line of replayLines(result)) log(line);
+  return EXIT.proven;
+}
+
+// The plan for this change: changed files, the import graph, the picks, and
+// each pick's expected seconds.
+// The map that decides is the default branch's (lib/check-recompute.js
+// rulesFor): a change that edits atris/checks.json is checked by the map it
+// would replace, and its settings (skip lines, the key scan, push limits) too.
+function makePlan(root, ownMap, options) {
   const change = receipts.changeSet(root, { base: options.base, files: options.files });
   if (!change.ok) return { error: change.error };
   if (options.extraFiles && options.extraFiles.length) change.files = [...new Set([...change.files, ...options.extraFiles])].sort();
-  const readFile = (file) => { try { return fs.readFileSync(path.join(root, file), 'utf8'); } catch { return ''; } };
-  const graph = options.gate ? { importers: new Map(), unreadable: [] }
-    : reverseImporters(root, change.files, { dirtyFiles: receipts.uncommittedFiles(root) });
-  const picked = plan.planChecks(map, change.files, {
-    gate: options.gate, listFiles: lister(root), readFile, importers: graph.importers, unreadable: graph.unreadable,
+  const rules = recompute.rulesFor(root, change, { workingMap: ownMap });
+  if (rules.error) return { error: rules.error };
+  const map = rules.map;
+  const context = planOptions(root, map, change.files, {
+    base: change.mergeBase || 'HEAD',
+    dirtyFiles: receipts.uncommittedFiles(root),
+    gate: options.gate,
   });
-  return { change, picked };
+  const picked = plan.planChecks(map, change.files, context);
+  const history = budget.loadDurations(root);
+  for (const entry of picked.selected) {
+    const guess = budget.estimate(entry, history);
+    entry.expected = guess.seconds;
+    entry.expectedFrom = guess.source;
+  }
+  const here = picked.selected.filter((entry) => placement(entry, options).run);
+  picked.expected = budget.planSeconds(here, options.parallel || map.parallel);
+  picked.unknownTimes = here.filter((entry) => entry.expected === null).map((entry) => entry.key);
+  return { change, picked, map, rules };
+}
+
+function tierLine(picked) {
+  const high = [...picked.files, ...picked.importers].filter((file) => file.tier === 'high');
+  if (high.length) return `risk: high (${picked.highKinds.join(', ')}: ${high[0].path}${high[0].imports ? ` imports ${high[0].imports}` : ''}${high.length > 1 ? ` +${high.length - 1} more` : ''})`;
+  if (picked.tier === 'low') {
+    const kinds = [...new Set(picked.lowWhy.map((file) => file.why))];
+    return `risk: low (${kinds.join(', ')})`;
+  }
+  const normal = picked.files.filter((file) => file.tier === 'normal');
+  return `risk: normal (${normal[0] ? normal[0].path : 'code'}${normal.length > 1 ? ` +${normal.length - 1} more` : ''})`;
+}
+
+function budgetLine(picked) {
+  const target = picked.target;
+  const unknown = picked.unknownTimes && picked.unknownTimes.length ? `, ${picked.unknownTimes.length} with no time yet` : '';
+  return `expected: about ${Math.round(picked.expected)}s for the checks that run here${unknown} (target ${target}s for a ${picked.gate ? `whole ${picked.gate} gate` : `${picked.tier} risk change`})`;
+}
+
+function slowestExpected(picked, options) {
+  return picked.selected.filter((entry) => placement(entry, options).run && entry.expected)
+    .sort((a, b) => b.expected - a.expected)[0] || null;
 }
 
 function proofLabel(proof) {
@@ -269,23 +378,44 @@ function explainLines(picked, change, options, person, proof, lines = []) {
   const what = picked.gate ? `the ${picked.gate} gate` : `${change.files.length} changed file${change.files.length === 1 ? '' : 's'}`;
   const against = change.filesOverride ? 'files given by hand' : `base ${change.base} at ${String(change.mergeBase).slice(0, 9)}`;
   lines.push(`atris check plan for ${what} (${against})`);
-  const high = [...picked.files, ...picked.importers].filter((file) => file.tier === 'high');
-  lines.push(`risk: ${picked.tier}${high.length ? ` (${picked.highKinds.join(', ')}: ${high[0].path}${high[0].imports ? ` imports ${high[0].imports}` : ''}${high.length > 1 ? ` +${high.length - 1} more` : ''})` : ''}`);
+  lines.push(tierLine(picked));
   if (picked.importers.length) lines.push(`importers counted: ${picked.importers.length} file(s) import a changed file`);
   lines.push(`machine: ${person ? "a person's machine" : 'no person at the screen'}, lane ${options.lane}`);
-  let expected = 0;
-  for (const entry of picked.selected) {
-    const place = placement(entry, options);
-    if (place.run) expected += entry.seconds || 0;
-    const label = place.run ? 'run here' : `needs ${place.lane}`;
-    lines.push(`  ${label.padEnd(15)} ${entry.key}  <- ${entry.reasons.join('; ')}${entry.seconds ? `  ~${entry.seconds}s` : ''}`);
+  const stages = new Set(picked.selected.map((entry) => entry.stage ?? 1));
+  for (const stage of [...stages].sort()) {
+    if (stages.size > 1) lines.push(stage === 0 ? 'first, the quick checks:' : stage === 1 ? 'then the tests this change needs, only if everything before passed:' : 'last, the full gate, only if everything before passed:');
+    for (const entry of picked.selected.filter((item) => (item.stage ?? 1) === stage)) {
+      const place = placement(entry, options);
+      const label = place.run ? 'run here' : `needs ${place.lane}`;
+      const time = entry.expected ? `  ~${entry.expected}s${entry.expectedFrom === 'measured' ? '' : ` (${entry.expectedFrom})`}` : '  ~?s';
+      const why = entry.reasons.length > 4 ? `${entry.reasons.slice(0, 4).join('; ')}; +${entry.reasons.length - 4} more` : entry.reasons.join('; ');
+      lines.push(`  ${label.padEnd(15)} ${entry.key}  <- ${why}${time}`);
+      if (entry.tests && entry.tests.length && !entry.file) {
+        for (const test of entry.tests.slice(0, 40)) lines.push(`      ${test.file}  <- ${test.reasons.join('; ')}`);
+        if (entry.tests.length > 40) lines.push(`      ... and ${entry.tests.length - 40} more`);
+      }
+    }
   }
-  if (!picked.selected.length) lines.push('  (no check picked)');
+  if (!picked.selected.length) lines.push(picked.tier === 'low' ? '  (no check picked; a low risk change runs the key scan)' : '  (no check picked)');
+  for (const [name, sel] of Object.entries(picked.selections || {})) {
+    if (sel.mode === 'fallback') lines.push(`${name}: ${sel.why}, so it runs its fallback`);
+    if (sel.mode === 'none') lines.push(`${name}: no test to run for this change`);
+    if (sel.broad_names && sel.broad_names.length) lines.push(`${name}: names too common to pick by: ${sel.broad_names.slice(0, 5).join(', ')}`);
+    if (sel.hubs && sel.hubs.length) {
+      const hubs = [...new Map(sel.hubs.map((hub) => [hub.file, hub])).values()];
+      lines.push(`${name}: not through ${hubs.length} hub file${hubs.length === 1 ? '' : 's'} many tests import: ${hubs.slice(0, 3).map((hub) => `${hub.file} (${hub.tests} tests)`).join(', ')}${hubs.length > 3 ? ', ...' : ''}`);
+    }
+  }
+  for (const file of picked.uncovered || []) lines.push(`no test covers ${file}`);
   if (picked.notPicked.length) lines.push(`not picked by rule: ${picked.notPicked.join(', ')}`);
   lines.push(`unmapped: ${picked.unmapped.length ? picked.unmapped.join(', ') : 'none'}`);
   lines.push(`proof: ${picked.tier === 'low' && !proof ? 'not needed for a low risk change' : proofLabel(proof)}`);
   if (picked.toConfirm.length) lines.push(`still to confirm in the map: ${picked.toConfirm.join(', ')}`);
-  lines.push(`expected: about ${Math.round(expected)}s for the checks that run here`);
+  lines.push(budgetLine(picked));
+  if (picked.target && picked.expected > picked.target) {
+    const slow = slowestExpected(picked, options);
+    if (slow) lines.push(`expected over budget: ${slow.key} (~${slow.expected}s) is most of it`);
+  }
   return lines;
 }
 
@@ -304,7 +434,7 @@ async function checkProof(root, map, change, picked, options, context) {
   if (flags.length) return { ...row, status: 'failed', why: flags.join('; ') };
   const coverageDir = proofs.runsNode(found.command) ? fs.mkdtempSync(path.join(os.tmpdir(), 'atris-check-cov-')) : null;
   try {
-    const env = cageEnv({ where: 'here' }, { ...context, extraEnv: coverageDir ? { NODE_V8_COVERAGE: coverageDir } : {} });
+    const env = cageEnv({ where: 'here' }, { ...context, extraEnv: { ...(context.extraEnv || {}), ...(coverageDir ? { NODE_V8_COVERAGE: coverageDir } : {}) } });
     const run = await runCaged(found.command, root, env, options.timeout || PROOF_TIMEOUT_SECONDS);
     row.seconds = seconds(run.ms);
     row.exit_code = run.code;
@@ -359,45 +489,87 @@ async function evaluate(root, map, options, log) {
     throw error;
   }
   if (made.error) { log(`atris check: ${made.error}`); return { code: EXIT.usage }; }
-  const { change, picked } = made;
+  const { change, picked, rules } = made;
+  map = made.map;
   if (options.explain) {
     const proof = proofs.findProof(root, change, options);
-    if (options.json) log(JSON.stringify({ plan: picked, change, lane: options.lane, person, proof }, null, 2));
-    else for (const line of explainLines(picked, change, options, person, proof)) log(line);
+    if (options.json) log(JSON.stringify({ plan: picked, change, lane: options.lane, person, proof, map_from: rules.from }, null, 2));
+    else for (const line of [...explainLines(picked, change, options, person, proof), `map: ${rules.from}`]) log(line);
     return { code: EXIT.proven, explained: true };
   }
-  if (!picked.selected.length) {
-    log('atris check: the map picked no check for this change, and nothing checked is not proof. Add an always check to atris/checks.json.');
+  if (!picked.selected.length && picked.tier !== 'low') {
+    log('atris check: the map picked no check for this change, and nothing checked is not proof. Add a check whose "when" covers it, or a selector.');
     return { code: EXIT.usage };
   }
 
   proofs.sweepStaleDeepCopies(root);
   const identity = receipts.codeIdentity(root);
   const startedAt = new Date().toISOString();
-  const context = { person };
+  // Every check is told which change it checks: ATRIS_CHECK_BASE (the merge
+  // base the plan was made against; empty for --files) and ATRIS_CHECK_FILES
+  // (a temp file listing the changed files, one per line, removed after).
+  const filesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-check-files-'));
+  const dropFiles = () => { try { fs.rmSync(filesDir, { recursive: true, force: true }); } catch {} };
+  process.once('exit', dropFiles);
+  const filesList = path.join(filesDir, 'changed-files.txt');
+  fs.writeFileSync(filesList, change.files.length ? `${change.files.join('\n')}\n` : '');
+  const context = { person, extraEnv: { ATRIS_CHECK_BASE: change.mergeBase || '', ATRIS_CHECK_FILES: filesList } };
   const done = options.alreadyPassed || new Set();
   const toRun = picked.selected.filter((entry) => placement(entry, options).run && !done.has(entry.key));
-  const runs = await inPool(toRun, options.parallel || map.parallel, async (entry) => {
-    const port = entry.port ? await freePort() : null;
-    return runCaged(entry.run, root, cageEnv(entry, { ...context, port }), timeoutFor(entry, options));
-  });
-  const runByKey = new Map(toRun.map((entry, index) => [entry.key, runs[index]]));
+  const clockStart = Date.now();
+  // Cheapest first (lib/check-plan.js): the key scan, then the quick checks,
+  // then the tests the change needs, then the full gate. The first failure
+  // stops the rest; each later check reads "not run because <check> failed",
+  // which is never a pass.
+  const runByKey = new Map();
+  const secrets = await secretCheck(root, map, change, context);
+  let stopped = secrets.status === 'failed' ? 'the key scan' : '';
+  for (const stage of [...new Set(toRun.map((entry) => entry.stage ?? 1))].sort()) {
+    const list = toRun.filter((entry) => (entry.stage ?? 1) === stage);
+    if (stopped) { for (const entry of list) runByKey.set(entry.key, null); continue; }
+    const runs = await inPool(list, options.parallel || map.parallel, async (entry) => {
+      const port = entry.port ? await freePort() : null;
+      const cwd = entry.cwd ? path.join(root, entry.cwd) : root;
+      return runCaged(entry.run, cwd, cageEnv(entry, { ...context, port }), timeoutFor(entry, options));
+    });
+    list.forEach((entry, index) => runByKey.set(entry.key, runs[index]));
+    const red = list.find((entry, index) => resultRow(entry, runs[index], map.skipLines).status === 'failed');
+    if (red) stopped = red.key;
+  }
   const rows = picked.selected.map((entry) => {
     const place = placement(entry, options);
+    const base = { name: entry.key, run: entry.run, where: entry.where, why: entry.reasons, expected_seconds: entry.expected, stage: entry.stage ?? 1, ...(entry.tests && !entry.file ? { tests: entry.tests } : {}) };
     if (place.run && done.has(entry.key)) {
-      return { name: entry.key, run: entry.run, where: entry.where, why: entry.reasons, status: 'passed', note: 'passed in the receipt for this same code', seconds: 0, exit_code: 0 };
+      return { ...base, status: 'passed', note: 'passed in the receipt for this same code', seconds: 0, exit_code: 0 };
     }
     if (!place.run) {
-      return { name: entry.key, run: entry.run, where: entry.where, why: entry.reasons, status: 'needs-lane', lane: place.lane, seconds: 0, exit_code: null };
+      return { ...base, status: 'needs-lane', lane: place.lane, seconds: 0, exit_code: null };
     }
-    return resultRow(entry, runByKey.get(entry.key), map.skipLines);
+    const result = runByKey.get(entry.key);
+    if (!result) return { ...base, status: 'not-run', note: `not run because ${stopped} failed`, seconds: 0, exit_code: null };
+    const row = { ...base, ...resultRow(entry, result, map.skipLines), expected_seconds: entry.expected, stage: entry.stage ?? 1 };
+    // A fallback that runs only part of the tests is never proof: it passed
+    // here, but the whole suite still has to.
+    if (entry.partialFallback && row.status === 'passed') {
+      return { ...row, status: 'needs-lane', lane: 'full gate', partial_fallback: true, note: 'it passed, but this fallback runs only part of the tests; the map should name the release gate or a check marked "full": true' };
+    }
+    return row;
   });
+  budget.recordDurations(root, picked.selected.map((entry, index) => ({ entry, row: rows[index] }))
+    .filter(({ row }) => (row.status === 'passed' || row.status === 'failed') && !row.note && row.seconds > 0)
+    .map(({ entry, row }) => ({ key: entry.key, seconds: row.seconds, count: entry.selectedCount || 0 })));
   for (const name of picked.notPicked) {
     const check = map.checks[name];
     rows.push({ name, run: check.run, where: check.where, why: [check.each ? 'no changed file it runs for' : 'no changed file matches'], status: 'skipped-by-rule', seconds: 0, exit_code: null });
   }
-  const proof = options.gate ? { status: 'exempt', why: 'a whole gate run proves the gate, not one change' } : await checkProof(root, map, change, picked, options, context);
-  const secrets = await secretCheck(root, map, change, context);
+  let proof;
+  if (options.gate) proof = { status: 'exempt', why: 'a whole gate run proves the gate, not one change' };
+  else if (stopped) proof = { status: 'not-run', why: `not run because ${stopped} failed` };
+  else proof = await checkProof(root, map, change, picked, options, context);
+  dropFiles();
+  process.removeListener('exit', dropFiles);
+  const actualSeconds = seconds(Date.now() - clockStart);
+  const over = budget.overBudget(picked.target, actualSeconds, rows);
   // Code changed while the checks ran: this receipt cannot vouch for either state.
   const after = receipts.codeIdentity(root);
   const counted = [...rows.filter((row) => row.status !== 'skipped-by-rule'), proof, secrets].filter((row) => row.status !== 'exempt');
@@ -418,12 +590,20 @@ async function evaluate(root, map, options, log) {
     lane: options.lane,
     person_machine: person,
     gate: picked.gate,
+    map_blob: rules.blob,
+    map_from: rules.from,
     risk_tier: picked.tier,
     high_risk: picked.highKinds,
     changed_file_count: change.files.length,
     changed_files: change.files,
     importers_counted: picked.importers.length,
     unmapped: picked.unmapped,
+    uncovered: picked.uncovered,
+    selections: Object.fromEntries(Object.entries(picked.selections).map(([name, sel]) => [name, { mode: sel.mode, why: sel.why, selected: sel.tests.length, max: sel.max }])),
+    tier_target_seconds: picked.target,
+    expected_seconds: picked.expected,
+    actual_seconds: actualSeconds,
+    over_budget: over,
     checks: rows,
     proof,
     secret_scan: secrets,
@@ -435,7 +615,7 @@ async function evaluate(root, map, options, log) {
   const file = receipts.writeReceipt(root, receipt);
   if (options.json && !options.quiet) log(JSON.stringify({ ...receipt, receipt_file: file }, null, 2));
   else for (const line of [...summaryLines(receipt, file, root), receipts.storageLine(root)]) log(line);
-  return { code: receipts.exitForVerdict(verdict), receipt, file, change, picked };
+  return { code: receipts.exitForVerdict(verdict), receipt, file, change, picked, map };
 }
 
 function summaryLines(receipt, file, root) {
@@ -444,17 +624,27 @@ function summaryLines(receipt, file, root) {
   const lines = [];
   for (const row of receipt.checks) {
     if (row.status === 'skipped-by-rule') continue;
-    const mark = row.status === 'passed' ? 'pass' : row.status === 'failed' ? 'FAIL' : `needs ${row.lane}`;
-    lines.push(`  ${mark.padEnd(15)} ${row.name}${row.seconds ? ` (${row.seconds}s)` : ''}${row.note ? `, ${row.note}` : ''}`);
+    const mark = row.status === 'passed' ? 'pass' : row.status === 'failed' ? 'FAIL' : row.status === 'not-run' ? 'not run' : `needs ${row.lane}`;
+    const time = row.seconds ? ` (${row.seconds}s${row.expected_seconds ? `, expected ~${row.expected_seconds}s` : ''})` : '';
+    lines.push(`  ${mark.padEnd(15)} ${row.name}${time}${row.note ? `, ${row.note}` : ''}`);
     if (row.status === 'failed' && row.output_tail) lines.push(`      ${row.output_tail.split('\n').slice(-4).join('\n      ')}`);
   }
   const proof = receipt.proof;
   if (proof.status === 'exempt') lines.push(`  proof           ${proof.why}`);
+  else if (proof.status === 'not-run') lines.push(`  not run         the proof, ${proof.why}`);
   else if (!proof.command) lines.push(`  FAIL            ${proof.why}. ${proof.hint || ''}`.trimEnd());
   else lines.push(`  ${(proof.status === 'passed' ? 'proof' : proof.status === 'failed' ? 'FAIL proof' : `needs ${proof.lane}`).padEnd(15)} ${proof.command}${proof.changed_line_coverage ? `, changed lines run: ${proof.changed_line_coverage}` : ''}${proof.status !== 'passed' ? `, ${proof.why}` : ''}`);
   lines.push(`  ${(receipt.secret_scan.status === 'passed' ? 'keys' : 'FAIL keys').padEnd(15)} ${receipt.secret_scan.status === 'passed' ? 'no key-shaped strings added' : receipt.secret_scan.why}`);
   if (receipt.high_risk.length) {
     lines.push(`  high risk (${receipt.high_risk.join(', ')}): the release gate ran. Full audit: atris security-review audit ${receipt.changed_files.slice(0, 3).join(' ')} --quick`);
+  }
+  if (receipt.uncovered && receipt.uncovered.length) for (const gap of receipt.uncovered) lines.push(`  no test covers ${gap}`);
+  if (receipt.tier_target_seconds) {
+    lines.push(`  time            ${receipt.actual_seconds}s, expected ~${Math.round(receipt.expected_seconds)}s, target ${receipt.tier_target_seconds}s for a ${receipt.gate ? `whole ${receipt.gate} gate` : `${receipt.risk_tier} risk change`}`);
+  }
+  if (receipt.over_budget) {
+    const over = receipt.over_budget;
+    lines.push(`over budget: ${over.actual_seconds}s against the ${over.target_seconds}s target${over.check ? `; ${over.check} took ${over.check_seconds}s. Make it faster or move it to the lane` : ''}`);
   }
   const where = path.relative(root, file);
   const picked = counts.passed + counts.failed + counts['needs-lane'];
@@ -471,7 +661,10 @@ function summaryLines(receipt, file, root) {
   return lines;
 }
 
-function verifyReceipt(root, options, log) {
+// The receipt is not taken at its word: the plan is worked out again from the
+// diff and the default branch's map, and every row is held to it
+// (lib/check-recompute.js). Each refusal names the check or field.
+function verifyReceipt(root, map, options, log) {
   let file = options.receipt ? path.resolve(options.receipt) : null;
   let receipt = file ? receipts.readReceipt(file) : null;
   if (!file) {
@@ -479,22 +672,29 @@ function verifyReceipt(root, options, log) {
     if (found) { file = found.file; receipt = found.receipt; }
   }
   if (!receipt) {
-    log(file ? `atris check: ${file} is not an atris check receipt` : 'atris check: no receipt for the code here now; run atris check');
+    if (options.json) log(JSON.stringify({ receipt_file: file, matches: false, why: file ? 'not an atris check receipt' : 'no receipt for the code here now', problems: [], verdict: null }, null, 2));
+    else log(file ? `atris check: ${file} is not an atris check receipt` : 'atris check: no receipt for the code here now; run atris check');
     return EXIT.failed;
   }
-  const match = receipts.matchReceipt(root, receipt);
-  if (options.json) log(JSON.stringify({ receipt_file: file, matches: match.ok, why: match.why || null, verdict: match.ok ? receipt.verdict : null }, null, 2));
-  if (!match.ok) {
-    if (!options.json) log(`atris check: the receipt does not prove this code: ${match.why}`);
+  const result = recompute.recheckReceipt(root, receipt, { workingMap: map });
+  if (options.json) {
+    log(JSON.stringify({ receipt_file: file, matches: result.ok, why: result.why || null, problems: result.problems, verdict: result.verdict, risk_tier: result.tier || null, map_from: result.rules ? result.rules.from : null }, null, 2));
+  }
+  if (!result.ok) {
+    if (!options.json) {
+      log(`atris check: the receipt does not prove this code (${result.problems.length} problem${result.problems.length === 1 ? '' : 's'}):`);
+      for (const problem of result.problems) log(`  - ${problem}`);
+    }
     return EXIT.failed;
   }
   if (!options.json) {
-    if (receipt.verdict === 'proven') log(`atris check: proven. The receipt matches the code here (${path.relative(root, file)}).`);
-    else if (receipt.verdict === 'partly') log(`${receipts.CHECK_NEEDS_LANE_LINE}. The receipt matches the code, and some of its checks still need a lane.`);
-    else log('atris check: failed. The receipt matches the code, and it records a failed check.');
+    const where = path.relative(root, file);
+    if (result.verdict === 'proven') log(`atris check: proven. The plan was worked out again and the receipt matches it (${where}).`);
+    else if (result.verdict === 'partly') log(`${receipts.CHECK_NEEDS_LANE_LINE}. The receipt matches the plan, and ${result.needs_lane.join(', ')} still need${result.needs_lane.length === 1 ? 's' : ''} a lane.`);
+    else log('atris check: failed. The receipt matches the plan, and it records a failed check.');
+    log(receipts.storageLine(root));
   }
-  if (!options.json) log(receipts.storageLine(root));
-  return receipts.exitForVerdict(receipt.verdict);
+  return receipts.exitForVerdict(result.verdict);
 }
 
 // ---------------------------------------------------------------- push and land
@@ -592,10 +792,20 @@ async function pushCommand(root, map, options, log) {
     const result = await evaluate(root, map, { ...options, base: target.ref, extraFiles }, log);
     if (result.code === EXIT.usage) return EXIT.usage;
     if (result.code === EXIT.failed) { log('atris check: not pushed, a check failed.'); return EXIT.failed; }
-    const conditions = pushNowConditions(root, map, result, baseSha);
+    // The default branch's map decides the push too: a change cannot raise its
+    // own limits or name its own push command.
+    const rules = result.map || map;
+    const conditions = pushNowConditions(root, rules, result, baseSha);
     log('push straight to the default branch?');
     for (const condition of conditions) log(`  ${condition.ok ? 'yes' : 'no '}  ${condition.label}`);
     const head = revParse(root, 'HEAD');
+    // Anything the lander may pick up later carries its receipt with it, as a
+    // small ref on origin (lib/check-receipt-ref.js). The lander works it out
+    // again; when the ref cannot be pushed it checks the change itself.
+    if (!conditions.every((condition) => condition.ok) || rules.push.via) {
+      const kept = receiptRefs.publishReceipt(root, result.receipt);
+      log(kept.ok ? `receipt: kept on origin as ${kept.ref}` : `receipt: not kept on origin (${kept.detail || 'unknown'}); the lander will check the change itself`);
+    }
     if (!conditions.every((condition) => condition.ok)) {
       const ref = `refs/heads/atris/ready/${head.slice(0, 12)}`;
       const staged = run(root, ['push', '--quiet', 'origin', `HEAD:${ref}`]);
@@ -604,9 +814,9 @@ async function pushCommand(root, map, options, log) {
       log(`${STAGED_LINE}. Ready on ${ref.replace('refs/heads/', '')}; a runner lands it with: atris check land ${head.slice(0, 12)} --lane no-screen`);
       return EXIT.partly;
     }
-    if (map.push.via) {
-      log(`push: through the project's own command, ${map.push.via}`);
-      const via = spawnSync(map.push.via, { cwd: root, shell: true, stdio: 'inherit' });
+    if (rules.push.via) {
+      log(`push: through the project's own command, ${rules.push.via}`);
+      const via = spawnSync(rules.push.via, { cwd: root, shell: true, stdio: 'inherit' });
       return via.status === 0 ? EXIT.proven : EXIT.failed;
     }
     // Compare and swap: refused if the default branch moved since it was checked.
@@ -690,6 +900,8 @@ function sweepCommand(root, log, { now = Date.now() } = {}) {
   }
   log(`atris check sweep: removed ${removed} staged ref(s) already on ${target.branch} and older than ${STALE_READY_DAYS} days`);
   for (const row of waiting) log(`  waiting, not on ${target.branch}: ${row.name} (${Math.floor(row.days)} days old)`);
+  const kept = receiptRefs.sweepReceiptRefs(root, { target: target.ref, now });
+  log(`atris check sweep: removed ${kept.removed} receipt ref(s) whose commit has been on ${target.branch} over ${receiptRefs.LANDED_DAYS} days or that are over ${receiptRefs.MAX_DAYS} days old; ${kept.kept} kept`);
   log(receipts.storageLine(root));
   return EXIT.proven;
 }
@@ -721,28 +933,37 @@ function failedReceipt(root, file) {
 }
 
 // Failure lines name folders on this machine; the cloud task gets repo-relative paths.
+// No folder of this machine goes into a cloud task: the work copy, the main
+// checkout it came from (a work copy can borrow its python) and the home
+// folder all come out.
 function localPathsOut(text, receipt) {
   let out = String(text || '');
-  const roots = new Set([receipt.repo_root]);
-  try { roots.add(fs.realpathSync(receipt.repo_root)); } catch {}
-  for (const root of roots) if (root) out = out.split(`${root}/`).join('').split(root).join('.');
+  const roots = new Set();
+  for (const root of [receipt.repo_root, receipt.repo_root && mainCheckout(receipt.repo_root)]) {
+    if (!root) continue;
+    roots.add(root);
+    try { roots.add(fs.realpathSync(root)); } catch {}
+  }
+  for (const root of [...roots].sort((a, b) => b.length - a.length)) out = out.split(`${root}/`).join('').split(root).join('.');
+  const home = os.homedir();
+  if (home && home !== '/') out = out.split(`${home}/`).join('~/').split(home).join('~');
   return out;
 }
 
 function fixTask(receipt, slug) {
   const tailLines = (text) => localPathsOut(text, receipt).split('\n').slice(-TAIL_LINES).map((line) => `   ${line}`);
   const failedRuns = new Set();
-  const lines = [`Repo ${slug}, branch ${receipt.branch} at commit ${String(receipt.head_sha).slice(0, 12)}.`, 'These checks failed in atris check:'];
+  const lines = [`Repo ${slug}, branch ${receipt.branch} at commit ${String(receipt.head_sha).slice(0, 12)}.`, `Receipt: check-${String(receipt.head_sha).slice(0, 12)}.json, tree ${receipt.tree}.`, 'These checks failed in atris check:'];
   let n = 0;
   for (const row of receipt.checks.filter((entry) => entry.status === 'failed')) {
     n += 1;
     failedRuns.add(row.run);
-    lines.push(`${n}. ${row.name}: \`${row.run}\` (exit ${row.exit_code === null ? 'none' : row.exit_code}${row.note ? `, ${row.note}` : ''})`);
+    lines.push(`${n}. ${row.name}: \`${localPathsOut(row.run, receipt)}\` (exit ${row.exit_code === null ? 'none' : row.exit_code}${row.note ? `, ${row.note}` : ''})`);
     if (row.output_tail) lines.push('   last lines:', ...tailLines(row.output_tail));
   }
   if (receipt.proof && receipt.proof.status === 'failed' && !failedRuns.has(receipt.proof.command)) {
     n += 1;
-    lines.push(`${n}. the change's proof${receipt.proof.command ? `: \`${receipt.proof.command}\`` : ''} (${receipt.proof.why})`);
+    lines.push(`${n}. the change's proof${receipt.proof.command ? `: \`${localPathsOut(receipt.proof.command, receipt)}\`` : ''} (${receipt.proof.why})`);
     if (receipt.proof.output_tail) lines.push('   last lines:', ...tailLines(receipt.proof.output_tail));
   }
   if (receipt.secret_scan && receipt.secret_scan.status === 'failed') {
@@ -757,7 +978,64 @@ function shellWord(value) {
   return /^[A-Za-z0-9_./@:=+-]+$/.test(value) ? value : `'${String(value).replace(/'/g, "'\\''")}'`;
 }
 
-function fixCommand(root, options, log) {
+// Is this failed receipt a big bug? One plain rule: its risk tier is high, or
+// a check failed and a changed file matches the map's "big" globs.
+function bigVerdict(receipt, map) {
+  if (receipt.risk_tier === 'high') return { big: true, why: `high risk (${(receipt.high_risk || []).join(', ') || 'high'})` };
+  const failed = (receipt.checks || []).some((row) => row.status === 'failed');
+  const globs = (map && map.big) || [];
+  const hit = failed && globs.length ? (receipt.changed_files || []).find((file) => plan.globsMatch(globs, file)) : null;
+  if (hit) return { big: true, why: `${hit} matches the map's big list` };
+  return { big: false, why: receipt.risk_tier ? `${receipt.risk_tier} risk, nothing in the map's big list` : 'nothing in the map\'s big list' };
+}
+
+// The one line the owner gets about a big bug. No names of people.
+function bigNoticeLine(receipt) {
+  const row = (receipt.checks || []).find((entry) => entry.status === 'failed');
+  const name = row ? row.name : (receipt.proof && receipt.proof.status === 'failed' ? 'the proof' : 'a check');
+  const why = row ? (row.note || `exit ${row.exit_code === null || row.exit_code === undefined ? 'none' : row.exit_code}`) : String((receipt.proof && receipt.proof.why) || 'a failure');
+  return `Big bug in ${receipt.repo}: ${name} failed on ${String(why).split('\n')[0].slice(0, 80)}. A fix job is running with the strongest model.`;
+}
+
+// Post the line to the owner notice channel. A failure to post never fails
+// the hand-off.
+function postOwnerNotice(root, line, channel, post) {
+  if (channel !== 'feed') return { posted: false, why: 'owner_notice is none' };
+  try {
+    const result = post ? post(line) : spawnSync('atris', ['feed', 'post', line], { cwd: root, encoding: 'utf8', timeout: 60000 });
+    return result && result.status === 0 ? { posted: true } : { posted: false, why: `atris feed post exited ${result ? result.status : 'none'}` };
+  } catch (error) {
+    return { posted: false, why: String(error && error.message || error).split('\n')[0] };
+  }
+}
+
+// The job's own lines: the pull request link, and the run id and job record
+// computer pr prints when it has them.
+function fixJobFrom(output, exitCode, sentAt) {
+  const text = String(output || '');
+  const field = (name) => { const hit = text.match(new RegExp(`^${name}=(\\S+)`, 'm')); return hit ? hit[1] : null; };
+  const link = field('PR_URL') || (text.match(/https:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+/) || [null])[0];
+  return { sent_at: sentAt, exit_code: exitCode, pr_url: link, execution_id: field('EXECUTION_ID'), job_record: field('JOB_RECORD') };
+}
+
+// Run computer pr, showing its output as it comes and keeping a copy.
+function sendFixJob(root, argv, env) {
+  return new Promise((resolve) => {
+    let output = '';
+    let child;
+    try {
+      child = spawn('atris', argv, { cwd: root, env, stdio: ['inherit', 'pipe', 'inherit'] });
+    } catch (error) {
+      resolve({ status: null, output: String(error && error.message || error) });
+      return;
+    }
+    child.stdout.on('data', (chunk) => { output += chunk; process.stdout.write(chunk); });
+    child.on('error', (error) => resolve({ status: null, output: `${output}${error.message}` }));
+    child.on('close', (status) => resolve({ status, output }));
+  });
+}
+
+async function fixCommand(root, options, log, context = {}) {
   const found = failedReceipt(root, options.receipt);
   if (!found) { log('atris check fix: no failed receipt here (run atris check, or pass --receipt <file>)'); return EXIT.usage; }
   const { file, receipt } = found;
@@ -775,7 +1053,16 @@ function fixCommand(root, options, log) {
   if (!receipt.branch || receipt.branch === 'HEAD') { log('atris check fix: the receipt names no branch; check from a branch, then fix'); return EXIT.usage; }
   const task = fixTask(receipt, slug);
   if (!task.count) { log('atris check fix: the receipt lists no failed check to hand over'); return EXIT.usage; }
-  const argv = ['computer', 'pr', slug, task.text, '--business', CODEOPS_BUSINESS, '--base', receipt.branch];
+  let ownMap = null;
+  try { ownMap = plan.loadMap(root); } catch { ownMap = null; }
+  const big = bigVerdict(receipt, ownMap);
+  // A big bug gets the strongest model: computer pr --think asks the thinker first.
+  if (big.big) task.text = `big bug: ${task.text}`;
+  const argv = ['computer', 'pr', slug, task.text, '--business', CODEOPS_BUSINESS, '--base', receipt.branch, ...(big.big ? ['--think'] : [])];
+  const channel = ownMap ? ownMap.ownerNotice : 'feed';
+  const notice = big.big ? bigNoticeLine(receipt) : '';
+  log(`big: ${big.big ? 'yes' : 'no'} (${big.why})`);
+  if (big.big) log(channel === 'feed' ? `notice: to the feed, once the job is sent: atris feed post ${shellWord(notice)}` : 'notice: none (owner_notice is none)');
   log('atris check fix: a dispatch wakes a cloud computer (costs a little).');
   log(`command: TASK="$(cat <<'ATRIS_TASK'`);
   log(task.text);
@@ -790,11 +1077,22 @@ function fixCommand(root, options, log) {
   }
   // Mark first, so a crash mid-dispatch can never send a second job for this receipt.
   const at = new Date().toISOString();
-  fs.writeFileSync(file, `${JSON.stringify({ ...receipt, fix_dispatched_at: at }, null, 2)}\n`);
+  fs.writeFileSync(file, `${JSON.stringify({ ...receipt, fix_dispatched_at: at, fix_big: { big: big.big, why: big.why } }, null, 2)}\n`);
   // The same code checked again gets a fresh receipt file; the ledger still says it was sent.
   const recent = Object.entries({ ...ledger, [receipt.tree]: at }).sort((a, b) => b[1].localeCompare(a[1])).slice(0, 200);
   fs.writeFileSync(ledgerFile, `${JSON.stringify(Object.fromEntries(recent), null, 2)}\n`);
-  const sent = spawnSync('atris', argv, { cwd: root, stdio: 'inherit' });
+  // computer pr learns who sent the job and which receipt it fixes.
+  const sent = await sendFixJob(root, argv, { ...process.env, ATRIS_RUNNER: 'atris check fix', ATRIS_FIX_RECEIPT: file });
+  const job = fixJobFrom(sent.output, sent.status, at);
+  try {
+    const now = JSON.parse(fs.readFileSync(file, 'utf8'));
+    fs.writeFileSync(file, `${JSON.stringify({ ...now, fix_job: job }, null, 2)}\n`);
+  } catch {}
+  log(`fix job: exit ${sent.status === null ? 'none' : sent.status}${job.pr_url ? `, ${job.pr_url}` : ''}`);
+  if (sent.status === 0 && big.big) {
+    const told = postOwnerNotice(root, notice, channel, context.postNotice);
+    log(told.posted ? 'notice: posted to the feed' : `notice: not posted (${told.why}); the fix job was still sent`);
+  }
   return sent.status === 0 ? EXIT.proven : EXIT.failed;
 }
 
@@ -846,6 +1144,9 @@ async function checkCommand(args, context = {}) {
     return EXIT.proven;
   }
   if (!isLocalCheck(args)) return require('./human-missions').checkCommand(args, context);
+  // Run from the command line (not called in-process with a log): a SIGTERM
+  // stops the running checks' process groups too.
+  if (!context.log) stopRunningOnSignal();
   const root = receipts.repoRootOf(context.cwd || process.cwd());
   if (!root) { log('atris check: run it inside a git repo or work copy'); return EXIT.usage; }
   if (args[0] === 'init') return initMap(root, args.slice(1), log);
@@ -854,7 +1155,7 @@ async function checkCommand(args, context = {}) {
   let landSha = '';
   if (args[0] === 'push') { sub = 'push'; rest = args.slice(1); }
   if (args[0] === 'land') { sub = 'land'; landSha = args[1]; rest = args.slice(2); }
-  if (args[0] === 'sweep' || args[0] === 'fix') { sub = args[0]; rest = args.slice(1); }
+  if (args[0] === 'sweep' || args[0] === 'fix' || args[0] === 'replay') { sub = args[0]; rest = args.slice(1); }
   let options;
   try {
     options = parseArgs(rest);
@@ -865,12 +1166,15 @@ async function checkCommand(args, context = {}) {
   if (sub === 'push') options.push = true;
   if (sub === 'sweep') return sweepCommand(root, log);
   if (sub === 'fix') return fixCommand(root, options, log, context);
-  const map = loadMap(root, log);
+  if (options.lintMap) return lintMapCommand(root, options, log);
+  if (options.mapFile && sub !== 'replay' && !options.explain) { log('atris check: --map is for replay and --explain only; a real check reads atris/checks.json'); return EXIT.usage; }
+  const map = loadMap(root, log, options);
   if (!map) return EXIT.usage;
+  if (sub === 'replay') return replayCommand(root, map, options, log);
   if (sub === 'land') return landCommand(root, map, landSha, options, log);
-  if (options.verify) return verifyReceipt(root, options, log);
+  if (options.verify) return verifyReceipt(root, map, options, log);
   if (options.push) return pushCommand(root, map, options, log);
   return (await evaluate(root, map, options, log)).code;
 }
 
-module.exports = { checkCommand, isLocalCheck, STAGED_LINE };
+module.exports = { checkCommand, isLocalCheck, STAGED_LINE, bigVerdict, bigNoticeLine };
