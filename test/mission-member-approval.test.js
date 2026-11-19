@@ -94,6 +94,104 @@ test('a plain-word synonym under a negation seeds no question, elsewhere it does
   assert.equal(objectiveNamesCategory('without a refund, charge the card', 'billing-change'), true);
 });
 
+// Seen live 2026-11-17: walsh (approval-required: [send, spend, ...]) was held
+// on "send" by mission text that only forbade sending ("Send no email.") or
+// only described owners "who answer their own email". The guard must read the
+// ask, not the word.
+const WALSH = ['send', 'spend', 'delete', 'deploy', 'hire', 'fire'];
+const WALSH_TEXT_ONE = 'THE STORY: Atris Labs reaches $10,000 by Dec 15 with five setups at $2,000 each, sold to small business owners who answer their own email. CHAPTER ONE ends Sunday Nov 22 when: 50 hand-researched notes are out, every follow-up is current, and 3 conversations are booked. Today is Nov 17. Known facts: 6 notes sent Nov 16 with no replies yet; 3 follow-ups are past due; the mail policy record was added today but the mail signing key is still missing, so new cold notes should wait on it. RULES: drafts only. Contact no one outside the team. Send no email. Spend nothing. Promise nothing to a customer. Read-only on any money system. In any team channel post counts only, never a person, company or city name. Never write AI, agent or automate in anything a customer would read. YOUR TURN as walsh: check each teammate has one clear move for chapter one and name any move two people are both reaching for; one owner per move. Finish by posting ONE short card to the feed channel as walsh (atris channel feed "..." --as walsh) in this shape: Chapter one | my move | what I checked | what is not tracked yet | the one call for Keshav. Then stop.';
+const WALSH_TEXT_TWO = 'THE STORY: Atris Labs reaches 10,000 dollars by Dec 15 with five setups at 2,000 dollars each, bought by small business owners who answer their own email. CHAPTER ONE ends Sunday Nov 22 when: 50 hand-researched notes are out, every follow-up is current, and 3 conversations are booked. Today is Nov 17. Known facts: 6 notes went out Nov 16 with no replies yet; 3 follow-ups are past due; the mail policy record was added today but the mail signing key is still missing, so new cold notes should wait on it. RULES: this is thinking and drafting work only, inside your own team folder. Nothing leaves this computer. No message goes to anyone. No money moves. No promise is made to a customer. Money systems are read-only. Never write AI, agent or automate in anything a customer would read. YOUR TURN as walsh: check each teammate has one clear move for chapter one and name any move two people are both reaching for; one owner per move. Finish by writing ONE short card to the file atris/team/walsh/cards/2026-11-17-chapter-one.md in this shape: Chapter one | my move | what I checked | what is not tracked yet | the one call for Keshav. Then stop.';
+
+function namedBy(objective, categories) {
+  return categories.filter((category) => objectiveNamesCategory(objective, category));
+}
+
+test('a plain ask to send, post or spend still seeds the question', () => {
+  assert.deepEqual(namedBy('Send the weekly report to the client.', ['send']), ['send']);
+  assert.deepEqual(namedBy('Email the vendor about the late order.', ['send']), ['send']);
+  assert.deepEqual(namedBy('Post the card to the feed channel.', ['post']), ['post']);
+  assert.deepEqual(namedBy('Spend the ad budget on the test.', ['spend']), ['spend']);
+  assert.deepEqual(namedBy("Don't forget to send the invoice.", ['send']), ['send']);
+  assert.deepEqual(namedBy('Do not hesitate to spend the budget.', ['spend']), ['spend']);
+  assert.deepEqual(namedBy('Not only send the report, also file it.', ['send']), ['send']);
+  assert.deepEqual(namedBy('Read the email, then email the client back.', ['send']), ['send']);
+  assert.deepEqual(namedBy("Answer the client's email today.", ['send']), ['send']);
+  assert.deepEqual(namedBy('Spend no more than $50 on ads.', ['spend']), ['spend']);
+  assert.deepEqual(namedBy('Send no later than Friday.', ['send']), ['send']);
+  assert.deepEqual(namedBy('The notes were sent Nov 16. Send the rest today.', ['send']), ['send']);
+});
+
+test('a pure prohibition seeds no question', () => {
+  const banned = [
+    ['Send no email.', 'send'],
+    ['Do not send anything.', 'send'],
+    ['Never post in the channel.', 'post'],
+    ['Spend nothing.', 'spend'],
+    ['Send nothing outside the team.', 'send'],
+    ['Spend zero dollars.', 'spend'],
+    ['No money moves.', 'spend'],
+    ['Contact no one.', 'send'],
+    ['No message goes to anyone.', 'send'],
+    ['Delete nothing.', 'delete'],
+  ];
+  for (const [objective, category] of banned) {
+    assert.equal(objectiveNamesCategory(objective, category), false, `${category} should not match "${objective}"`);
+  }
+});
+
+test('a past fact about what already happened seeds no question', () => {
+  assert.deepEqual(namedBy('6 notes were sent Nov 16 with no replies yet.', WALSH), []);
+  assert.deepEqual(namedBy('The intro was already emailed on Monday.', WALSH), []);
+  assert.deepEqual(namedBy('The old logs were deleted last week; summarize what is left.', WALSH), []);
+  assert.deepEqual(namedBy('6 notes went out Nov 16; notes are out.', WALSH), []);
+  assert.deepEqual(namedBy('Owners who answer their own email; check the email replies.', WALSH), []);
+});
+
+test('a sentence that both forbids and asks still seeds the question', () => {
+  assert.deepEqual(namedBy('Send no email to vendors but send the invoice to the client.', ['send']), ['send']);
+  assert.deepEqual(namedBy('Spend nothing except the ad budget.', ['spend']), ['spend']);
+  assert.deepEqual(namedBy('Never email anyone except the client.', ['send']), ['send']);
+  assert.deepEqual(namedBy('Send nothing unless the owner says yes, then send the report.', ['send']), ['send']);
+  assert.deepEqual(namedBy('Do not delete the cache, delete the temp folder.', ['delete']), ['delete']);
+});
+
+// Found by an independent check of #1965: each of these asks for the act and
+// slipped through on the base code too.
+test('double negatives, conditions and orders about a past send still seed the question', () => {
+  const asks = [
+    ['Never close a ticket without emailing the customer.', 'send'],
+    ['Never leave the office without sending the report.', 'send'],
+    ['Do not leave without deleting the temp folder.', 'delete'],
+    ['Do not finish without posting the card.', 'post'],
+    ['Not a single day should pass without you emailing the owner.', 'send'],
+    ['Avoid forgetting to send the invoice.', 'send'],
+    ['Avoid delaying the email to the client.', 'send'],
+    ['If there is no reply send a follow-up.', 'send'],
+    ['If there are no objections email the client.', 'send'],
+    ['Make sure the invoice has been sent to the client by Friday.', 'send'],
+    ['Ensure the notes were sent before noon.', 'send'],
+    ['Make sure the budget was spent by Friday.', 'spend'],
+    ['Do not send email unless the owner approves.', 'send'],
+  ];
+  for (const [objective, category] of asks) {
+    assert.equal(objectiveNamesCategory(objective, category), true, `${category} should match "${objective}"`);
+  }
+});
+
+test('a ban written with a curly apostrophe or an aside is still a ban', () => {
+  assert.deepEqual(namedBy('Don’t send any email today.', ['send']), []);
+  assert.deepEqual(namedBy('Never, under any circumstances, send email.', ['send']), []);
+  assert.deepEqual(namedBy('Do not under any circumstances send email.', ['send']), []);
+  assert.deepEqual(namedBy('Summarize the logs without deleting them.', ['delete']), []);
+});
+
+test('the two real walsh mission texts seed no question', () => {
+  assert.deepEqual(namedBy(WALSH_TEXT_ONE, WALSH), []);
+  assert.deepEqual(namedBy(WALSH_TEXT_TWO, WALSH), []);
+  // The first text does ask for a channel post, so a member gated on post is held.
+  assert.deepEqual(namedBy(WALSH_TEXT_ONE, ['post']), ['post']);
+});
+
 test('plain words seed the question for policy-worded categories', () => {
   const cases = [
     ['destructive-file-action', ['delete the old logs', 'remove the temp directory', 'wipe the cache folder', 'wiping the cache folder', 'purge stale builds', 'deleting stale files', 'removal of the cache']],
