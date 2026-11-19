@@ -1028,3 +1028,436 @@ test('runFleetFlight ship failure receipt keeps the failing module at the head',
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+function withCleanClaudeRunnerEnv(overrides, fn) {
+  const keys = [
+    'ATRIS_RUNNER_PROFILE',
+    'ATRIS_RUNNER_MODEL',
+    'ATRIS_RUNNER_BIN',
+    'ATRIS_RUNNER_COMMAND_TEMPLATE',
+    'ATRIS_CLAUDE_MODEL',
+    'ATRIS_CLAUDE_BIN',
+    'ATRIS_CLAUDE_COMMAND_TEMPLATE',
+    'ATRIS_CLAUDE_SPEND_OK',
+    'HOME',
+    'CLAUDE_CONFIG_DIR',
+  ];
+  const prev = new Map(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) delete process.env[key];
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-opus-effort-home-'));
+  process.env.HOME = home;
+  process.env.CLAUDE_CONFIG_DIR = path.join(home, '.claude');
+  for (const [key, value] of Object.entries(overrides || {})) process.env[key] = value;
+  try {
+    return fn();
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    for (const key of keys) {
+      const value = prev.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+test('isBugFixTask accepts concrete bug-fix tasks and rejects features, refactors, UI, docs, and sensitive work', () => {
+  // Accepted bug-fix tasks
+  assert.equal(fleet.isBugFixTask({ title: 'Fix null crash in lib/fleet.js', tag: 'cli', files: ['lib/fleet.js'] }), true);
+  assert.equal(fleet.isBugFixTask({ title: 'Guard against stale lease in lib/fleet.js', files: ['lib/fleet.js'] }), true);
+  assert.equal(fleet.isBugFixTask({ title: 'Prevent timeout hang in lib/fleet.js', files: ['lib/fleet.js'] }), true);
+  assert.equal(fleet.isBugFixTask({ title: 'Update lib/fleet.js parser', tag: 'bug', files: ['lib/fleet.js'] }), true);
+
+  // Rejected features, refactors, UI, docs, ambiguous, and sensitive/protected tasks
+  const rejected = [
+    { title: 'Add new flag to lib/fleet.js', tag: 'cli', files: ['lib/fleet.js'] },
+    { title: 'Add regression test and fix bug in lib/fleet.js', tag: 'cli', files: ['lib/fleet.js'] },
+    { title: 'Create status command in commands/status.js', tag: 'feature', files: ['commands/status.js'] },
+    { title: 'Build helper in lib/fleet.js', files: ['lib/fleet.js'] },
+    { title: 'Refactor parser in lib/fleet.js', files: ['lib/fleet.js'] },
+    { title: 'Fix null crash in lib/fleet.js', tag: 'feature', files: ['lib/fleet.js'] },
+    { title: 'Fix null crash in lib/fleet.js', tag: 'refactor', files: ['lib/fleet.js'] },
+    { title: 'Fix null crash in lib/fleet.js', tag: 'ui', files: ['lib/fleet.js'] },
+    { title: 'Fix UI layout glitch in src/panel.js', files: ['src/panel.js'] },
+    { title: 'Fix CSS theme mismatch in src/app.css', files: ['src/app.css'] },
+    { title: 'Polish copy in lib/fleet.js', files: ['lib/fleet.js'] },
+    { title: 'Fix typo in docs/README.md', files: ['docs/README.md'] },
+    { title: 'Fix sign-in redirect error in lib/session.js', files: ['lib/session.js'] },
+    { title: 'Fix auth login crash in lib/auth.js', files: ['lib/auth.js'] },
+    { title: 'Fix billing invoice rounding bug in lib/calc.js', files: ['lib/calc.js'] },
+    { title: 'Fix release publish error in scripts/ship.js', files: ['scripts/ship.js'] },
+    { title: 'Fix security RBAC permission leak in lib/acl.js', files: ['lib/acl.js'] },
+    { title: 'Update lib/fleet.js', tag: 'cli', files: ['lib/fleet.js'] },
+    // Compound non-bugfix tags & protected DENIED_TAGS
+    { title: 'Fix null crash in lib/fleet.js', tag: 'ui-bug', files: ['lib/fleet.js'] },
+    { title: 'Fix null crash in lib/fleet.js', tag: 'feature-cli', files: ['lib/fleet.js'] },
+    { title: 'Fix null crash in lib/fleet.js', tag: 'docs-fix', files: ['lib/fleet.js'] },
+    { title: 'Fix null crash in lib/fleet.js', tag: 'refactor-core', files: ['lib/fleet.js'] },
+    { title: 'Fix null crash in lib/fleet.js', tag: 'feedback', files: ['lib/fleet.js'] },
+    // Empty / missing title even with bug tag
+    { title: '', tag: 'bug', files: ['lib/fleet.js'] },
+    { title: '   ', tag: 'bug', files: ['lib/fleet.js'] },
+    { tag: 'bug', files: ['lib/fleet.js'] },
+    // Typo / spelling / wording copy edits
+    { title: 'Fix typo in lib/fleet.js', tag: 'cli', files: ['lib/fleet.js'] },
+    { title: 'Fix spelling in lib/fleet.js', tag: 'cli', files: ['lib/fleet.js'] },
+    { title: 'Fix wording in lib/fleet.js', tag: 'cli', files: ['lib/fleet.js'] },
+    // Live projection false-positive regressions
+    { id: 'CLI-1501', title: 'catch up fix-1932 with master: it clashes in commands/nexus.js', tag: 'cli' },
+    { id: 'CLI-1310', title: 'a triage agent reproduces every piece of incoming feedback... already fixed... Verify: node --test test/feedback-triage.test.js' },
+    { title: 'check branch bug-123 status in lib/fleet.js', files: ['lib/fleet.js'] },
+    { title: 'audit lib/fleet.js behavior that was already fixed yesterday', files: ['lib/fleet.js'] },
+    // Digit-suffixed & camelCase sensitive paths/identifiers
+    { title: 'Fix crash in lib/oauth2.js', tag: 'cli', files: ['lib/oauth2.js'] },
+    { title: 'Fix crash in lib/authClient.js', tag: 'cli', files: ['lib/authClient.js'] },
+    { title: 'Fix crash in lib/loginForm.js', tag: 'cli', files: ['lib/loginForm.js'] },
+    { title: 'Fix crash in lib/stripeWebhook.js', tag: 'cli', files: ['lib/stripeWebhook.js'] },
+    { title: 'Fix crash in lib/signInHandler.js', tag: 'cli', files: ['lib/signInHandler.js'] },
+    { title: 'Fix crash in lib/secretKey.js', tag: 'cli', files: ['lib/secretKey.js'] },
+    { title: 'Fix crash in lib/rbacGuard.js', tag: 'cli', files: ['lib/rbacGuard.js'] },
+    { title: 'Fix crash in lib/tokenStore.js', tag: 'cli', files: ['lib/tokenStore.js'] },
+  ];
+  for (const task of rejected) {
+    assert.equal(fleet.isBugFixTask(task), false, task.title || String(task.tag));
+  }
+});
+
+test('opusBugfixEffortDecision splits eligible single-file Opus bug-fix tasks 50/50 by task id and fails closed when missing id', () => {
+  assert.equal(fleet.OPUS_BUGFIX_LOW_EFFORT_AB_ENABLED, true);
+  withCleanClaudeRunnerEnv({}, () => {
+    const base = {
+      title: 'Fix stale lease crash in lib/fleet.js',
+      tag: 'cli',
+      files: ['lib/fleet.js'],
+    };
+
+    // Even numeric ids -> low arm
+    for (const id of ['t-104', '104', 104, 'CLI-200']) {
+      assert.deepEqual(
+        fleet.opusBugfixEffortDecision({ ...base, id }, 'claude', 'claude-opus-5-5', ''),
+        { effort: 'low', experimentSide: 'low' },
+        String(id)
+      );
+      assert.equal(fleet.smallSinglePlaceOpusEffort({ ...base, id }, 'claude', 'claude-opus-5-5', ''), 'low', String(id));
+    }
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ ...base, id: 't-104' }, 'claude', 'opus 5.5', ''),
+      { effort: 'low', experimentSide: 'low' }
+    );
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix stale check', metadata: { files: ['./lib/fleet.js'] } }, 'claude', 'claude-opus-5-5', ''),
+      { effort: 'low', experimentSide: 'low' }
+    );
+
+    // Odd numeric ids -> default arm (enrolled in A/B, no --effort override)
+    for (const id of ['t-105', '105', 105, 'CLI-201']) {
+      assert.deepEqual(
+        fleet.opusBugfixEffortDecision({ ...base, id }, 'claude', 'claude-opus-5-5', ''),
+        { effort: '', experimentSide: 'default' },
+        String(id)
+      );
+      assert.equal(fleet.smallSinglePlaceOpusEffort({ ...base, id }, 'claude', 'claude-opus-5-5', ''), '', String(id));
+    }
+
+    // Non-numeric ULID / hash -> deterministic 0/1 parity
+    const ulidA = fleet.opusBugfixEffortDecision({ ...base, id: '01JABC9XYZ0001' }, 'claude', 'claude-opus-5-5', '');
+    const ulidARepeat = fleet.opusBugfixEffortDecision({ ...base, id: '01JABC9XYZ0001' }, 'claude', 'claude-opus-5-5', '');
+    assert.deepEqual(ulidA, ulidARepeat);
+    assert.ok(['low', 'default'].includes(ulidA.experimentSide));
+
+    // Missing or empty task id -> fail closed (not enrolled, default effort)
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ ...base }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ ...base, id: '' }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+
+    // Kill switch disables experiment completely
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ ...base, id: 't-104' }, 'claude', 'claude-opus-5-5', '', { abEnabled: false }),
+      { effort: '', experimentSide: null }
+    );
+  });
+
+  withCleanClaudeRunnerEnv({ ATRIS_RUNNER_MODEL: 'claude-opus-5-5' }, () => {
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix null error in lib/fleet.js' }, 'claude', '', ''),
+      { effort: 'low', experimentSide: 'low' }
+    );
+  });
+});
+
+test('opusBugfixEffortDecision skips explicit effort, non-bugfix, multi-file, globs, dirs, protected, validator, and non-opus/non-claude tasks', () => {
+  withCleanClaudeRunnerEnv({}, () => {
+    const base = {
+      id: 't-104',
+      title: 'Fix null crash in lib/fleet.js',
+      tag: 'cli',
+      files: ['lib/fleet.js'],
+    };
+
+    // Explicit effort pins are never overridden and not enrolled; whitespace-only effort falls through.
+    assert.deepEqual(fleet.opusBugfixEffortDecision(base, 'claude', 'claude-opus-5-5', 'high'), { effort: '', experimentSide: null });
+    assert.deepEqual(fleet.opusBugfixEffortDecision(base, 'claude', 'claude-opus-5-5', 'medium'), { effort: '', experimentSide: null });
+    assert.deepEqual(fleet.opusBugfixEffortDecision(base, 'claude', 'claude-opus-5-5', '   '), { effort: 'low', experimentSide: 'low' });
+
+    // Directories, globs, extensionless paths, and URLs are rejected.
+    assert.deepEqual(fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix crash', tag: 'cli', files: ['lib/'] }, 'claude', 'claude-opus-5-5', ''), { effort: '', experimentSide: null });
+    assert.deepEqual(fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix crash', tag: 'cli', files: ['lib/*.js'] }, 'claude', 'claude-opus-5-5', ''), { effort: '', experimentSide: null });
+    assert.deepEqual(fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix crash', tag: 'cli', files: ['lib/foo'] }, 'claude', 'claude-opus-5-5', ''), { effort: '', experimentSide: null });
+    assert.deepEqual(fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix crash in lib/foo/', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''), { effort: '', experimentSide: null });
+    assert.deepEqual(fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix crash in lib/foo/*.js', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''), { effort: '', experimentSide: null });
+    assert.deepEqual(fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix crash in lib/foo/{a,b}.js', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''), { effort: '', experimentSide: null });
+    assert.deepEqual(fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix crash see https://example.com/docs/index.html', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''), { effort: '', experimentSide: null });
+
+    // Multi-file tasks (including non-prefix paths like utils/b.js and objective/description mentions) are not enrolled.
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ ...base, files: ['lib/fleet.js', 'test/fleet.test.js'] }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix crash in lib/a.js and utils/b.js', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix crash in lib/a.js', objective: 'Also fix utils/b.js', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix crash in lib/a.js', description: 'Touches utils/b.js too', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+
+    // Blind tasks (no declared files or surface) are not enrolled.
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix vague crash', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+
+    // Protected lanes, sensitive tags, sensitive paths, compound tags, and declared/sniffed protected tasks are not enrolled.
+    for (const lane of ['money', 'security', 'deploy', 'Deploys', 'infra-deploy', 'outward', 'release', 'publish', 'feedback', 'ui-bug', 'feature-cli', 'docs-fix', 'refactor-core']) {
+      assert.deepEqual(
+        fleet.opusBugfixEffortDecision({ ...base, tag: lane }, 'claude', 'claude-opus-5-5', ''),
+        { effort: '', experimentSide: null },
+        lane
+      );
+    }
+    for (const sensitivePath of ['lib/auth.js', 'lib/oauth2.js', 'lib/authClient.js', 'lib/loginForm.js', 'lib/stripeWebhook.js', 'lib/signInHandler.js', 'lib/secretKey.js', 'lib/rbacGuard.js', 'lib/tokenStore.js']) {
+      assert.deepEqual(
+        fleet.opusBugfixEffortDecision({ id: 't-104', title: `Fix crash in ${sensitivePath}`, tag: 'cli', files: [sensitivePath] }, 'claude', 'claude-opus-5-5', ''),
+        { effort: '', experimentSide: null },
+        sensitivePath
+      );
+    }
+    // Live projection regressions & Verify-only path mentions must stay unenrolled.
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', display_id: 'CLI-1501', title: 'catch up fix-1932 with master: it clashes in commands/nexus.js', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', display_id: 'CLI-1310', title: 'a triage agent reproduces every piece of incoming feedback... already fixed... Verify: node --test test/feedback-triage.test.js' }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix crash on startup Verify: node --test test/startup.test.js', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', title: '', tag: 'bug', files: ['lib/fleet.js'] }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix typo in lib/fleet.js', tag: 'cli', files: ['lib/fleet.js'] }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix crash in lib/fleet.js (human review required)', files: ['lib/fleet.js'] }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix stripe invoice retry in lib/retry.js', files: ['lib/retry.js'] }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+
+    // Review / validator dispatches are never enrolled and stay on default.
+    assert.deepEqual(fleet.opusBugfixEffortDecision(base, 'claude', 'claude-opus-5-5', '', { isReview: true }), { effort: '', experimentSide: null });
+    assert.deepEqual(fleet.opusBugfixEffortDecision(base, 'claude', 'claude-opus-5-5', '', { role: 'validator' }), { effort: '', experimentSide: null });
+
+    // options.env overrides process.env for model resolution.
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision(base, 'claude', '', '', { env: { ATRIS_RUNNER_MODEL: 'claude-opus-5-5' } }),
+      { effort: 'low', experimentSide: 'low' }
+    );
+
+    // Deep / refactor / migration / overhaul / feature / UI titles are not enrolled.
+    for (const title of [
+      'Refactor auth architecture in lib/fleet.js',
+      'Migrate lib/fleet.js parser',
+      'Overhaul lib/fleet.js dispatch flow',
+      'Add new option to lib/fleet.js',
+      'Fix UI layout glitch in lib/fleet.js',
+    ]) {
+      assert.deepEqual(
+        fleet.opusBugfixEffortDecision({ ...base, title }, 'claude', 'claude-opus-5-5', ''),
+        { effort: '', experimentSide: null },
+        title
+      );
+    }
+
+    // Non-Opus models and non-claude engines are not enrolled.
+    assert.deepEqual(fleet.opusBugfixEffortDecision(base, 'claude', 'claude-haiku-5-5', ''), { effort: '', experimentSide: null });
+    assert.deepEqual(fleet.opusBugfixEffortDecision(base, 'claude', 'claude-sonnet-5-5', ''), { effort: '', experimentSide: null });
+    assert.deepEqual(fleet.opusBugfixEffortDecision(base, 'claude', '', ''), { effort: '', experimentSide: null });
+    assert.deepEqual(fleet.opusBugfixEffortDecision(base, 'codex', 'claude-opus-5-5', ''), { effort: '', experimentSide: null });
+    assert.deepEqual(fleet.opusBugfixEffortDecision(base, 'cursor', 'claude-opus-5-5', ''), { effort: '', experimentSide: null });
+  });
+});
+
+test('dispatchToEngine and roster_runs.jsonl record effort_experiment_side for both low and default A/B arms and skip unenrolled runs', () => {
+  const { readRosterRuns } = require('../lib/roster-runs');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-opus-ab-root-'));
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-opus-ab-wt-'));
+  try {
+    withCleanClaudeRunnerEnv({}, () => {
+      const seen = [];
+      const runner = (cmd) => {
+        seen.push(cmd);
+        return { status: 0, stdout: 'ok', stderr: '' };
+      };
+      const evenBug = {
+        id: 't-104',
+        display_id: 'CLI-104',
+        title: 'Fix null crash in lib/fleet.js Done: crash fixed. Check: npm run test:fast.',
+        tag: 'cli',
+        files: ['lib/fleet.js'],
+      };
+      const oddBug = {
+        ...evenBug,
+        id: 't-105',
+        display_id: 'CLI-105',
+      };
+
+      // Even arm -> --effort low, recorded as effort_experiment_side: 'low'
+      const evenRes = fleet.dispatchToEngine({
+        task: evenBug,
+        engine: 'claude',
+        model: 'claude-opus-5-5',
+        worktreePath: wt,
+        skipBriefCapture: true,
+        runner,
+      });
+      assert.match(seen[0], /--model claude-opus-5-5 --effort low\b/);
+      assert.equal(evenRes.effort, 'low');
+      assert.equal(evenRes.effort_experiment_side, 'low');
+      fleet.recordDispatchOutcome(root, {
+        engine: 'claude',
+        pin: { model: 'claude-opus-5-5' },
+        startedMs: Date.now() - 5000,
+        endedMs: Date.now(),
+        result: evenRes,
+        task: evenBug.display_id,
+      });
+
+      // Odd arm -> default effort (no --effort flag), recorded as effort_experiment_side: 'default'
+      const oddRes = fleet.dispatchToEngine({
+        task: oddBug,
+        engine: 'claude',
+        model: 'claude-opus-5-5',
+        worktreePath: wt,
+        skipBriefCapture: true,
+        runner,
+      });
+      assert.doesNotMatch(seen[1], /--effort\b/);
+      assert.equal(oddRes.effort, undefined);
+      assert.equal(oddRes.effort_experiment_side, 'default');
+      fleet.recordDispatchOutcome(root, {
+        engine: 'claude',
+        pin: { model: 'claude-opus-5-5' },
+        startedMs: Date.now() - 5000,
+        endedMs: Date.now(),
+        result: oddRes,
+        task: oddBug.display_id,
+      });
+
+      // Explicit --effort high overrides and is NOT tagged as A/B
+      const pinnedRes = fleet.dispatchToEngine({
+        task: evenBug,
+        engine: 'claude',
+        model: 'claude-opus-5-5',
+        effort: 'high',
+        worktreePath: wt,
+        skipBriefCapture: true,
+        runner,
+      });
+      assert.match(seen[2], /--model claude-opus-5-5 --effort high\b/);
+      assert.doesNotMatch(seen[2], /--effort low\b/);
+      assert.equal(pinnedRes.effort_experiment_side, undefined);
+      fleet.recordDispatchOutcome(root, {
+        engine: 'claude',
+        pin: { model: 'claude-opus-5-5', effort: 'high' },
+        startedMs: Date.now() - 5000,
+        endedMs: Date.now(),
+        result: pinnedRes,
+        task: 'CLI-104-PIN',
+      });
+
+      // Validator dispatch stays on default and is NOT tagged as A/B
+      const valRes = fleet.dispatchToEngine({
+        task: evenBug,
+        engine: 'claude',
+        model: 'claude-opus-5-5',
+        isReview: true,
+        role: 'validator',
+        allowedTools: 'Bash,Read,Grep,Glob',
+        worktreePath: wt,
+        skipBriefCapture: true,
+        runner,
+      });
+      assert.doesNotMatch(seen[3], /--effort\b/);
+      assert.equal(valRes.effort_experiment_side, undefined);
+
+      // Whitespace-only effort falls through cleanly to even arm low
+      const wsRes = fleet.dispatchToEngine({
+        task: evenBug,
+        engine: 'claude',
+        model: 'claude-opus-5-5',
+        effort: '   ',
+        worktreePath: wt,
+        skipBriefCapture: true,
+        runner,
+      });
+      assert.match(seen[4], /--model claude-opus-5-5 --effort low\b/);
+      assert.equal(wsRes.effort_experiment_side, 'low');
+
+      // Missing task id fails closed: no --effort, not tagged as A/B
+      const noIdRes = fleet.dispatchToEngine({
+        task: { title: 'Fix null crash in lib/fleet.js Done: fixed. Check: ok.', tag: 'cli', files: ['lib/fleet.js'] },
+        engine: 'claude',
+        model: 'claude-opus-5-5',
+        worktreePath: wt,
+        skipBriefCapture: true,
+        runner,
+      });
+      assert.doesNotMatch(seen[5], /--effort\b/);
+      assert.equal(noIdRes.effort_experiment_side, undefined);
+
+      // Persisted roster_runs.jsonl preserves effort_experiment_side for both arms and omits it on pinned runs
+      const runs = readRosterRuns(root);
+      assert.equal(runs.length, 3);
+      assert.equal(runs[0].task, 'CLI-104');
+      assert.equal(runs[0].effort, 'low');
+      assert.equal(runs[0].effort_experiment_side, 'low');
+      assert.equal(runs[1].task, 'CLI-105');
+      assert.equal(runs[1].effort, undefined);
+      assert.equal(runs[1].effort_experiment_side, 'default');
+      assert.equal(runs[2].task, 'CLI-104-PIN');
+      assert.equal(runs[2].effort, 'high');
+      assert.equal(runs[2].effort_experiment_side, undefined);
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(wt, { recursive: true, force: true });
+  }
+});
