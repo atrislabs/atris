@@ -62,7 +62,7 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 54 | Every ping, talk, approval and result lands in the member's own log | log: pings, talk, approvals and results land in the member's own log | no |
 | 58 | Progress and results come only from the member doing the work, with proof | emit: ideas go through the propose rules; progress and results only from the member doing the work | yes |
 | 59 | The same events read from atris channel feed without a hosted board | emit: the same stream reads from atris channel feed when there is no hosted board | no |
-| 60 | Scrolling asks up to three ON members, with the person's taste | more: a scroll ping to up to three ON members, with the person's taste in their brief | yes |
+| 60 | Scrolling asks up to three ON members, with the person's taste | more: the person asks up to three ON members for more, with the person's taste in their brief | yes |
 | 61 | found: member runs failed in a folder outside git; start now gives it one starting point | start: a folder of projects gets atris, a starter team turned on, and a first read-only ping; idempotent | yes |
 | 62 | Code is shown as code, held to size and plain text, its caption to plain words | visuals: code is shown as code, held to size and plain text, its caption to plain words | yes |
 | 63 | A code visual never becomes a card's title, why or story | visuals: a code visual never becomes the card's title, why or story | yes |
@@ -80,7 +80,7 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 71 | The streamed ping prints one JSON event per line | cli: atris feed ping --stream prints one JSON event per line | yes |
 | 72 | found: the same short idea from two members made two cards; it now merges, even once approved | copies: the same short title from two members, or a copy of an idea already approved, makes no second card | yes |
 | 73 | A card the model forgot to close is whole when its answer ended normally | stream: a card the model forgot to END is still whole when the answer ended normally | no |
-| 74 | found: at the end of the feed with 9 ideas waiting (most held back) no new ideas came; asking for more is now always heard | found: at the end of the feed with many ideas waiting (most held back), asking for more is always heard | yes |
+| 74 | found: at the end of the feed with 9 ideas waiting (most held back) no new ideas came; asking for more is now always heard | found: at the end of the feed with many ideas waiting (most held back), a change in the project still brings the team in | yes |
 | 75 | found: the day's count read 0 after the members were asked; asks recorded earlier still count | found: asks recorded by the earlier feed still count toward the day, so the ready check never reads zero | yes |
 | 76 | With few ideas on screen, a passed idea comes back after 5 minutes | found: with few ideas on screen, a passed idea comes back after 5 minutes, after the newer ones | yes |
 | 77 | A refused ask says why in plain words, with the reset time, in the answer and the stream | refusals: a day limit says so plainly with the reset time, in the answer and in the stream | yes |
@@ -92,7 +92,7 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 83 | Charts and numbers only from real numbers in the named project file | visuals: a chart only from real numbers found in the named project file | yes |
 | 84 | A reply can offer quick choices, and a tap answers with one | choices: a reply can offer up to four quick picks; choosing one answers with it | no |
 | 85 | What the owner teaches in a conversation is kept, shown back, used later and can be forgotten | notes: a lasting preference said in a conversation is kept, shown back, used in later rounds, and can be forgotten | yes |
-| 86 | found: after a few rounds the end of the feed said the team was resting; thirty asks in a row each bring new cards | found: thirty asks in a row with two awake members, passing every idea, each bring a new card | yes |
+| 86 | found: after a few rounds the end of the feed said the team was resting; thirty asks in a row each bring new cards | found: thirty presses of refresh in a row with two awake members, passing every idea, each bring a new card | yes |
 | 87 | found: scrolling past counted as a rejection and rested every member; now only dismissals lower a member's turn | found: scrolling past is not a no; dismissals only move a member down the line | yes |
 | 88 | found: the per-member gap refused whole asks; the ask now waits a few seconds or asks someone else | limits: generous on this computer's models, tighter on paid ones, with a plain reason and when it resets | yes |
 | 89 | found: the waiting cap silenced members; scrolled-past ideas no longer count and the oldest make room | found: a member at its waiting cap retires its oldest scrolled-past ideas instead of falling silent | yes |
@@ -105,6 +105,10 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 96 | A plain-words slip gets one rewrite before a drop, and every drop is logged in feed events | keep: a plain-words slip gets one rewrite by the member before it is dropped, and drops are logged | yes |
 | 97 | found: a card could be passed before it was ever seen; new or unseen cards are left alone | pass: a card made seconds ago, or one never on screen, is not passed; old calls keep working | yes |
 | 98 | Every finished card is a real task a fresh process reads back | keep: every finished card is a real task that a fresh process reads back | yes |
+| 99 | found: a finished card read only "A piece of work finished"; it now shows the plain words the work reported, else it waits under done | cards: finished work with a jargon title shows the plain words it reported; with none it waits under done | yes |
+| 100 | found: old posts kept showing; a result or note quiet for a day leaves the main list, an idea waiting for you never does | fresh: a result and a team note quiet for a day leave the main list; an idea waiting for you stays; a comment brings a note back | yes |
+| 101 | found: some posts could not be dismissed; any card can be, for you only, and brought back | dismiss: any card leaves your feed; an idea waiting for you is dismissed as a decision; undo brings a hidden card back | yes |
+| 102 | found: teammates answered a question with only more questions; such an answer is not saved and says why | a teammate who only asks a question back is not saved: its pick fails with that reason, counts for the day and is not asked again by itself | yes |
 
 ## Waiting chat windows
 
