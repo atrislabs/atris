@@ -40,10 +40,8 @@ if (process.argv[2] === 'feed') {
 
 const fs = require('fs');
 const path = require('path');
-const { exec, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const readline = require('readline');
-const os = require('os');
-const crypto = require('crypto');
 const PACKAGE_JSON_PATH = path.join(__dirname, '..', 'package.json');
 
 // Exit without truncating piped stdout: process.exit() drops whatever is still
@@ -119,36 +117,23 @@ const {
 
 // Journal & config utilities (canonical modules)
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/file-ops');
-const { getConfigPath, loadConfig, saveConfig, loadLogSyncState, saveLogSyncState } = require('../utils/config');
+const { loadConfig, saveConfig } = require('../utils/config');
 
 // Auth & API (canonical modules, eliminates duplicate inline code)
 const {
-  decodeJwtClaims, getTokenExpiryEpochSeconds, shouldRefreshToken,
-  getCredentialsPath, saveCredentials, loadCredentials, deleteCredentials,
-  validateAccessToken: _validateAccessToken,
-  refreshAccessToken: _refreshAccessToken,
-  performTokenRefresh: _performTokenRefresh,
   ensureValidCredentials: _ensureValidCredentials,
-  fetchMyAgents: _fetchMyAgents,
-  displayAccountSummary: _displayAccountSummary,
-  openBrowser, promptUser,
+  promptUser,
 } = require('../utils/auth');
 const {
-  getApiBaseUrl, getAppBaseUrl, buildApiUrl, httpRequest,
-  apiRequestJson, streamProChat, spawnClaudeCodeSession,
-  DEFAULT_CLIENT_ID, DEFAULT_USER_AGENT,
+  getApiBaseUrl,
+  apiRequestJson, streamProChat,
 } = require('../utils/api');
 const missionRuntime = require('../lib/mission-runtime-loop');
-const { knownCommands, suggestCommand, suggestCommands } = require('../lib/known-commands');
+const { knownCommands, suggestCommands } = require('../lib/known-commands');
 const { recordUsage } = require('../lib/usage');
 
 // Bind DI wrappers (utils/auth uses dependency injection for apiRequestJson)
-const validateAccessToken = (token) => _validateAccessToken(token, apiRequestJson);
-const refreshAccessToken = (rt, p) => _refreshAccessToken(rt, p, apiRequestJson);
-const performTokenRefresh = (creds) => _performTokenRefresh(creds, apiRequestJson);
 const ensureValidCredentials = (opts) => _ensureValidCredentials(apiRequestJson, opts);
-const fetchMyAgents = (token) => _fetchMyAgents(token, apiRequestJson);
-const displayAccountSummary = () => _displayAccountSummary(apiRequestJson);
 
 // Run update check in background (non-blocking).
 // Skip for machine-readable JSON and help commands to avoid corrupting stdout.
@@ -579,6 +564,7 @@ function helpCatalog() {
     { name: 'activate', summary: 'load atris context for this session', json: false, interactive_risk: 'low' },
     { name: 'status', summary: 'local work and completions', json: true, interactive_risk: 'low' },
     { name: 'engine', summary: 'engine roster, ask, validate, dispatch', json: true, interactive_risk: 'low' },
+    { name: 'tell', summary: 'send one note or task to one team member; status shows seen, picked up, finished', json: true, interactive_risk: 'low' },
     { name: 'help', summary: 'this help (default short; --all full)', json: true, interactive_risk: 'none' },
   ];
 }
@@ -596,6 +582,7 @@ function showHelpAll() {
   console.log('  atris mission                    see the current goal');
   console.log('  atris recap                      what your ai agent did today');
   console.log('  atris review                     check the work');
+  console.log('  atris check                      pick checks by rule, prove the change, one receipt (--push to push it)');
   console.log('  atris stop                       stop the live goal');
   console.log('');
   console.log('How it fits together:');
@@ -627,7 +614,7 @@ function showHelpAll() {
   console.log('  now        - Show atris/now.md, the current operating truth');
   console.log('  99         - focus, meditation, health, and optional sync');
   console.log('  goal       - goal, distance, and what moved today (alias: wtf)');
-  console.log('  script     - Start something from zero with a guide: list, start newsletter or service, status, next, done');
+  console.log('  script     - Start something from zero with a guide: list, start newsletter or service, status, next, done, card');
   console.log('  founder    - show weekly commit and completed-task improvement from receipts');
   console.log('  orb        - Pick next moves while engine jobs work in the background');
   console.log('  activate   - Load Atris context');
@@ -814,6 +801,7 @@ function showHelpAll() {
   console.log('  hires      - Morning check-in: one line per hire (mail, spend, last run)');
   console.log('  mail       - Your agents\' own inboxes: list, read, send (not Gmail)');
   console.log('  channel    - The team\'s shared channels: read, post, claim, done (atris channel <name>)');
+  console.log('  tell       - Send one note or task to one team member and get a receipt (atris tell <member> "..."); hear notes live with atris tell listen --as <member>');
   console.log('  listen     - A team member\'s inbox: what was sent to it, then mark it handled (atris listen --as <member>)');
   console.log('  design     - Extract a site design system, check brand adherence, search brands');
   console.log('  mcp        - Run the atris MCP server (stdio) for Claude Desktop and Cursor');
@@ -1432,34 +1420,6 @@ function initNonInteractiveFlag() {
 
 function shouldSkipContextGatherer() {
   return !useInteractiveAtrisUi() || initNonInteractiveFlag();
-}
-
-function firstUseCommand() {
-  return 'atris "help me choose the first useful step for this project"';
-}
-
-function firstMissionObjective() {
-  return 'Verify this Atris workspace is ready';
-}
-
-function localOwnerName() {
-  return process.env.USER || os.userInfo?.().username || 'operator';
-}
-
-function firstMissionOwner(root = process.cwd()) {
-  const defaultOwner = path.join(root, 'atris', 'team', 'validator', 'MEMBER.md');
-  return fs.existsSync(defaultOwner) ? 'validator' : localOwnerName();
-}
-
-function firstMissionCommand() {
-  return `atris mission start "${firstMissionObjective()}" --owner ${firstMissionOwner()} --runner manual --lane workspace --verify "node -e \\"require('fs').accessSync('atris/atris.md')\\"" --stop "workspace readiness is verified"`;
-}
-
-function printFirstUseNext() {
-  const row = (label, value) => `  ${label.padEnd(9)}${value}`;
-  console.log(row('next', 'run `atris` and describe what you want in plain words.'));
-  console.log(`agents: ${firstMissionCommand()}`);
-  console.log(`Then: ${firstUseCommand()}`);
 }
 
 function runMinimalInit({ silent = false } = {}) {
@@ -2125,7 +2085,8 @@ if (command === 'guide') {
     approve: humanCommands.approveCommand,
     stop: humanCommands.stopCommand,
     ready: humanCommands.readyCommand,
-    check: humanCommands.checkCommand,
+    // local rule-picked checks; `atris check <mission-id>` still reaches the cloud mission checks
+    check: (args) => require('../commands/check').checkCommand(args),
     proof: humanCommands.proofCommand,
   };
   Promise.resolve().then(() => handlers[command](process.argv.slice(3)))
@@ -2638,6 +2599,11 @@ if (command === 'guide') {
 } else if (command === 'channel') {
   // The team's shared channels on the hosted server: read, post, claim, report by name.
   Promise.resolve().then(() => require('../commands/channel').channelCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'tell') {
+  // One note or task to one team member, with a receipt: saved, delivered, wakes, check.
+  Promise.resolve().then(() => require('../commands/tell').tellCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'listen') {
@@ -3767,16 +3733,6 @@ async function upgradeAtris() {
   }
 }
 
-function showVersion() {
-  try {
-    const packageJson = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, 'utf8'));
-    console.log(`atris v${packageJson.version}`);
-  } catch (error) {
-    console.error('✗ Error: Could not read package.json');
-    process.exit(1);
-  }
-}
-
 // ============================================
 // Agent Selection
 // ============================================
@@ -4254,63 +4210,8 @@ function atrisFastMessageFromArgs() {
   return process.argv.slice(offset).join(' ').trim();
 }
 
-function stripFastMissionQuotes(value) {
-  const text = String(value || '').trim();
-  if (text.length >= 2) {
-    const first = text[0];
-    const last = text[text.length - 1];
-    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-      return text.slice(1, -1).trim();
-    }
-  }
-  return text;
-}
-
-function extractFastMissionFlag(text, flagName) {
-  const source = String(text || '');
-  const inline = new RegExp(`(^|\\s)${flagName}=([^\\s]+)(?=\\s|$)`).exec(source);
-  if (inline) {
-    return {
-      value: inline[2],
-      text: `${source.slice(0, inline.index)}${inline[1] || ''}${source.slice(inline.index + inline[0].length)}`.replace(/\s+/g, ' ').trim(),
-    };
-  }
-  const split = new RegExp(`(^|\\s)${flagName}\\s+([^\\s]+)(?=\\s|$)`).exec(source);
-  if (split) {
-    return {
-      value: split[2],
-      text: `${source.slice(0, split.index)}${split[1] || ''}${source.slice(split.index + split[0].length)}`.replace(/\s+/g, ' ').trim(),
-    };
-  }
-  return { value: null, text: source.trim() };
-}
-
 function missionRunIntentFromFastMessage(message) {
   return missionRuntime.missionRunIntentFromMessage(message);
-}
-
-function printFastMissionStartReceipt(payload) {
-  const mission = payload?.mission || {};
-  const goal = payload?.atris_goal_state?.goal || {};
-  const receiptGoal = {
-    ...goal,
-    objective: goal.objective || mission.objective,
-    mission_id: goal.mission_id || mission.id,
-    mission_status: goal.mission_status || mission.status,
-    runner: goal.runner || mission.runner,
-    created_at: goal.created_at || mission.created_at,
-    updated_at: goal.updated_at || mission.updated_at,
-    completed_at: goal.completed_at || mission.completed_at,
-    next_command: goal.next_command || payload?.next_command || mission.next_action,
-  };
-  const elapsed = formatGoalDuration(goalElapsedSeconds(receiptGoal)) || '0s';
-
-  console.log('Atris mission started');
-  console.log(`Goal: ${receiptGoal.objective || '?'}`);
-  console.log(`Mission: ${receiptGoal.mission_id || '?'} · ${receiptGoal.mission_status || '?'} · ${receiptGoal.runner || 'atris2'}`);
-  console.log(`Elapsed: ${elapsed}`);
-  console.log(`Achieved: ${goalAchieved(receiptGoal) ? 'yes' : 'no'}`);
-  if (receiptGoal.next_command) console.log(`Next: ${receiptGoal.next_command}`);
 }
 
 async function runLocalFastMission(intent) {

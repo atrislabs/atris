@@ -64,4 +64,11 @@ function project(t, members = ['scout', 'writer', 'closer'], { on = true, engine
   return { dir, root, db, env, deps, spawned, turns, thinkers, agentEnv: { ...env, CLAUDECODE: '1' } };
 }
 
-module.exports = { AGENT_MARKERS, project };
+// Something real changed in the project (a new commit): the one thing, besides the person acting, that lets the
+// feed ask the team by itself again.
+function changed(ctx) {
+  fs.mkdirSync(path.join(ctx.root, '.git'), { recursive: true });
+  fs.writeFileSync(path.join(ctx.root, '.git', 'HEAD'), `${require('node:crypto').randomBytes(20).toString('hex')}\n`);
+}
+
+module.exports = { AGENT_MARKERS, changed, project };

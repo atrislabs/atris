@@ -7,6 +7,7 @@ const { spawnSync } = require('child_process');
 const { localDay } = require('../lib/local-day');
 
 const autoland = require('../lib/autoland');
+const toolPath = require('../lib/tool-path');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { sweepEngineAskReceipts, sweepFleetReceipts } = require('../lib/engine-receipt-sweep');
@@ -649,6 +650,8 @@ function heartbeatLines(installed) {
   }
   const lines = [];
   if (installed.repaired) lines.push(`  heartbeat: the hourly job ran a program that is gone (${installed.repaired}); rewrote it with the current one and kept its timing.`);
+  else if (installed.path_repaired) lines.push('  heartbeat: kept the hourly job already set up on this Mac, gave it a PATH that finds gh and reloaded it; its timing and command are unchanged.');
+  else if (installed.path_repair_waiting) lines.push(`  heartbeat: kept the hourly job already set up on this Mac; its PATH cannot find gh and ${installed.path_repair_waiting}.`);
   else if (installed.kept_existing) lines.push('  heartbeat: kept the hourly job already set up on this Mac exactly as it is, since its timing and command may be tuned by hand.');
   else lines.push('  heartbeat: installed as an hourly job inside your Mac login, so scheduled runs can use your GitHub sign-in.');
   if (installed.shared_name) lines.push(`  another project already uses the job name ${installed.shared_name}, so this one got its own: ${installed.label}.`);
@@ -775,6 +778,16 @@ function runDigest(root, args, { forceSend = false } = {}) {
   return 0;
 }
 
+// held-pull-requests says this when gh will not start or a shim exits 127.
+const GH_MISSING = /\bgh is not installed\b/;
+
+// gh only matters where pull requests live on GitHub.
+function tickMissingTools(root, env = process.env) {
+  const remote = spawnSync('git', ['remote', 'get-url', 'origin'], { cwd: root, encoding: 'utf8', env, timeout: 10000 });
+  const needs = remote.status === 0 && /github\.com[:/]/i.test(String(remote.stdout || '')) ? ['gh'] : [];
+  return toolPath.missingTools(needs, env);
+}
+
 async function runTick(root, args) {
   const json = args.includes('--json');
   const policy = autoland.readPolicy(root);
@@ -809,8 +822,20 @@ async function runTick(root, args) {
     else console.log('autoland tick: another tick is still running; skipped.');
     return 0;
   }
+  // A tool the tick needs and cannot find fails the run out loud: one line
+  // and a non-zero exit, never a quiet "0 landed".
+  const missing = tickMissingTools(root);
+  if (missing.length) {
+    receipt.tools_missing = missing;
+    console.error(toolPath.missingToolLine(missing));
+  }
   try {
-    return await runTickBody(root, { json, policy, receipt, timer });
+    const code = await runTickBody(root, { json, policy, receipt, timer });
+    if (!missing.includes('gh') && GH_MISSING.test(String(receipt.merged_close?.github_outage || ''))) {
+      receipt.tools_missing = [...missing, 'gh'];
+      console.error(toolPath.missingToolLine(['gh']));
+    }
+    return receipt.tools_missing?.length ? 1 : code;
   } finally {
     // Only removes the lock while it is still this tick's.
     if (lock) lock.release();
@@ -1282,6 +1307,9 @@ function greenVerdictRow(v) {
   // A green second run keeps the first red in the receipt.
   if (v.verify && v.verify.rerun_of) row.rerun_of = v.verify.rerun_of;
   if (v.local_check) row.local_check = v.local_check;
+  // Where the change's check receipt came from, and the lander's own check time.
+  if (v.check_receipt) row.check_receipt = v.check_receipt;
+  if (v.check_seconds !== undefined) row.check_seconds = v.check_seconds;
   // How long the row waited for a busy machine, in words.
   if (v.waited) {
     row.waited = v.waited;
@@ -1520,7 +1548,10 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   if (policy.green_landing !== false) timed('green_landing', () => {
     try {
       const { landStaleGreenBranches, summaryLine, DEFAULT_LIMIT, localCheckSetting, holdLabelSetting, machineWaitSetting, scratchDirSetting } = require('../lib/land-green');
+      const { receiptGateSetting, checkSecondsSetting } = require('../lib/land-receipt-gate');
       const green = landStaleGreenBranches(root, {
+        receipts: receiptGateSetting(policy),
+        checkSeconds: checkSecondsSetting(policy),
         verifyCommand: policy.verify_command || undefined,
         limit: Number(policy.green_landing_limit) > 0 ? Number(policy.green_landing_limit) : DEFAULT_LIMIT,
         localCheck: localCheckSetting(policy),
@@ -1534,6 +1565,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
         candidates: green.candidates.length,
         merge_path: green.merge_path,
         local_check: green.local_check,
+        receipt_gate: green.receipt_gate,
         local_suites: green.local_suites,
         machine_wait: green.machine_wait,
         scratch_sweep: green.scratch_sweep,
@@ -1743,6 +1775,19 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     }
     state.last_mission_cleanup_date = today;
   });
+
+  // 7. once a day, prune old run records: the newest 200 and the last 14 days
+  // stay, and so does every record a job names, the newest of each kind and
+  // every file git tracks. Off by policy: runs_prune:false.
+  if (policy.runs_prune !== false && state.last_runs_prune_date !== today) timed('runs_prune', () => {
+    try {
+      const { autoPruneRuns } = require('../lib/runs-prune');
+      receipt.runs_prune = autoPruneRuns(root, { apply: true });
+    } catch (err) {
+      receipt.runs_prune_error = String((err && err.message) || err).slice(0, 200);
+    }
+    state.last_runs_prune_date = today;
+  });
   autoland.writeState(root, state);
 
   // Stamped last. The total covers every step and the state write.
@@ -1822,6 +1867,8 @@ function autolandCommand(args = []) {
   if (!sub || sub.startsWith('--')) return showStatus(repoRoot(), args);
   // The hourly tick starts under cron's PATH, where the first git may not
   // start at all; move a working one first before any git runs.
+  // gh and npm live in the package folders cron and launchd leave off PATH.
+  if (sub === 'tick') toolPath.ensureToolPath();
   if (sub === 'tick') require('../lib/git-spawn').ensureWorkingGit();
   const root = repoRoot();
   if (sub === 'on') return turnOn(root, rest);

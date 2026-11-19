@@ -28,7 +28,8 @@ function writeFakeGh(bin, log, config) {
     "if (a === 'pr' && b === 'merge' && cfg.mergeFails) process.exit(1);",
     "if (a === 'pr' && b === 'checks') { console.log(JSON.stringify(cfg.checks || [])); if ((cfg.checks || []).some((c) => c.bucket === 'fail')) process.exit(8); }",
     "if (a === 'run' && b === 'rerun' && cfg.rerunFails) process.exit(1);",
-    "if (a === 'api' && b === 'graphql') console.log(cfg.inQueue ? 'true' : 'false');",
+    "if (a === 'api' && b === 'graphql') { if (cfg.queueError) process.exit(1); const pr = { ...cfg.view, isInMergeQueue: !!cfg.inQueue, timelineItems: { nodes: [] } }; console.log(JSON.stringify({data:{repository:{pullRequest:pr}}})); }",
+    "if (a === 'api' && b.includes('/rules/branches/')) { if (!cfg.rules) process.exit(1); console.log(JSON.stringify(cfg.rules)); }",
   ].join('\n'), { mode: 0o755 });
 }
 
@@ -203,6 +204,67 @@ test('already in github\'s merge line: no catch-up push, left to the line', () =
     assert.equal(remoteBranch(fx), fx.pushed);
     assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
     assert.ok(readQueue(fx)[BRANCH], 'still tracked');
+  });
+});
+
+const REQUIRED_QUEUE = [
+  { type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'test' }] } },
+  { type: 'merge_queue' },
+];
+const MISSING_CHECKS = {
+  autoMergeRequest: { enabledAt: '2026-11-16T00:00:00Z' },
+  mergeable: 'MERGEABLE', mergeStateStatus: 'BLOCKED', reviewDecision: '', statusCheckRollup: [],
+};
+const SWEEP_TIME = Date.parse('2026-11-16T01:00:00Z');
+
+test('auto-merge on outside the line with no checks: only a fresh base restarts the required check', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    const oldBase = git(['rev-parse', 'master'], fx.main);
+    writeQueue(fx, { [BRANCH]: { ...readQueue(fx)[BRANCH], base_sha: oldBase, requeues: 3 } });
+    setView(fx, MISSING_CHECKS, { rules: REQUIRED_QUEUE });
+    const sweep = (dryRun = false) => requeueDroppedAutolands({ cwd: fx.main, now: SWEEP_TIME, dryRun });
+    const waiting = sweep();
+    assert.equal(waiting.results[0].state, 'waiting', waiting.results[0].line);
+    assert.match(waiting.results[0].line, /checks never started/);
+
+    const moved = moveMaster(fx);
+    assert.equal(sweep(true).results[0].state, 'would-requeue');
+    assert.equal(remoteBranch(fx), fx.pushed);
+    assert.equal(ghCalls(fx).filter(c => c[1] === 'merge').length, 0);
+    const fixed = sweep();
+    assert.equal(fixed.requeued, 1, fixed.results[0].line);
+    const head = remoteBranch(fx);
+    assert.deepEqual(git(['rev-list', '--parents', '-n', '1', head], fx.main).split(' ').slice(1), [fx.pushed, moved]);
+    assert.deepEqual(ghCalls(fx).filter(c => c[1] === 'merge'), [
+      ['pr', 'merge', '7', '--auto', '--merge', '--match-head-commit', head],
+    ]);
+    assert.equal(readQueue(fx)[BRANCH].requeues, 1);
+    assert.equal(readQueue(fx)[BRANCH].base_sha, moved);
+  });
+});
+
+test('missing-check recovery waits for confirmed rules, age, current owner and queue membership', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    moveMaster(fx);
+    const cases = [
+      [{}, { queueError: true, rules: REQUIRED_QUEUE }, 'unreadable'],
+      [{}, { inQueue: true, rules: REQUIRED_QUEUE }, 'queued'],
+      [{}, {}, 'unreadable'],
+      [{}, { rules: [] }, 'waiting'],
+      [{ statusCheckRollup: [{ status: 'IN_PROGRESS' }] }, { rules: REQUIRED_QUEUE }, 'queued'],
+      [{ reviewDecision: 'REVIEW_REQUIRED' }, { rules: REQUIRED_QUEUE }, 'queued'],
+      [{ autoMergeRequest: { enabledAt: '2026-11-16T00:59:00Z' } }, { rules: REQUIRED_QUEUE }, 'queued'],
+      [{ headRefOid: 'a'.repeat(40) }, { rules: REQUIRED_QUEUE }, 'changed'],
+    ];
+    for (const [pr, config, expected] of cases) {
+      setView(fx, { ...MISSING_CHECKS, ...pr }, config);
+      const out = requeueDroppedAutolands({ cwd: fx.main, now: SWEEP_TIME });
+      assert.equal(out.results[0].state, expected, out.results[0].line);
+      assert.equal(remoteBranch(fx), fx.pushed);
+    }
+    assert.equal(ghCalls(fx).filter(c => c[1] === 'merge').length, 0);
   });
 });
 

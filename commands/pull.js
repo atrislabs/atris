@@ -33,10 +33,6 @@ function pruneEmptyParentDirs(filePath, stopDir) {
   }
 }
 
-function isBusinessWorkspaceRoot(dir) {
-  return fs.existsSync(path.join(dir, '.atris', 'business.json')) && fs.existsSync(path.join(dir, 'atris'));
-}
-
 function normalizePullFilePath(filePath) {
   if (!filePath) return null;
   return `/${String(filePath).replace(/^\/+/, '')}`;

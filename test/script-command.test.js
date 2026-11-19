@@ -54,7 +54,8 @@ async function run(dir, args, extra = {}) {
     err: (line) => errs.push(String(line)),
     prompt: extra.prompt === undefined ? null : extra.prompt,
     random: extra.random || (() => 0),
-    now: () => NOW,
+    now: extra.now || (() => NOW),
+    sources: extra.sources,
     scriptsDir: extra.scriptsDir,
     setGoal: extra.real ? undefined : team.setGoal,
     createMember: extra.real ? undefined : team.createMember,
@@ -308,8 +309,13 @@ test('next speaks to the person and to the team; done keeps taste with the perso
   assert.equal(named.code, 0, named.errs);
   assert.match(named.out, /^Done: Name your newsletter\./);
   assert.match(named.out, /Next: Write three rough sentences/);
-  const again = await run(dir, ['done', 'name-it', '--by', 'me']);
-  assert.match(again.out, /That one is already done\./);
+  const file = path.join(dir, 'atris', 'storylines', 'quiet-lantern', 'script.json');
+  const before = fs.readFileSync(file, 'utf8');
+  const again = await run(dir, ['done', 'name-it', '--by', 'someone-else']);
+  assert.deepEqual({ code: again.code, out: again.out, errs: again.errs }, {
+    code: 1, out: '', errs: `This move was already finished by me at ${NOW.toISOString()}.`,
+  });
+  assert.equal(fs.readFileSync(file, 'utf8'), before);
 
   await run(dir, ['done', 'first-lines', '--by', 'me', '--proof', 'atris/storylines/quiet-lantern/first-lines.md']);
   const teamNext = await run(dir, ['next']);
@@ -365,7 +371,7 @@ test('help names every move', async (t) => {
   const dir = tempDir(t);
   const { code, out } = await run(dir, ['--help']);
   assert.equal(code, 0);
-  for (const word of ['list', 'start', 'status', 'next', 'done', 'goal', '--by me', '--yes --answers']) {
+  for (const word of ['list', 'start', 'status', 'next', 'done', 'goal', 'card', '--since', '--by me', '--yes --answers']) {
     assert.ok(out.includes(word), `help mentions ${word}`);
   }
 });
@@ -424,5 +430,575 @@ test('no line a client could read in a shipped script says AI, agent or automate
     const shown = [script.pitch, script.mission, ...script.values.will, ...script.values.will_not, ...script.your_part,
       ...script.chapters.flatMap((c) => [c.title, c.finish_line, c.take || '', ...c.moves.map((m) => m.you)])];
     for (const line of shown) assert.doesNotMatch(line, /\b(AI|agents?|automat\w*)\b/i, `${name}: ${line}`);
+  }
+});
+
+// ---------------------------------------------------------------- daily card
+
+const BANNED_WORDS = /\b(AI|agents?|automat\w*)\b/i;
+
+function at(hours) {
+  return () => new Date(NOW.getTime() + hours * 60 * 60 * 1000);
+}
+
+function writeRun(dir, code, change) {
+  const file = path.join(dir, 'atris', 'storylines', code, 'script.json');
+  const state = JSON.parse(fs.readFileSync(file, 'utf8'));
+  change(state);
+  fs.writeFileSync(file, JSON.stringify(state));
+}
+
+async function started(t, name = 'blue fox') {
+  const dir = tempDir(t);
+  const result = await run(dir, ['start', 'newsletter', '--name', name, '--yes', '--answers', writeAnswers(dir)]);
+  assert.equal(result.code, 0, result.errs);
+  return dir;
+}
+
+test('card right after start shows Day 1, chapter 1 and the first call', async (t) => {
+  const dir = await started(t);
+  const card = await run(dir, ['card']);
+  assert.equal(card.code, 0, card.errs);
+  const lines = card.out.split('\n');
+  assert.deepEqual(lines.slice(0, 3), ['Blue Fox', 'Start a newsletter', 'Day 1. Chapter 1 of 5: Find your voice']);
+  assert.match(card.out, /\nMoved\nNothing moved since the last card\.\n/);
+  assert.match(card.out, /\nYour call, about 5 minutes\n {2}Name your newsletter\. Say three names out loud/);
+  assert.match(card.out, /\n {2}Our take: .+\n/);
+  assert.match(card.out, /\n {2}atris script done name-it --by me --proof "the name you picked"\n/);
+  assert.match(card.out, /\nStrikes: none\n/);
+  assert.match(card.out, /\nFinish line: You approved one sample that sounds like you\.$/);
+  assert.deepEqual(card.team.calls, { goals: [], members: [] }, 'card sets no goal and makes no member');
+});
+
+test('card lists what moved with who did it and the proof, and the next card starts clean', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  await run(dir, ['done', 'first-lines', '--by', 'me']);
+  await run(dir, ['done', 'voice-sample'], { now: at(1) });
+
+  const first = await run(dir, ['card'], { now: at(2) });
+  assert.match(first.out, /\nMoved\n {2}You: Name your newsletter\n {4}Proof: Night Notes\n {2}You: Write three rough sentences about one thing you wish you knew a year ago\n {2}Editor: Your editor turns your three sentences into a short sample in your voice\n/);
+  assert.doesNotMatch(first.out, /Nothing moved/);
+  assert.deepEqual(readRun(dir, 'blue-fox').cards, [{ at: at(2)().toISOString(), chapter: 'voice', moved: ['name-it', 'first-lines', 'voice-sample'] }]);
+
+  const second = await run(dir, ['card'], { now: at(3) });
+  assert.match(second.out, /\nMoved\nNothing moved since the last card\.\n/);
+  assert.equal(readRun(dir, 'blue-fox').cards.length, 2);
+
+  // The next move now belongs to the person again, and one more done shows up alone.
+  await run(dir, ['done', 'approve-voice', '--by', 'me', '--proof', 'sample v1'], { now: at(4) });
+  const third = await run(dir, ['card'], { now: at(5) });
+  assert.match(third.out, /\nMoved\n {2}You: Read the sample\n {4}Proof: sample v1\n/);
+  assert.doesNotMatch(third.out, /Night Notes/);
+  assert.match(third.out, /Chapter 2 of 5: First issue out/);
+});
+
+test('with no card yet only the last 24 hours count, and --since sets its own start', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+
+  const late = await run(dir, ['card'], { now: at(25) });
+  assert.match(late.out, /\nMoved\nNothing moved since the last card\.\n/);
+  assert.match(late.out, /Day 2\. Chapter 1 of 5/);
+
+  const since = await run(dir, ['card', '--since', new Date(NOW.getTime() - 1000).toISOString()], { now: at(26) });
+  assert.match(since.out, /\nMoved\n {2}You: Name your newsletter\n {4}Proof: Night Notes\n/);
+
+  const bad = await run(dir, ['card', '--since', 'last tuesday-ish']);
+  assert.equal(bad.code, 1);
+  assert.match(bad.errs, /I could not read that time\./);
+  const empty = await run(dir, ['card', '--since']);
+  assert.equal(empty.code, 1);
+  assert.equal(readRun(dir, 'blue-fox').cards.length, 2, 'a refused card is not recorded');
+});
+
+test('outbound, inbound and product say not tracked yet, and a real source shows its number', async (t) => {
+  const dir = await started(t);
+  const bare = await run(dir, ['card']);
+  assert.match(bare.out, /^Outbound: not tracked yet$/m);
+  assert.match(bare.out, /^Inbound: not tracked yet$/m);
+  assert.match(bare.out, /^Product: not tracked yet$/m);
+
+  const fed = await run(dir, ['card'], {
+    sources: {
+      outbound: () => ({ count: 3 }),
+      inbound: async () => ({ count: 0, note: 'two replies waiting' }),
+      product: () => { throw new Error('feed is down'); },
+    },
+  });
+  assert.equal(fed.code, 0, fed.errs);
+  assert.match(fed.out, /^Outbound: 3$/m);
+  assert.match(fed.out, /^Inbound: 0 \(two replies waiting\)$/m);
+  assert.match(fed.out, /^Product: not tracked yet$/m, 'a source that fails never becomes a number');
+
+  const junk = await run(dir, ['card'], { sources: { outbound: () => ({ count: 'many' }), inbound: () => ({ count: -1 }), product: () => ({}) } });
+  assert.match(junk.out, /^Outbound: not tracked yet$/m);
+  assert.match(junk.out, /^Inbound: not tracked yet$/m);
+  assert.match(junk.out, /^Product: not tracked yet$/m);
+});
+
+test('card --json carries the same content and still records the card', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  const card = await run(dir, ['card', '--json'], { now: at(1), sources: { outbound: () => ({ count: 3, note: 'this week' }) } });
+  assert.equal(card.code, 0, card.errs);
+  const json = JSON.parse(card.out);
+  assert.deepEqual(Object.keys(json), ['code_name', 'title', 'script', 'script_title', 'day', 'chapter', 'since', 'moved',
+    'outbound', 'inbound', 'product', 'call', 'strikes', 'finish_line']);
+  assert.equal(json.code_name, 'blue-fox');
+  assert.equal(json.day, 1);
+  assert.deepEqual(json.chapter, { n: 1, of: 5, id: 'voice', title: 'Find your voice' });
+  assert.equal(json.since.reason, 'last_24_hours');
+  assert.deepEqual(json.moved, [{ id: 'name-it', by: 'You', text: 'Name your newsletter', proof: 'Night Notes' }]);
+  assert.deepEqual(json.outbound, { count: 3, note: 'this week' });
+  assert.equal(json.inbound, null);
+  assert.equal(json.product, null);
+  assert.equal(json.call.kind, 'you');
+  assert.equal(json.call.move.id, 'first-lines');
+  assert.ok(json.call.take);
+  assert.match(json.call.done_command, /^atris script done first-lines --by me/);
+  assert.deepEqual(json.strikes, []);
+  assert.equal(json.finish_line, 'You approved one sample that sounds like you.');
+  assert.deepEqual(readRun(dir, 'blue-fox').cards.map((card) => card.moved), [['name-it']]);
+
+  const again = JSON.parse((await run(dir, ['card', '--json'], { now: at(2) })).out);
+  assert.deepEqual(again.moved, []);
+  assert.equal(again.since.reason, 'last_card');
+});
+
+test('when the next move is a teammate\'s, the card says no call is needed', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  await run(dir, ['done', 'first-lines', '--by', 'me']);
+  const card = await run(dir, ['card']);
+  assert.match(card.out, /\nYour call\n {2}No call needed\. Editor is on: Your editor turns your three sentences into a short sample in your voice\.\n/);
+  assert.doesNotMatch(card.out, /Our take|atris script done/);
+  const json = JSON.parse((await run(dir, ['card', '--json'])).out);
+  assert.equal(json.call.kind, 'team');
+  assert.equal(json.call.seat, 'Editor');
+});
+
+test('strikes on a move are read and shown, and zero strikes say none', async (t) => {
+  const dir = await started(t);
+  writeRun(dir, 'blue-fox', (state) => {
+    state.chapters[0].moves[0].strikes = 2;
+    state.chapters[0].moves[1].strikes = 0;
+    state.chapters[0].moves[2].strikes = 'lots';
+  });
+  const card = await run(dir, ['card']);
+  assert.match(card.out, /\nStrikes\n {2}Name your newsletter: 2\n/);
+  assert.doesNotMatch(card.out, /Strikes: none|Write three rough sentences: /);
+  assert.deepEqual(JSON.parse((await run(dir, ['card', '--json'])).out).strikes, [{ id: 'name-it', text: 'Name your newsletter', count: 2 }]);
+});
+
+test('an old run with no cards and no done times does not crash, and counts those moves as earlier', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  writeRun(dir, 'blue-fox', (state) => {
+    delete state.cards;
+    delete state.started_day;
+    for (const chapter of state.chapters) for (const move of chapter.moves) { delete move.done_at; delete move.by; delete move.strikes; }
+  });
+  const card = await run(dir, ['card']);
+  assert.equal(card.code, 0, card.errs);
+  assert.match(card.out, /\nDay 1\. Chapter 1 of 5: Find your voice\n/);
+  assert.match(card.out, /\nMoved\nNothing moved since the last card\.\n/);
+  assert.equal(readRun(dir, 'blue-fox').cards.length, 1);
+
+  // A damaged cards list is set aside instead of crashing.
+  writeRun(dir, 'blue-fox', (state) => { state.cards = 'oops'; });
+  const damaged = await run(dir, ['card']);
+  assert.equal(damaged.code, 0, damaged.errs);
+  writeRun(dir, 'blue-fox', (state) => { state.cards = [null, { at: 'never', moved: 3 }, { moved: [] }]; });
+  assert.equal((await run(dir, ['card'])).code, 0);
+});
+
+test('card with no runs, several runs and an unknown run behaves like status', async (t) => {
+  const dir = tempDir(t);
+  const none = await run(dir, ['card']);
+  assert.equal(none.code, 0);
+  assert.match(none.out, /No runs here yet\./);
+  const answers = writeAnswers(dir);
+  await run(dir, ['start', 'newsletter', '--name', 'blue fox', '--yes', '--answers', answers]);
+  await run(dir, ['start', 'newsletter', '--name', 'red owl', '--yes', '--answers', answers]);
+  const several = await run(dir, ['card']);
+  assert.match(several.out, /Pick one: atris script card blue-fox/);
+  assert.equal(fs.existsSync(path.join(dir, 'atris', 'storylines', 'blue-fox', 'script.json')), true);
+  assert.equal(readRun(dir, 'blue-fox').cards, undefined, 'no card is recorded until a run is picked');
+  const picked = await run(dir, ['card', 'red-owl']);
+  assert.match(picked.out, /^Red Owl\n/);
+  assert.match(picked.out, /atris script done name-it --run red-owl --by me/);
+  const missing = await run(dir, ['card', 'green-cat']);
+  assert.equal(missing.code, 1);
+  assert.match(missing.errs, /There is no run called green-cat here\./);
+});
+
+test('a finished run gets a card that says every chapter is done', async (t) => {
+  const dir = await started(t);
+  writeRun(dir, 'blue-fox', (state) => {
+    for (const chapter of state.chapters) {
+      chapter.state = 'done';
+      for (const move of chapter.moves) move.state = 'done';
+    }
+  });
+  const card = await run(dir, ['card']);
+  assert.equal(card.code, 0, card.errs);
+  assert.match(card.out, /\nDay 1\. All 5 chapters are done\n/);
+  assert.match(card.out, /No call needed\. Every chapter is done\./);
+  assert.doesNotMatch(card.out, /Finish line/);
+});
+
+test('no card line says AI, agent or automate, or uses a dash or a comma before and', async (t) => {
+  const dir = await started(t);
+  const shown = [];
+  const sources = { outbound: () => ({ count: 3 }), inbound: () => null, product: () => null };
+  for (const step of [[], ['--json']]) shown.push((await run(dir, ['card', ...step], { sources })).out);
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  shown.push((await run(dir, ['card'], { now: at(1) })).out);
+  await run(dir, ['done', 'first-lines', '--by', 'me']);
+  shown.push((await run(dir, ['card'], { now: at(2) })).out);
+  shown.push((await run(dir, ['card', '--since', 'nonsense'])).errs);
+  shown.push((await run(dir, ['--help'])).out);
+  for (const line of shown.join('\n').split('\n')) {
+    assert.doesNotMatch(line, BANNED_WORDS, line);
+    assert.doesNotMatch(line, /[—–]|, and\b/, line);
+  }
+});
+
+// ---------------------------------------------------------------- one owner per move
+
+function savedFiles(dir, code = 'blue-fox') {
+  return {
+    run: fs.readFileSync(path.join(dir, 'atris', 'storylines', code, 'script.json')),
+    page: fs.readFileSync(path.join(dir, 'atris', 'storylines', `${code}.md`)),
+  };
+}
+
+function assertUnchanged(dir, before, code = 'blue-fox') {
+  const after = savedFiles(dir, code);
+  assert.ok(after.run.equals(before.run), 'the saved run is byte for byte the same');
+  assert.ok(after.page.equals(before.page), 'the storyline page is byte for byte the same');
+}
+
+function moveOf(dir, id, code = 'blue-fox') {
+  return readRun(dir, code).chapters.flatMap((chapter) => chapter.moves).find((move) => move.id === id);
+}
+
+test('claim records one owner; claiming your own move again is a calm no-op', async (t) => {
+  const dir = await started(t);
+  assert.deepEqual([moveOf(dir, 'voice-sample').owner, moveOf(dir, 'voice-sample').owned_at], [null, null]);
+
+  const took = await run(dir, ['claim', 'voice-sample', '--by', 'editor']);
+  assert.equal(took.code, 0, took.errs);
+  assert.match(took.out, /^Taken: Your editor turns your three sentences/);
+  assert.match(took.out, /Held by editor from now on\. Nobody else can take it\./);
+  assert.deepEqual([moveOf(dir, 'voice-sample').owner, moveOf(dir, 'voice-sample').owned_at], ['editor', NOW.toISOString()]);
+
+  const before = savedFiles(dir);
+  const again = await run(dir, ['claim', 'voice-sample', '--by', 'Editor'], { now: at(1) });
+  assert.deepEqual({ code: again.code, out: again.out, errs: again.errs }, {
+    code: 0, out: 'editor already holds this move. Nothing changed.', errs: '',
+  });
+  assertUnchanged(dir, before);
+
+  const mine = await run(dir, ['claim', 'name-it', '--by', 'me']);
+  assert.equal(mine.code, 0, mine.errs);
+  assert.match(mine.out, /Held by you from now on\./);
+  assert.equal(moveOf(dir, 'name-it').owner, 'me');
+});
+
+test('claim refuses a move someone else holds, names them and when, and changes nothing', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['claim', 'voice-sample', '--by', 'editor']);
+  const before = savedFiles(dir);
+
+  // Three people reach for the same move: only the first one holds it.
+  for (const seat of ['researcher', 'growth', 'me']) {
+    const grab = await run(dir, ['claim', 'voice-sample', '--by', seat], { now: at(2) });
+    assert.equal(grab.code, 1, seat);
+    assert.equal(grab.out, '');
+    assert.match(grab.errs, new RegExp(`^This move is held by editor, who took it at ${NOW.toISOString().replace(/\./g, '\\.')}\\.`));
+    assert.match(grab.errs, new RegExp(`Only the holder can pass it on: atris script give voice-sample --to ${seat} --by editor`));
+    assertUnchanged(dir, before);
+  }
+  assert.equal(moveOf(dir, 'voice-sample').owner, 'editor');
+});
+
+test('claim refuses a finished move and names who finished it', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  const before = savedFiles(dir);
+  const late = await run(dir, ['claim', 'name-it', '--by', 'me']);
+  assert.equal(late.code, 1);
+  assert.equal(late.errs, `This move was already finished by me at ${NOW.toISOString()}.`);
+  assertUnchanged(dir, before);
+});
+
+test('claim refuses an unknown seat, a missing --by, an unknown move, a skipped move and a seat on a taste move', async (t) => {
+  const dir = await started(t);
+  const before = savedFiles(dir);
+
+  const typo = await run(dir, ['claim', 'voice-sample', '--by', 'edtor']);
+  assert.equal(typo.code, 1);
+  assert.equal(typo.errs, 'edtor is not a seat on this team. Pick one of: editor, researcher, growth, publisher or me.');
+
+  const nobody = await run(dir, ['claim', 'voice-sample']);
+  assert.equal(nobody.code, 1);
+  assert.match(nobody.errs, /Say who takes it: atris script claim voice-sample --by <seat or me>/);
+
+  const unknown = await run(dir, ['claim', 'fly-to-mars', '--by', 'editor']);
+  assert.equal(unknown.code, 1);
+  assert.match(unknown.errs, /There is no move called fly-to-mars in Blue Fox\./);
+
+  const noMove = await run(dir, ['claim']);
+  assert.equal(noMove.code, 1);
+  assert.match(noMove.errs, /Which move\?/);
+
+  const taste = await run(dir, ['claim', 'name-it', '--by', 'editor']);
+  assert.equal(taste.code, 1);
+  assert.match(taste.errs, /This one is yours to call, so only you can hold it\.\nTake it with: atris script claim name-it --by me/);
+  assertUnchanged(dir, before);
+
+  writeRun(dir, 'blue-fox', (state) => { state.chapters[0].moves[2].state = 'skipped'; });
+  const skippedBefore = savedFiles(dir);
+  const skipped = await run(dir, ['claim', 'voice-sample', '--by', 'editor']);
+  assert.equal(skipped.code, 1);
+  assert.match(skipped.errs, /That move was skipped when its chapter closed, so nobody can hold it now\./);
+  assertUnchanged(dir, skippedBefore);
+});
+
+test('give hands a move on in one step, so it is never left with no owner', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['claim', 'voice-sample', '--by', 'editor']);
+  const given = await run(dir, ['give', 'voice-sample', '--to', 'researcher', '--by', 'editor'], { now: at(1) });
+  assert.equal(given.code, 0, given.errs);
+  assert.match(given.out, /^Given: Your editor turns your three sentences/);
+  assert.match(given.out, /researcher holds it now\. It was editor's\./);
+  const move = moveOf(dir, 'voice-sample');
+  assert.deepEqual([move.owner, move.owned_at], ['researcher', at(1)().toISOString()]);
+
+  // Back to the person, and back again.
+  const toMe = await run(dir, ['give', 'voice-sample', '--to', 'me', '--by', 'researcher']);
+  assert.equal(toMe.code, 0, toMe.errs);
+  assert.match(toMe.out, /You hold it now\. It was researcher's\./);
+  const fromMe = await run(dir, ['give', 'voice-sample', '--to', 'editor', '--by', 'me']);
+  assert.match(fromMe.out, /editor holds it now\. It was yours\./);
+
+  // Giving to the one who already holds it changes nothing.
+  const before = savedFiles(dir);
+  const same = await run(dir, ['give', 'voice-sample', '--to', 'editor', '--by', 'editor'], { now: at(3) });
+  assert.deepEqual({ code: same.code, out: same.out }, { code: 0, out: 'editor already holds this move. Nothing changed.' });
+  assertUnchanged(dir, before);
+});
+
+test('give refuses when --by is not the holder and when --to is not a seat, and changes nothing', async (t) => {
+  const dir = await started(t);
+
+  // The polite standoff: two people each hand the move to the other. Nobody
+  // holds it yet, so both are told to take it first and nothing is left loose.
+  const before = savedFiles(dir);
+  for (const [to, by] of [['researcher', 'editor'], ['editor', 'researcher']]) {
+    const polite = await run(dir, ['give', 'voice-sample', '--to', to, '--by', by]);
+    assert.equal(polite.code, 1);
+    assert.match(polite.errs, new RegExp(`^Nobody holds this move yet, so there is nothing to give\\.\\nTake it first: atris script claim voice-sample --by ${to}$`));
+    assertUnchanged(dir, before);
+  }
+
+  await run(dir, ['claim', 'voice-sample', '--by', 'editor']);
+  const held = savedFiles(dir);
+  const notHolder = await run(dir, ['give', 'voice-sample', '--to', 'growth', '--by', 'researcher']);
+  assert.equal(notHolder.code, 1);
+  assert.equal(notHolder.errs, `researcher does not hold this move. editor holds it, since ${NOW.toISOString()}.\nOnly the holder can give it.`);
+  assertUnchanged(dir, held);
+
+  const badSeat = await run(dir, ['give', 'voice-sample', '--to', 'intern', '--by', 'editor']);
+  assert.equal(badSeat.code, 1);
+  assert.equal(badSeat.errs, 'intern is not a seat on this team. Pick one of: editor, researcher, growth, publisher or me.');
+  assertUnchanged(dir, held);
+
+  const missing = await run(dir, ['give', 'voice-sample', '--to', 'growth']);
+  assert.equal(missing.code, 1);
+  assert.match(missing.errs, /Say who gets it and who holds it now/);
+  assertUnchanged(dir, held);
+
+  await run(dir, ['claim', 'name-it', '--by', 'me']);
+  const tasteHeld = savedFiles(dir);
+  const taste = await run(dir, ['give', 'name-it', '--to', 'editor', '--by', 'me']);
+  assert.equal(taste.code, 1);
+  assert.match(taste.errs, /This one is yours to call, so only you can hold it\./);
+  assertUnchanged(dir, tasteHeld);
+
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  const finished = await run(dir, ['give', 'name-it', '--to', 'me', '--by', 'me']);
+  assert.equal(finished.code, 1);
+  assert.match(finished.errs, /This move was already finished by me at /);
+});
+
+test('status shows who holds each open move and lists the ones nobody owns', async (t) => {
+  const dir = await started(t);
+  const fresh = await run(dir, ['status']);
+  assert.equal(fresh.code, 0, fresh.errs);
+  assert.match(fresh.out, /\nNobody owns these yet:\n {2}name-it +Name your newsletter\.\n {2}first-lines +Write three rough sentences.*\n {2}voice-sample +Your editor turns.*\n {2}approve-voice +.*\n {2}Take one: atris script claim <move> --by <seat or me>$/);
+  assert.doesNotMatch(fresh.out, /Who holds what/);
+
+  await run(dir, ['claim', 'voice-sample', '--by', 'editor']);
+  await run(dir, ['claim', 'name-it', '--by', 'me']);
+  const status = await run(dir, ['status']);
+  assert.match(status.out, /\nWho holds what\n {2}name-it +you: Name your newsletter\.\n {2}voice-sample +editor: Your editor turns.*\n\n/);
+  assert.match(status.out, /\nNobody owns these yet:\n {2}first-lines +Write three.*\n {2}approve-voice +.*\n {2}Take one:/);
+  // The rest of status reads as it always did.
+  assert.match(status.out, /^Blue Fox\nStart a newsletter\n\nMission +/);
+  assert.match(status.out, /Next move +Name your newsletter\./);
+  assert.match(status.out, /Waiting on you\n {2}Name your newsletter\./);
+
+  const json = JSON.parse((await run(dir, ['status', '--json'])).out);
+  assert.deepEqual(json.held.map((item) => [item.id, item.owner]), [['name-it', 'me'], ['voice-sample', 'editor']]);
+  assert.deepEqual(json.nobody_owns, ['first-lines', 'approve-voice']);
+
+  for (const line of [fresh.out, status.out].join('\n').split('\n')) {
+    assert.doesNotMatch(line, BANNED_WORDS, line);
+    assert.doesNotMatch(line, /[—–]|, and\b/, line);
+  }
+});
+
+test('an old saved run with no owner fields still shows status and takes a claim', async (t) => {
+  const dir = await started(t);
+  writeRun(dir, 'blue-fox', (state) => {
+    for (const chapter of state.chapters) for (const move of chapter.moves) { delete move.owner; delete move.owned_at; }
+  });
+  assert.equal('owner' in moveOf(dir, 'voice-sample'), false);
+  const status = await run(dir, ['status']);
+  assert.equal(status.code, 0, status.errs);
+  assert.match(status.out, /Nobody owns these yet:\n {2}name-it/);
+  const json = JSON.parse((await run(dir, ['status', '--json'])).out);
+  assert.equal(json.nobody_owns.length, 4);
+
+  const took = await run(dir, ['claim', 'voice-sample', '--by', 'editor']);
+  assert.equal(took.code, 0, took.errs);
+  assert.equal(moveOf(dir, 'voice-sample').owner, 'editor');
+  const given = await run(dir, ['give', 'voice-sample', '--to', 'growth', '--by', 'editor']);
+  assert.equal(given.code, 0, given.errs);
+  assert.equal(moveOf(dir, 'voice-sample').owner, 'growth');
+  const done = await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  assert.equal(done.code, 0, done.errs);
+});
+
+test('with several runs, claim and give ask which one, then take --run', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['start', 'newsletter', '--name', 'red owl', '--yes', '--answers', writeAnswers(dir)]);
+  const unsure = await run(dir, ['claim', 'voice-sample', '--by', 'editor']);
+  assert.equal(unsure.code, 1);
+  assert.match(unsure.out, /Pick one: atris script claim voice-sample --run blue-fox/);
+  const sure = await run(dir, ['claim', 'voice-sample', '--run', 'red-owl', '--by', 'editor']);
+  assert.equal(sure.code, 0, sure.errs);
+  assert.equal(moveOf(dir, 'voice-sample', 'red-owl').owner, 'editor');
+  assert.equal(moveOf(dir, 'voice-sample', 'blue-fox').owner, null);
+});
+
+test('done on a held move: only the holder or you may finish it, and the record says who', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  await run(dir, ['done', 'first-lines', '--by', 'me']);
+  await run(dir, ['claim', 'voice-sample', '--by', 'editor']);
+  const before = savedFiles(dir);
+
+  const stranger = await run(dir, ['done', 'voice-sample', '--by', 'researcher']);
+  assert.equal(stranger.code, 1);
+  assert.equal(stranger.out, '');
+  assert.equal(stranger.errs, `This move is held by editor, since ${NOW.toISOString()}. Only editor or you can finish it.\n`
+    + 'To pass it on first: atris script give voice-sample --to researcher --by editor');
+  assertUnchanged(dir, before);
+  assert.equal(moveOf(dir, 'voice-sample').state, 'open');
+
+  // You may finish a move someone else holds, and the record says so.
+  const mine = await run(dir, ['done', 'voice-sample', '--by', 'me']);
+  assert.equal(mine.code, 0, mine.errs);
+  assert.match(mine.out, /editor was holding it\. You finished it instead\./);
+  const move = moveOf(dir, 'voice-sample');
+  assert.deepEqual([move.state, move.by, move.owner, move.owner_before], ['done', 'me', 'me', 'editor']);
+});
+
+test('done by the holder, with or without --by, keeps holder and finisher the same', async (t) => {
+  const dir = await started(t);
+  await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  await run(dir, ['done', 'first-lines', '--by', 'me']);
+  await run(dir, ['claim', 'voice-sample', '--by', 'editor']);
+  await run(dir, ['give', 'voice-sample', '--to', 'researcher', '--by', 'editor']);
+  const bySeat = await run(dir, ['done', 'voice-sample']);
+  assert.equal(bySeat.code, 0, bySeat.errs);
+  assert.doesNotMatch(bySeat.out, /instead/);
+  const move = moveOf(dir, 'voice-sample');
+  assert.deepEqual([move.by, move.owner, move.owner_before], ['researcher', 'researcher', undefined]);
+});
+
+test('claim and give refuse a move in a chapter that is still locked, like done does', async (t) => {
+  const dir = await started(t);
+  const before = savedFiles(dir);
+  const claim = await run(dir, ['claim', 'pick-home', '--by', 'publisher']);
+  const done = await run(dir, ['done', 'pick-home']);
+  assert.equal(claim.code, 1);
+  assert.equal(claim.errs, done.errs);
+  assert.match(claim.errs, /^That move is in a later chapter, First issue out\. One step at a time\.\nRight now: Name your newsletter\./);
+  assertUnchanged(dir, before);
+  writeRun(dir, 'blue-fox', (state) => { state.chapters[1].moves[0].owner = 'publisher'; });
+  const lockedBefore = savedFiles(dir);
+  const give = await run(dir, ['give', 'pick-home', '--to', 'growth', '--by', 'publisher']);
+  assert.equal(give.code, 1);
+  assert.equal(give.errs, done.errs);
+  assertUnchanged(dir, lockedBefore);
+});
+
+test('an old saved run with no team list: claim and done work, nothing saves before every check passes', async (t) => {
+  const dir = await started(t);
+  writeRun(dir, 'blue-fox', (state) => { delete state.team; });
+  const before = savedFiles(dir);
+
+  const seat = await run(dir, ['claim', 'name-it', '--by', 'editor']);
+  assert.equal(seat.code, 1);
+  assert.equal(seat.errs, 'editor is not a seat here. This run has no team saved, so only you can hold a move: --by me');
+  assertUnchanged(dir, before);
+  const give = await run(dir, ['give', 'name-it', '--to', 'editor', '--by', 'me']);
+  assert.match(give.errs, /no team saved, so only you can hold a move: --to me/);
+  assertUnchanged(dir, before);
+
+  const mine = await run(dir, ['claim', 'approve-voice', '--by', 'me']);
+  assert.equal(mine.code, 0, mine.errs);
+  assert.doesNotMatch(mine.errs, /iterable/);
+  assert.equal(moveOf(dir, 'approve-voice').owner, 'me');
+  assert.match(fs.readFileSync(path.join(dir, 'atris', 'storylines', 'blue-fox.md'), 'utf8'), /## Team\n\n- No team saved for this run yet\./);
+
+  const done = await run(dir, ['done', 'name-it', '--by', 'me', '--proof', 'Night Notes']);
+  assert.equal(done.code, 0, done.errs);
+  assert.equal(moveOf(dir, 'name-it').state, 'done');
+  assert.equal((await run(dir, ['status'])).code, 0);
+});
+
+test('a hand edited owner in another letter case can still be given away, and the proper seat name is stored', async (t) => {
+  const dir = await started(t);
+  writeRun(dir, 'blue-fox', (state) => { state.chapters[0].moves[2].owner = 'Editor'; state.chapters[0].moves[2].owned_at = NOW.toISOString(); });
+
+  const wrong = await run(dir, ['give', 'voice-sample', '--to', 'growth', '--by', 'researcher']);
+  assert.match(wrong.errs, /editor holds it/);
+  const suggested = await run(dir, ['claim', 'voice-sample', '--by', 'growth']);
+  assert.match(suggested.errs, /atris script give voice-sample --to growth --by editor$/);
+
+  const given = await run(dir, ['give', 'voice-sample', '--to', 'GROWTH', '--by', 'editor']);
+  assert.equal(given.code, 0, given.errs);
+  assert.equal(moveOf(dir, 'voice-sample').owner, 'growth');
+  const back = await run(dir, ['give', 'voice-sample', '--to', 'Editor', '--by', 'Growth']);
+  assert.equal(back.code, 0, back.errs);
+  assert.equal(moveOf(dir, 'voice-sample').owner, 'editor');
+  const claimed = await run(dir, ['claim', 'voice-sample', '--by', 'EDITOR']);
+  assert.equal(claimed.out, 'editor already holds this move. Nothing changed.');
+});
+
+test('help names claim and give, in plain words', async (t) => {
+  const dir = tempDir(t);
+  const { out } = await run(dir, ['--help']);
+  assert.match(out, /atris script claim <move> --by <seat or me> +take a move, so only one person holds it/);
+  assert.match(out, /atris script give <move> --to <seat> --by <who holds it> +hand a move on in one step/);
+  for (const line of out.split('\n')) {
+    assert.doesNotMatch(line, BANNED_WORDS, line);
+    assert.doesNotMatch(line, /[—–]|, and\b/, line);
   }
 });
