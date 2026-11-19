@@ -231,6 +231,19 @@ test('cards: each local task state maps to its card', (t) => {
   assert.ok(!Object.keys(idea).some((key) => key.startsWith('_')));
 });
 
+test('cards: mission cards show the work without the generated reward label', (t) => {
+  const ctx = project(t);
+  const title = 'Mission XP: Check the memory repair';
+  const metadata = { mission_id: 'mission-memory-repair' };
+  const working = add(ctx, { title, metadata, status: 'claimed', claimedBy: 'scout' });
+  const done = add(ctx, { title, metadata, status: 'done' });
+  const manual = add(ctx, { title, status: 'done' });
+
+  assert.equal(cardsOf(ctx, working, 'working')[0].title, 'Check the memory repair');
+  assert.equal(cardsOf(ctx, done)[0].title, 'Check the memory repair');
+  assert.equal(cardsOf(ctx, manual)[0].title, title);
+});
+
 test('cards: a jargon title is kept in detail, never shown', (t) => {
   const ctx = project(t);
   const done = add(ctx, { title: 'Merged PR-12 into the repo', status: 'done' });
