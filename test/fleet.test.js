@@ -1028,3 +1028,185 @@ test('runFleetFlight ship failure receipt keeps the failing module at the head',
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+function withCleanClaudeRunnerEnv(overrides, fn) {
+  const keys = [
+    'ATRIS_RUNNER_PROFILE',
+    'ATRIS_RUNNER_MODEL',
+    'ATRIS_RUNNER_BIN',
+    'ATRIS_RUNNER_COMMAND_TEMPLATE',
+    'ATRIS_CLAUDE_MODEL',
+    'ATRIS_CLAUDE_BIN',
+    'ATRIS_CLAUDE_COMMAND_TEMPLATE',
+    'ATRIS_CLAUDE_SPEND_OK',
+    'HOME',
+    'CLAUDE_CONFIG_DIR',
+  ];
+  const prev = new Map(keys.map((key) => [key, process.env[key]]));
+  for (const key of keys) delete process.env[key];
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-opus-effort-home-'));
+  process.env.HOME = home;
+  process.env.CLAUDE_CONFIG_DIR = path.join(home, '.claude');
+  for (const [key, value] of Object.entries(overrides || {})) process.env[key] = value;
+  try {
+    return fn();
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+    for (const key of keys) {
+      const value = prev.get(key);
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+test('smallSinglePlaceOpusEffort defaults single-file safe-lane claude-opus-5-5 tasks to low', () => {
+  withCleanClaudeRunnerEnv({}, () => {
+    const single = {
+      display_id: 'CLI-OPUS-1',
+      title: 'Fix status typo in lib/fleet.js',
+      tag: 'cli',
+      files: ['lib/fleet.js'],
+    };
+    assert.equal(fleet.smallSinglePlaceOpusEffort(single, 'claude', 'claude-opus-5-5', ''), 'low');
+    assert.equal(fleet.smallSinglePlaceOpusEffort(single, 'claude', 'opus 5.5', ''), 'low');
+    assert.equal(
+      fleet.smallSinglePlaceOpusEffort({ title: 'Tighten copy', metadata: { files: ['./lib/fleet.js'] } }, 'claude', 'claude-opus-5-5', ''),
+      'low'
+    );
+    assert.equal(
+      fleet.smallSinglePlaceOpusEffort({ title: 'Fix typo in lib/fleet.js' }, 'claude', 'claude-opus-5-5', ''),
+      'low'
+    );
+  });
+
+  withCleanClaudeRunnerEnv({ ATRIS_RUNNER_MODEL: 'claude-opus-5-5' }, () => {
+    assert.equal(
+      fleet.smallSinglePlaceOpusEffort({ title: 'Fix typo in lib/fleet.js' }, 'claude', '', ''),
+      'low'
+    );
+  });
+});
+
+test('smallSinglePlaceOpusEffort skips explicit effort, multi-file, blind, protected, deep, and non-opus/non-claude tasks', () => {
+  withCleanClaudeRunnerEnv({}, () => {
+    const base = {
+      display_id: 'CLI-OPUS-2',
+      title: 'Fix copy in lib/fleet.js',
+      tag: 'cli',
+      files: ['lib/fleet.js'],
+    };
+
+    // Explicit effort pins are never overridden.
+    assert.equal(fleet.smallSinglePlaceOpusEffort(base, 'claude', 'claude-opus-5-5', 'high'), '');
+    assert.equal(fleet.smallSinglePlaceOpusEffort(base, 'claude', 'claude-opus-5-5', 'medium'), '');
+
+    // Multi-file tasks stay off low default.
+    assert.equal(
+      fleet.smallSinglePlaceOpusEffort({ ...base, files: ['lib/fleet.js', 'test/fleet.test.js'] }, 'claude', 'claude-opus-5-5', ''),
+      ''
+    );
+    assert.equal(
+      fleet.smallSinglePlaceOpusEffort({ title: 'Update lib/a.js and lib/b.js' }, 'claude', 'claude-opus-5-5', ''),
+      ''
+    );
+
+    // Blind tasks (no declared files or surface) stay off low default.
+    assert.equal(
+      fleet.smallSinglePlaceOpusEffort({ title: 'Fix vague issue', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''),
+      ''
+    );
+
+    // Protected lanes never take low default.
+    for (const lane of ['money', 'security', 'deploy']) {
+      assert.equal(
+        fleet.smallSinglePlaceOpusEffort({ ...base, tag: lane }, 'claude', 'claude-opus-5-5', ''),
+        '',
+        lane
+      );
+    }
+
+    // Deep / refactor / migration / overhaul titles never take low default.
+    for (const title of [
+      'Refactor auth architecture in lib/fleet.js',
+      'Migrate lib/fleet.js parser',
+      'Overhaul lib/fleet.js dispatch flow',
+    ]) {
+      assert.equal(
+        fleet.smallSinglePlaceOpusEffort({ ...base, title }, 'claude', 'claude-opus-5-5', ''),
+        '',
+        title
+      );
+    }
+
+    // Non-Opus models and non-claude engines never take low default.
+    assert.equal(fleet.smallSinglePlaceOpusEffort(base, 'claude', 'claude-haiku-5-5', ''), '');
+    assert.equal(fleet.smallSinglePlaceOpusEffort(base, 'claude', 'claude-sonnet-5-5', ''), '');
+    assert.equal(fleet.smallSinglePlaceOpusEffort(base, 'claude', '', ''), '');
+    assert.equal(fleet.smallSinglePlaceOpusEffort(base, 'codex', 'claude-opus-5-5', ''), '');
+    assert.equal(fleet.smallSinglePlaceOpusEffort(base, 'cursor', 'claude-opus-5-5', ''), '');
+  });
+});
+
+test('dispatchToEngine passes --effort low only for small single-place claude-opus-5-5 tasks and preserves explicit pins', () => {
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-opus-effort-wt-'));
+  try {
+    withCleanClaudeRunnerEnv({}, () => {
+      const seen = [];
+      const runner = (cmd) => {
+        seen.push(cmd);
+        return { status: 0, stdout: 'ok', stderr: '' };
+      };
+      const singleTask = {
+        display_id: 'CLI-OPUS-SMALL',
+        title: 'Fix typo in lib/fleet.js Done: typo fixed. Check: npm run test:fast.',
+        tag: 'cli',
+        files: ['lib/fleet.js'],
+      };
+
+      fleet.dispatchToEngine({
+        task: singleTask,
+        engine: 'claude',
+        model: 'claude-opus-5-5',
+        worktreePath: wt,
+        skipBriefCapture: true,
+        runner,
+      });
+      assert.match(seen[0], /--model claude-opus-5-5 --effort low\b/);
+
+      fleet.dispatchToEngine({
+        task: singleTask,
+        engine: 'claude',
+        model: 'claude-opus-5-5',
+        effort: 'high',
+        worktreePath: wt,
+        skipBriefCapture: true,
+        runner,
+      });
+      assert.match(seen[1], /--model claude-opus-5-5 --effort high\b/);
+      assert.doesNotMatch(seen[1], /--effort low\b/);
+
+      fleet.dispatchToEngine({
+        task: { ...singleTask, display_id: 'CLI-OPUS-MULTI', files: ['lib/fleet.js', 'test/fleet.test.js'] },
+        engine: 'claude',
+        model: 'claude-opus-5-5',
+        worktreePath: wt,
+        skipBriefCapture: true,
+        runner,
+      });
+      assert.doesNotMatch(seen[2], /--effort\b/);
+
+      fleet.dispatchToEngine({
+        task: { display_id: 'CLI-OPUS-BLIND', title: 'Fix vague issue Done: fixed. Check: ok.', tag: 'cli' },
+        engine: 'claude',
+        model: 'claude-opus-5-5',
+        worktreePath: wt,
+        skipBriefCapture: true,
+        runner,
+      });
+      assert.doesNotMatch(seen[3], /--effort\b/);
+    });
+  } finally {
+    fs.rmSync(wt, { recursive: true, force: true });
+  }
+});
