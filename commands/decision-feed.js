@@ -24,7 +24,7 @@ const VALUE_FLAGS = new Set([
   '--reply',
   '--session', '--ask',
 ]);
-const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask', '--retry', '--run', '--independent', '--confirm', '--dry-run']);
+const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask', '--retry', '--run', '--independent', '--confirm', '--dry-run', '--undo']);
 
 function parse(args) {
   const positional = [];
@@ -69,6 +69,7 @@ const HELP = [
   'no --json) still shows the group feed, with a notice on stderr.',
   '',
   'usage: atris feed [cards] [--filter all|needs_decision|working|parked|done|dismissed] [--limit N] [--cursor C] [--since T] [--json]',
+  `                          (the main list drops finished work and notes quiet for ${feed.FRESH_HOURS} hours; they stay under their own filter)`,
   '       atris feed pass <card> [<card> ...] [--cards \'[{"id":...,"seen":false}]\']   (scrolled past; three passes park an idea, a passed result is read; cards under 10 seconds old or never seen are left alone)',
   '       atris feed theme [--json]',
   '       atris feed theme set "<one plain sentence>"',
@@ -76,6 +77,9 @@ const HELP = [
   '                          [--body "<text>"] [--detail "<technical notes>"] [--visual \'<json>\']',
   '                          [--kind proposal|question] [--lane money|billing|...] [--story "<line>"]',
   '       atris feed decide <card> approve|dismiss [--note "<text>"]',
+  '       atris feed dismiss <card> [<card> ...] [--undo]',
+  '                          (takes cards off your feed: an idea or question waiting for you is dismissed as with decide;',
+  '                          any other card is hidden for you only and shows under --filter dismissed. --undo brings it back)',
   '       atris feed waiting set --session <id> --ask "<one or two plain sentences>" [--title "<window name>"] [--engine <name>]',
   '       atris feed waiting clear --session <id>',
   '       atris feed waiting list [--json]',
@@ -299,6 +303,12 @@ function printText(command, out, { streamed = false } = {}) {
     console.log(`passed ${out.passed}.${out.skipped.length ? ` not passed: ${out.skipped.join(' ')}` : ''}`);
     return;
   }
+  if (command === 'dismiss') {
+    const done = out.restored || out.dismissed || [];
+    console.log(`${out.restored ? 'brought back' : 'dismissed'} ${done.length}.`);
+    for (const skip of out.skipped) console.log(`not done: ${skip.id}: ${skip.reason}`);
+    return;
+  }
   if (command === 'more') {
     console.log(out.reason);
     return;
@@ -416,6 +426,8 @@ async function run(args = [], context = {}) {
         try { items = items.concat(JSON.parse(flags.cards)); } catch { throw new feed.FeedError(400, 'cards must be JSON, like [{"id": "task:...", "seen": false}]'); }
       }
       out = feed.passCards(root, items, { env });
+    } else if (sub === 'dismiss') {
+      out = feed.dismissCards(root, positional.slice(1), { env, deps, undo: flags.undo === true });
     } else if (sub === 'talk') {
       const card = positional[1];
       if (!card) throw new feed.FeedError(400, flags.member !== undefined ? 'usage: atris feed talk --member <name> -- <card> ["<words>"]' : 'usage: atris feed talk <card> "<message>"');
@@ -575,7 +587,7 @@ async function run(args = [], context = {}) {
   }
 }
 
-const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'talk', 'messages', 'revise', 'more', 'run', 'help',
+const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'dismiss', 'talk', 'messages', 'revise', 'more', 'run', 'help',
   'waiting',
   'settings', 'engines', 'members', 'member', 'ping', 'think', 'emit', 'events', 'start', 'doctor', 'repair', 'notes',
   'say', 'react', 'reply', 'replies', 'discuss', 'work', 'clear', 'setup', 'scrub-keys']);

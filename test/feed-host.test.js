@@ -237,6 +237,30 @@ test('a failed pick is visible with a retry; it runs again only when the person 
   assert.equal(d.round, 2, 'the retry counted');
 });
 
+test('a teammate who only asks a question back is not saved: its pick fails with that reason, counts for the day and is not asked again by itself', async (t) => {
+  const ctx = project(t, ['writer', 'closer']);
+  ctx.env.ATRIS_FEED_MEMBER_GAP_SECONDS = '0';
+  answers(ctx, {
+    pick: 'PICK writer: the words\nPICK closer: what a buyer would pay',
+    member: (me) => (me === 'writer' ? 'Which month do you mean? Who is the buyer?' : 'Start with refills at twelve dollars a month. Does that work for you?'),
+  });
+  const card = post(ctx);
+  await discuss(ctx, card.id);
+  const saved = room.replies(ctx.root, card.id, { env: ctx.env }).replies;
+  assert.deepEqual(saved.map((r) => [r.author.id, r.text]), [['agent:closer', 'Start with refills at twelve dollars a month. Does that work for you?']],
+    'a real answer that ends with a question is saved; a question alone is not');
+  const d = feed.readCard(ctx.root, card.id, { env: ctx.env }).discussion;
+  assert.deepEqual(d.picks.map((p) => [p.member, p.status, p.error]), [['writer', 'failed', 'Only asked a question.'], ['closer', 'answered', null]]);
+  const pings = JSON.parse(fs.readFileSync(path.join(ctx.root, '.atris', 'state', 'feed', 'pings.json'), 'utf8'));
+  assert.equal(pings.members.writer.count, 1, 'the ask still counts against the day');
+  assert.equal(memberTurns(ctx).length, 2, 'asked once each, no retry by itself');
+  await discuss(ctx, card.id);
+  assert.equal(memberTurns(ctx).length, 2, 'asking again with the same words runs nothing');
+  // Asked directly by name, the same answer is refused the same way.
+  await assert.rejects(require('../lib/feed-team').askMember(ctx.root, { member: 'writer', cardId: card.id, text: 'What do you think?', env: ctx.env, deps: ctx.deps }),
+    (e) => e.code === 'only_question' && /only asked a question back/.test(e.message));
+});
+
 test('two posts at once: a member busy answering one is waited for, then answers the other', async (t) => {
   const ctx = project(t, ['writer']);
   ctx.env.ATRIS_FEED_MEMBER_GAP_SECONDS = '0';
