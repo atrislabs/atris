@@ -1087,9 +1087,37 @@ test('isBugFixTask accepts concrete bug-fix tasks and rejects features, refactor
     { title: 'Fix release publish error in scripts/ship.js', files: ['scripts/ship.js'] },
     { title: 'Fix security RBAC permission leak in lib/acl.js', files: ['lib/acl.js'] },
     { title: 'Update lib/fleet.js', tag: 'cli', files: ['lib/fleet.js'] },
+    // Compound non-bugfix tags & protected DENIED_TAGS
+    { title: 'Fix null crash in lib/fleet.js', tag: 'ui-bug', files: ['lib/fleet.js'] },
+    { title: 'Fix null crash in lib/fleet.js', tag: 'feature-cli', files: ['lib/fleet.js'] },
+    { title: 'Fix null crash in lib/fleet.js', tag: 'docs-fix', files: ['lib/fleet.js'] },
+    { title: 'Fix null crash in lib/fleet.js', tag: 'refactor-core', files: ['lib/fleet.js'] },
+    { title: 'Fix null crash in lib/fleet.js', tag: 'feedback', files: ['lib/fleet.js'] },
+    // Empty / missing title even with bug tag
+    { title: '', tag: 'bug', files: ['lib/fleet.js'] },
+    { title: '   ', tag: 'bug', files: ['lib/fleet.js'] },
+    { tag: 'bug', files: ['lib/fleet.js'] },
+    // Typo / spelling / wording copy edits
+    { title: 'Fix typo in lib/fleet.js', tag: 'cli', files: ['lib/fleet.js'] },
+    { title: 'Fix spelling in lib/fleet.js', tag: 'cli', files: ['lib/fleet.js'] },
+    { title: 'Fix wording in lib/fleet.js', tag: 'cli', files: ['lib/fleet.js'] },
+    // Live projection false-positive regressions
+    { id: 'CLI-1501', title: 'catch up fix-1932 with master: it clashes in commands/nexus.js', tag: 'cli' },
+    { id: 'CLI-1310', title: 'a triage agent reproduces every piece of incoming feedback... already fixed... Verify: node --test test/feedback-triage.test.js' },
+    { title: 'check branch bug-123 status in lib/fleet.js', files: ['lib/fleet.js'] },
+    { title: 'audit lib/fleet.js behavior that was already fixed yesterday', files: ['lib/fleet.js'] },
+    // Digit-suffixed & camelCase sensitive paths/identifiers
+    { title: 'Fix crash in lib/oauth2.js', tag: 'cli', files: ['lib/oauth2.js'] },
+    { title: 'Fix crash in lib/authClient.js', tag: 'cli', files: ['lib/authClient.js'] },
+    { title: 'Fix crash in lib/loginForm.js', tag: 'cli', files: ['lib/loginForm.js'] },
+    { title: 'Fix crash in lib/stripeWebhook.js', tag: 'cli', files: ['lib/stripeWebhook.js'] },
+    { title: 'Fix crash in lib/signInHandler.js', tag: 'cli', files: ['lib/signInHandler.js'] },
+    { title: 'Fix crash in lib/secretKey.js', tag: 'cli', files: ['lib/secretKey.js'] },
+    { title: 'Fix crash in lib/rbacGuard.js', tag: 'cli', files: ['lib/rbacGuard.js'] },
+    { title: 'Fix crash in lib/tokenStore.js', tag: 'cli', files: ['lib/tokenStore.js'] },
   ];
   for (const task of rejected) {
-    assert.equal(fleet.isBugFixTask(task), false, task.title);
+    assert.equal(fleet.isBugFixTask(task), false, task.title || String(task.tag));
   }
 });
 
@@ -1208,16 +1236,40 @@ test('opusBugfixEffortDecision skips explicit effort, non-bugfix, multi-file, gl
       { effort: '', experimentSide: null }
     );
 
-    // Protected lanes, sensitive tags, sensitive paths, and declared/sniffed protected tasks are not enrolled.
-    for (const lane of ['money', 'security', 'deploy', 'Deploys', 'infra-deploy', 'outward', 'release', 'publish']) {
+    // Protected lanes, sensitive tags, sensitive paths, compound tags, and declared/sniffed protected tasks are not enrolled.
+    for (const lane of ['money', 'security', 'deploy', 'Deploys', 'infra-deploy', 'outward', 'release', 'publish', 'feedback', 'ui-bug', 'feature-cli', 'docs-fix', 'refactor-core']) {
       assert.deepEqual(
         fleet.opusBugfixEffortDecision({ ...base, tag: lane }, 'claude', 'claude-opus-5-5', ''),
         { effort: '', experimentSide: null },
         lane
       );
     }
+    for (const sensitivePath of ['lib/auth.js', 'lib/oauth2.js', 'lib/authClient.js', 'lib/loginForm.js', 'lib/stripeWebhook.js', 'lib/signInHandler.js', 'lib/secretKey.js', 'lib/rbacGuard.js', 'lib/tokenStore.js']) {
+      assert.deepEqual(
+        fleet.opusBugfixEffortDecision({ id: 't-104', title: `Fix crash in ${sensitivePath}`, tag: 'cli', files: [sensitivePath] }, 'claude', 'claude-opus-5-5', ''),
+        { effort: '', experimentSide: null },
+        sensitivePath
+      );
+    }
+    // Live projection regressions & Verify-only path mentions must stay unenrolled.
     assert.deepEqual(
-      fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix crash in lib/auth.js', tag: 'cli', files: ['lib/auth.js'] }, 'claude', 'claude-opus-5-5', ''),
+      fleet.opusBugfixEffortDecision({ id: 't-104', display_id: 'CLI-1501', title: 'catch up fix-1932 with master: it clashes in commands/nexus.js', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', display_id: 'CLI-1310', title: 'a triage agent reproduces every piece of incoming feedback... already fixed... Verify: node --test test/feedback-triage.test.js' }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix crash on startup Verify: node --test test/startup.test.js', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', title: '', tag: 'bug', files: ['lib/fleet.js'] }, 'claude', 'claude-opus-5-5', ''),
+      { effort: '', experimentSide: null }
+    );
+    assert.deepEqual(
+      fleet.opusBugfixEffortDecision({ id: 't-104', title: 'Fix typo in lib/fleet.js', tag: 'cli', files: ['lib/fleet.js'] }, 'claude', 'claude-opus-5-5', ''),
       { effort: '', experimentSide: null }
     );
     assert.deepEqual(
