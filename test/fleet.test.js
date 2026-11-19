@@ -1097,17 +1097,35 @@ test('smallSinglePlaceOpusEffort skips explicit effort, multi-file, blind, prote
       files: ['lib/fleet.js'],
     };
 
-    // Explicit effort pins are never overridden.
+    // Explicit effort pins are never overridden; whitespace-only effort falls through.
     assert.equal(fleet.smallSinglePlaceOpusEffort(base, 'claude', 'claude-opus-5-5', 'high'), '');
     assert.equal(fleet.smallSinglePlaceOpusEffort(base, 'claude', 'claude-opus-5-5', 'medium'), '');
+    assert.equal(fleet.smallSinglePlaceOpusEffort(base, 'claude', 'claude-opus-5-5', '   '), 'low');
 
-    // Multi-file tasks stay off low default.
+    // Directories, globs, extensionless paths, and URLs are rejected.
+    assert.equal(fleet.smallSinglePlaceOpusEffort({ title: 'Clean up', tag: 'cli', files: ['lib/'] }, 'claude', 'claude-opus-5-5', ''), '');
+    assert.equal(fleet.smallSinglePlaceOpusEffort({ title: 'Clean up', tag: 'cli', files: ['lib/*.js'] }, 'claude', 'claude-opus-5-5', ''), '');
+    assert.equal(fleet.smallSinglePlaceOpusEffort({ title: 'Clean up', tag: 'cli', files: ['lib/foo'] }, 'claude', 'claude-opus-5-5', ''), '');
+    assert.equal(fleet.smallSinglePlaceOpusEffort({ title: 'Clean up lib/foo/', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''), '');
+    assert.equal(fleet.smallSinglePlaceOpusEffort({ title: 'Clean up lib/foo/*.js', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''), '');
+    assert.equal(fleet.smallSinglePlaceOpusEffort({ title: 'Clean up lib/foo/{a,b}.js', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''), '');
+    assert.equal(fleet.smallSinglePlaceOpusEffort({ title: 'See https://example.com/docs/index.html', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''), '');
+
+    // Multi-file tasks (including non-prefix paths like utils/b.js and objective/description mentions) stay off low default.
     assert.equal(
       fleet.smallSinglePlaceOpusEffort({ ...base, files: ['lib/fleet.js', 'test/fleet.test.js'] }, 'claude', 'claude-opus-5-5', ''),
       ''
     );
     assert.equal(
-      fleet.smallSinglePlaceOpusEffort({ title: 'Update lib/a.js and lib/b.js' }, 'claude', 'claude-opus-5-5', ''),
+      fleet.smallSinglePlaceOpusEffort({ title: 'Update lib/a.js and utils/b.js', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''),
+      ''
+    );
+    assert.equal(
+      fleet.smallSinglePlaceOpusEffort({ title: 'Update lib/a.js', objective: 'Also update utils/b.js', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''),
+      ''
+    );
+    assert.equal(
+      fleet.smallSinglePlaceOpusEffort({ title: 'Update lib/a.js', description: 'Touches docs/guide.md too', tag: 'cli' }, 'claude', 'claude-opus-5-5', ''),
       ''
     );
 
@@ -1117,14 +1135,36 @@ test('smallSinglePlaceOpusEffort skips explicit effort, multi-file, blind, prote
       ''
     );
 
-    // Protected lanes never take low default.
-    for (const lane of ['money', 'security', 'deploy']) {
+    // Protected lanes, sensitive tags, sensitive paths, and declared/sniffed protected tasks never take low default.
+    for (const lane of ['money', 'security', 'deploy', 'Deploys', 'infra-deploy', 'outward', 'release', 'publish']) {
       assert.equal(
         fleet.smallSinglePlaceOpusEffort({ ...base, tag: lane }, 'claude', 'claude-opus-5-5', ''),
         '',
         lane
       );
     }
+    assert.equal(
+      fleet.smallSinglePlaceOpusEffort({ title: 'Fix typo in lib/auth.js', tag: 'cli', files: ['lib/auth.js'] }, 'claude', 'claude-opus-5-5', ''),
+      ''
+    );
+    assert.equal(
+      fleet.smallSinglePlaceOpusEffort({ title: 'Fix typo in lib/fleet.js (human review required)', files: ['lib/fleet.js'] }, 'claude', 'claude-opus-5-5', ''),
+      ''
+    );
+    assert.equal(
+      fleet.smallSinglePlaceOpusEffort({ title: 'Retry stripe invoice in lib/retry.js', files: ['lib/retry.js'] }, 'claude', 'claude-opus-5-5', ''),
+      ''
+    );
+
+    // Review / validator dispatches never take low default.
+    assert.equal(fleet.smallSinglePlaceOpusEffort(base, 'claude', 'claude-opus-5-5', '', { isReview: true }), '');
+    assert.equal(fleet.smallSinglePlaceOpusEffort(base, 'claude', 'claude-opus-5-5', '', { role: 'validator' }), '');
+
+    // options.env overrides process.env for model resolution.
+    assert.equal(
+      fleet.smallSinglePlaceOpusEffort(base, 'claude', '', '', { env: { ATRIS_RUNNER_MODEL: 'claude-opus-5-5' } }),
+      'low'
+    );
 
     // Deep / refactor / migration / overhaul titles never take low default.
     for (const title of [
@@ -1205,6 +1245,32 @@ test('dispatchToEngine passes --effort low only for small single-place claude-op
         runner,
       });
       assert.doesNotMatch(seen[3], /--effort\b/);
+
+      // Validator / review dispatches never receive --effort low even on small single-file Opus tasks.
+      fleet.dispatchToEngine({
+        task: singleTask,
+        engine: 'claude',
+        model: 'claude-opus-5-5',
+        isReview: true,
+        role: 'validator',
+        allowedTools: 'Bash,Read,Grep,Glob',
+        worktreePath: wt,
+        skipBriefCapture: true,
+        runner,
+      });
+      assert.doesNotMatch(seen[4], /--effort\b/);
+
+      // Whitespace-only effort falls through cleanly to low on qualifying tasks.
+      fleet.dispatchToEngine({
+        task: singleTask,
+        engine: 'claude',
+        model: 'claude-opus-5-5',
+        effort: '   ',
+        worktreePath: wt,
+        skipBriefCapture: true,
+        runner,
+      });
+      assert.match(seen[5], /--model claude-opus-5-5 --effort low\b/);
     });
   } finally {
     fs.rmSync(wt, { recursive: true, force: true });
