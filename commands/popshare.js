@@ -304,7 +304,7 @@ function shortId(id) {
 }
 
 function postSnippet(post) {
-  const raw = post && (post.text || post.title);
+  const raw = post && (post.text || post.title || post.text_snippet);
   const text = String(raw || '').replace(/\s+/g, ' ').trim();
   return text.length > 80 ? `${text.slice(0, 79)}...` : text;
 }

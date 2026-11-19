@@ -1347,6 +1347,7 @@ test('scorecard renders connections, totals, ties, and supports --tie and --json
   assert.match(rendered, /connections: X: ok, LinkedIn: ok/);
   assert.match(rendered, /scorecard: 2 posts, 100% on arc/);
   assert.match(rendered, /can-you-feel-the-swarm \(linkedin, x\)/);
+  assert.match(rendered, /X \[can-you-feel-the-swarm\] \(Swarm builds\): swarm tweet/);
 
   const res = await run(['scorecard', '--tie', 'can-you-feel-the-swarm', '--json'], {
     result: { ok: true, status: 200, data: sample },
