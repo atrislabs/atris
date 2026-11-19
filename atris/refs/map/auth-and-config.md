@@ -48,7 +48,7 @@ rg "checkForUpdates|autoUpdate|shouldAutoUpdate|helpRequested|help invocations s
 - `commands/auth.js` (`whoamiAtris`): Show auth status via `displayAccountSummary`
 - **Auth (canonical):** `utils/auth.js` + `utils/api.js`: all auth logic consolidated, no inline duplicates
 - **Help:** `bin/atris.js` (`showAuthHelp`) prints login/logout/whoami/switch/use/accounts usage before auth workers can prompt, create state, delete credentials, or touch session/profile dirs
-- **Dispatch:** `bin/atris.js:1205-1239` routes login/logout/whoami/switch/use/accounts `--help`, `-h`, and bare `help` before calling `commands/auth.js`
+- **Dispatch:** `bin/atris.js:1192-1226` routes login/logout/whoami/switch/use/accounts `--help`, `-h`, and bare `help` before calling `commands/auth.js`
 - **Regression:** `test/commands-2.test.js:1438-1483` covers auth/account help without login prompts, status output, `.atris` creation, session/profile dir creation, or credential deletion
 - JWT helpers: `utils/auth.js` (`decodeJwtClaims`), `utils/auth.js` (`shouldRefreshToken`)
 - **Credentials storage:** `~/.atris/credentials.json` (chmod 0o600 on save)
@@ -59,7 +59,7 @@ rg "checkForUpdates|autoUpdate|shouldAutoUpdate|helpRequested|help invocations s
   3. Non-interactive: `--token <t>` flag for CI/scripts
 - **Token refresh:** `utils/auth.js` (`performTokenRefresh`) saves new access token, optionally rotates refresh token, re-validates, updates user metadata. Profile-sourced creds write back to the profile file. `utils/auth.js` (`refreshAccessToken`) sends `refresh_token` and omits `provider=google` unless the token is a Google OAuth refresh (`1//...`); that hint makes `/auth/refresh` skip app-JWT refresh and return `google_refresh_failed`.
 - **Credential guard:** `utils/auth.js` (`ensureValidCredentials`) checks selected-source and agent-JWT expiry, proactively refreshes within the 5-minute buffer, validates, then falls back to refresh
-- **Wake auth abort:** `utils/auth.js` (`isAuthFailure`) and `utils/auth.js` (`abortOnAuthFailure`) stop status/wake polling on 401/403 and prints login guidance instead of a computer timeout. Used by `commands/terminal.js:35`, `lib/computer-core.js:2179`, `commands/aeo.js:98`, `commands/pull.js:361`, `commands/push.js:530`, `commands/align.js:180`.
+- **Wake auth abort:** `utils/auth.js` (`isAuthFailure`) and `utils/auth.js` (`abortOnAuthFailure`) stop status/wake polling on 401/403 and prints login guidance instead of a computer timeout. Used by `commands/terminal.js:35`, `lib/computer-core.js:2179`, `commands/aeo.js:98`, `commands/pull.js:357`, `commands/push.js:530`, `commands/align.js:180`.
 - **Dependencies:** `utils/auth.js` for token management, `utils/api.js` for HTTP
 - **Consumers:**
   - `commands/auth.js` (login/logout/whoami): uses modular `utils/auth.js`
@@ -77,7 +77,7 @@ rg "checkForUpdates|autoUpdate|shouldAutoUpdate|helpRequested|help invocations s
 **Purpose:** Keep packaged installs current without interrupting workflow
 
 - **Entry point:** `utils/update-check.js:1-334`
-- **Dispatch skip:** `bin/atris.js:84-108` skips background update checks for version/update/help and any command whose args request help, so documentation paths cannot create `$HOME/.atris/.update-check`
+- **Dispatch skip:** `bin/atris.js:82-106` skips background update checks for version/update/help and any command whose args request help, so documentation paths cannot create `$HOME/.atris/.update-check`
 - **Logic:**
 - Background check on normal commands except version/update/help/help-flag invocations
 - Fetches latest from npm registry
@@ -121,7 +121,7 @@ rg "checkForUpdates|autoUpdate|shouldAutoUpdate|helpRequested|help invocations s
 **Files:**
 
 - `utils/auth.js` (388 lines): Canonical auth module (modular commands import from here)
-- `utils/auth.js` + `utils/api.js`: Canonical auth modules (DI wrappers at bin/atris.js:63-62)
+- `utils/auth.js` + `utils/api.js`: Canonical auth modules (DI wrappers at bin/atris.js:60-61)
 
 **Key functions (utils/auth.js):**
 
@@ -139,7 +139,7 @@ rg "checkForUpdates|autoUpdate|shouldAutoUpdate|helpRequested|help invocations s
 
 **Pattern:** JWT with auto-refresh, 5-min buffer (`TOKEN_REFRESH_BUFFER_SECONDS = 300`). Credentials stored as JSON at `~/.atris/credentials.json` with `chmod 0o600`. Refresh token rotation: if API returns a new refresh_token, it replaces the old one; otherwise keeps existing.
 
-Sync login renewal (2026-10-24): `commands/pull.js:161` (journal), `commands/pull.js:209` (business), `commands/push.js:460`, `commands/member.js:4945` (push), and `commands/member.js:5010` (pull) call `ensureFreshCredentials` at `utils/auth.js:816`. It checks local expiry, skips agent/client/environment credentials, and refreshes expiring user logins through `performTokenRefresh` at `utils/auth.js:723` with validation disabled. Renewal stays in the selected profile and updates a stored expiry from the new JWT, so the next file sync reuses it. Full `ensureValidCredentials` at `utils/auth.js:840` retains validation and its refresh-before-expiry-rejection guard. `node --test test/sync-auth-refresh.test.js` exercises all five sync paths with no `/auth/validate` calls, temporary profiles, and generated fake credentials; it also checks client passthrough, refresh failures, repeat syncs, and the full-validation guard.
+Sync login renewal (2026-10-24): `commands/pull.js:157` (journal), `commands/pull.js:205` (business), `commands/push.js:460`, `commands/member.js:4944` (push), and `commands/member.js:5009` (pull) call `ensureFreshCredentials` at `utils/auth.js:816`. It checks local expiry, skips agent/client/environment credentials, and refreshes expiring user logins through `performTokenRefresh` at `utils/auth.js:723` with validation disabled. Renewal stays in the selected profile and updates a stored expiry from the new JWT, so the next file sync reuses it. Full `ensureValidCredentials` at `utils/auth.js:840` retains validation and its refresh-before-expiry-rejection guard. `node --test test/sync-auth-refresh.test.js` exercises all five sync paths with no `/auth/validate` calls, temporary profiles, and generated fake credentials; it also checks client passthrough, refresh failures, repeat syncs, and the full-validation guard.
 
 **Known issue:** `bin/atris.js` contains a full copy of auth logic (JWT decode, credential CRUD, token refresh, API helpers) that diverges slightly from `utils/auth.js`: inline version lacks `chmod 0o600` on save, no timeout on HTTP requests.
 

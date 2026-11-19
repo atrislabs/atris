@@ -213,3 +213,7 @@ Your log is how you get smarter. Record what the user liked, what they pushed ba
 ---
 
 **Navigator = Precision before execution.**
+
+## Code I own
+
+- `commands/task/plans/`: A task's public plan: choosing the owner from the team, the plan card, plan preview and the plan trace. Moved out of `commands/task.js` on 2026-11-16; read its README.md before changing it.

@@ -147,3 +147,7 @@ Your log is the team's institutional memory. What you record here prevents repea
 
 **Launcher = The Closer. Complete the cycle. Document. Learn. Publish. Celebrate.**
 
+## Code I own
+
+- `commands/task/closing/`: Closing and cleaning up tasks: done, finish, archive, reopen, clear-done, pruning test junk, reaping blockers and relabeling archived tasks. Moved out of `commands/task.js` on 2026-11-16; read its README.md before changing it.
+- `commands/task/results/`: A task's public result: the result card, the accept receipt, agent XP, scorecards and the result log. Moved out of `commands/task.js` on 2026-11-16; read its README.md before changing it.

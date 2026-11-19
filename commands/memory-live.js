@@ -135,6 +135,7 @@ const COMMANDS = {
     },
     async run(ctx, { query, folder }) {
       const data = await ctx.call(`/memory/grep?q=${enc(query)}${folder ? `&folder=${enc(folder)}` : ''}`);
+      if (!ctx.flags['--all-files']) live.hideRawData(data);
       return { data: { query, folder, ...data }, lines: live.searchLines(query, data) };
     },
   },
@@ -149,6 +150,7 @@ const COMMANDS = {
     async run(ctx, { question, folder }) {
       // The server reads for up to 75 seconds; asking twice would count twice.
       const data = await ctx.call(`/memory/ask?q=${enc(question)}${folder ? `&folder=${enc(folder)}` : ''}`, { timeoutMs: 90000, retries: 0 });
+      if (!ctx.flags['--all-files']) live.hideRawData(data);
       return { data, lines: live.askLines(data) };
     },
   },

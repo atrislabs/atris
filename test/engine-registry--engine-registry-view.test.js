@@ -39,6 +39,7 @@ const PROFILES = [
       'gemini-3.8-flash',
       'gemini-4-argon-high',
       'gemini-4-argon-medium',
+      'gemini-4-hydrogen',
       'gemini-4-carbon-low',
       'gemini-4-carbon-medium',
       'gemini-4-carbon-high',

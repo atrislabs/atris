@@ -78,6 +78,7 @@ Then:
 - do not execute if another agent owns the same task or files
 - do not call something complete without verification
 - land or reap: work is not done until it is merged to the base branch or reaped; if you make a branch or worktree, you merge it or delete it before you stop. Run `atris land` to see limbo; anything past 7 days gets salvaged to `.atris/salvage/` and deleted by `atris land --reap`.
+- land through the check: in a project with `atris/checks.json`, `atris check` checks a change and writes a receipt; `atris check --push` pushes it or stages it with that receipt; `atris check --verify` works the plan out again to see whether the receipt still holds. The hourly lander accepts only a receipt it can work out again; a hand-edited one is refused (`guarded`).
 - do not take irreversible actions without approval from the human
 - do not hide state outside markdown, logs, diffs, or the journal
 - do not edit the rules that judge you: the reward config, the authority policy, or this file

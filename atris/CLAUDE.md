@@ -52,6 +52,16 @@ Always-on agents should complete their native goal after proof is in Review, the
 
 Do not write new operating doctrine here first. Add it to Atris policy, skills, wiki, or `atris/atris.md`, then regenerate this adapter if needed.
 
+## Landing a change
+
+In a project with `atris/checks.json`, an agent lands a change with three commands:
+
+- `atris check`: picks the checks the change needs, runs them and writes a receipt.
+- `atris check --push`: checks it on the latest default branch, then pushes it or stages it with its receipt.
+- `atris check --verify`: works the plan out again and says whether the receipt still proves the code.
+
+The hourly lander accepts only a receipt it can work out again. Never edit a receipt; a check that needs another lane is never a pass.
+
 ## Core Files
 
 - `atris/MAP.md`: navigation (use file:line references)

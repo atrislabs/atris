@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 'use strict';
 
-// The owner's way of reading the feed, scripted: two awake members, ask for
-// more at the end of the feed again and again, scroll past every idea without
-// deciding. Every ask must bring at least one new card. Stand-in model; the
+// The owner's way of reading the feed, scripted: two awake members, press
+// refresh again and again, scroll past every idea without deciding. Every
+// press must bring at least one new card. (Reaching the end of the feed is
+// not a press: by itself the feed asks only when something changed, see
+// AUTO_RUNS_PER_HOUR in lib/feed-team.js.) Stand-in model; the
 // wait between asks of one member is counted, not slept.
 //
 //   node scripts/feed-scroll-check.js [--asks 30] [--json]
@@ -54,7 +56,7 @@ async function runScrollCheck({ asks = 30 } = {}) {
   const rounds = [];
   for (let i = 1; i <= asks; i += 1) {
     const events = [];
-    const out = await team.pingStream(root, { reason: 'scroll', env, deps, onEvent: (e) => events.push(e) });
+    const out = await team.pingStream(root, { reason: 'refresh', env, deps, onEvent: (e) => events.push(e) });
     const made = events.filter((e) => e.type === 'card_done' && !e.merged).length;
     rounds.push({ ask: i, made, reason: out.reason });
     const shown = feed.listCards(root, { env, limit: 100 }).cards.filter((c) => c.needs_decision).map((c) => c.id);

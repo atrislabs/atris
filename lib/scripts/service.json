@@ -1,0 +1,301 @@
+{
+  "id": "service",
+  "ready": true,
+  "title": "Start a service business",
+  "pitch": "Get your first paying client from nothing.",
+  "thing": "service",
+  "opening": [
+    "A few quick questions so your team knows you.",
+    "Pick a number or say it your own way. There are no wrong answers."
+  ],
+  "questions": [
+    {
+      "id": "skill",
+      "line": "What can you do that someone would pay for?",
+      "choices": [
+        { "id": "build", "label": "Build or fix websites and tools", "says": "building and fixing websites and tools" },
+        { "id": "design", "label": "Design things that look good", "says": "design work" },
+        { "id": "write", "label": "Write or edit words", "says": "writing and editing" },
+        { "id": "organize", "label": "Sort out messy work: books, schedules, inboxes", "says": "sorting out messy back office work" }
+      ]
+    },
+    {
+      "id": "clients",
+      "line": "Who do you want to do it for?",
+      "choices": [
+        { "id": "local", "label": "Small local shops and services", "says": "small local businesses" },
+        { "id": "solo", "label": "Solo professionals: coaches, tutors, therapists", "says": "solo professionals" },
+        { "id": "sellers", "label": "Small online sellers", "says": "small online sellers" },
+        { "id": "founders", "label": "Founders of small teams", "says": "founders of small teams" }
+      ]
+    },
+    {
+      "id": "pain",
+      "line": "What headache would you take off their plate?",
+      "choices": [
+        { "id": "evenings", "label": "The job that eats their evenings", "says": "the job that eats their evenings" },
+        { "id": "put-off", "label": "The thing they keep putting off", "says": "the thing they keep putting off" },
+        { "id": "only-them", "label": "The work only they can do, so it piles up", "says": "the work that piles up because only they can do it" },
+        { "id": "losing", "label": "The gap that is costing them customers", "says": "the gap that is costing them customers" }
+      ]
+    },
+    {
+      "id": "hours",
+      "line": "How many hours a week can you really give this? Pick the honest one.",
+      "choices": [
+        { "id": "five", "label": "About 5", "says": "about five hours a week" },
+        { "id": "ten", "label": "About 10", "says": "about ten hours a week" },
+        { "id": "twenty", "label": "About 20", "says": "about twenty hours a week" },
+        { "id": "full", "label": "All of my week", "says": "your whole week" }
+      ]
+    },
+    {
+      "id": "proud",
+      "line": "A year from now, what would make you proud?",
+      "choices": [
+        { "id": "stranger", "label": "Someone I never met pays me", "says": "someone you never met pays you" },
+        { "id": "rent", "label": "It covers my rent", "says": "it covers your rent" },
+        { "id": "again", "label": "A client comes back a second time", "says": "a client comes back a second time" },
+        { "id": "choose", "label": "I can say no to work I do not want", "says": "you can say no to work you do not want" }
+      ]
+    },
+    {
+      "id": "number",
+      "goal": "number",
+      "line": "What number would tell you this is working? Say it your way.",
+      "hint": "Not sure yet? Press enter. You can add it later."
+    },
+    {
+      "id": "date",
+      "goal": "date",
+      "line": "By when?",
+      "hint": "Not sure yet? Press enter. You can add it later."
+    }
+  ],
+  "playback": [
+    { "asks": ["skill", "clients"], "line": "You offer {skill} to {clients}." },
+    { "asks": ["pain"], "line": "You take away {pain}." },
+    { "asks": ["hours"], "line": "You can give it {hours}." },
+    { "asks": ["proud"], "line": "You will be proud when {proud}." },
+    { "asks": ["number", "date"], "line": "{goal_line}" }
+  ],
+  "mission": "A one-person service for {clients} that takes away {pain}.",
+  "values": {
+    "will": [
+      "Sell one thing to one kind of client.",
+      "Name one price. A real number, never a range.",
+      "Do the homework on a person before you write to them.",
+      "Follow up twice. Most yeses come after the second note.",
+      "Get paid before you build anything made just for them."
+    ],
+    "will_not": [
+      "Send the same note to a hundred people.",
+      "Count a kind reply as a win. Only money counts.",
+      "Chase someone who needs the whole idea explained before they see the value.",
+      "Send anything you did not write and approve."
+    ]
+  },
+  "your_part": [
+    "You pick the offer and the price.",
+    "You write and send every note. Nothing goes out without you.",
+    "You answer the questions or take the call.",
+    "You say when the work is good enough to hand over."
+  ],
+  "team": [
+    { "name": "researcher", "role": "Researcher", "job": "Finds real owners who fit and does the homework on each one." },
+    { "name": "editor", "role": "Editor", "job": "Tightens your offer and your notes without changing your voice." },
+    { "name": "keeper", "role": "Keeper", "job": "Keeps every person, reply and follow-up date in one list." },
+    { "name": "maker", "role": "Maker", "job": "Helps you do the work and checks it before the client sees it." }
+  ],
+  "chapters": [
+    {
+      "id": "offer",
+      "title": "One offer",
+      "finish_line": "You approved one sentence: who it is for, what you fix and one price.",
+      "take": "Pick the smallest job you could finish in a week. Small offers get a yes. Big ones get a meeting.",
+      "moves": [
+        {
+          "id": "their-words",
+          "who": "you",
+          "taste": true,
+          "minutes": 10,
+          "you": "Write the headache the way your client would say it at 9pm. One sentence, their words.",
+          "brief": "Do not write this for them. When the sentence arrives, save it as it is in {run_dir}/their-words.md.",
+          "proof_hint": "the sentence you wrote"
+        },
+        {
+          "seat": "editor",
+          "id": "offer-drafts",
+          "who": "team",
+          "you": "Your editor turns that sentence into three ways to say your offer, with the price left blank.",
+          "brief": "Read {run_dir}/their-words.md. Write three one-sentence offers for {clients}: who it is for and the one thing fixed, using {skill}. Each must be a job one person can finish in a week. Leave the price blank. Never use the words AI, agent or automate. Save as {run_dir}/offer-drafts.md."
+        },
+        {
+          "id": "set-price",
+          "who": "you",
+          "taste": true,
+          "minutes": 5,
+          "you": "Pick one price. Choose a number they could say yes to without asking anyone.",
+          "brief": "The price is theirs. If they ask for help, say what the offer saves the client in hours or money and let them choose. Never pick the number.",
+          "proof_hint": "the price you picked"
+        },
+        {
+          "id": "approve-offer",
+          "who": "you",
+          "taste": true,
+          "finish": true,
+          "minutes": 5,
+          "you": "Pick the offer that sounds like you and add your price. Say it out loud once.",
+          "brief": "This call is theirs. Save the chosen sentence with the price as {run_dir}/offer.md.",
+          "proof_hint": "the offer with its price"
+        }
+      ]
+    },
+    {
+      "id": "twenty",
+      "title": "Twenty real people",
+      "finish_line": "20 owners on your list, each checked by hand, each with one true detail.",
+      "take": "Twenty people you studied beat two hundred you copied from a list. Owners who answer their own email are the ones who reply.",
+      "moves": [
+        {
+          "seat": "researcher",
+          "id": "who-fits",
+          "who": "team",
+          "you": "Your researcher writes the rule for who fits, so nobody wastes a note.",
+          "brief": "Write the fit rule for {clients} in four lines: they decide alone, they feel {pain} every week, they answer their own email, they are small enough that the price is a real choice. Add who to skip: big companies and anyone who wants free custom work first. Save as {run_dir}/who-fits.md."
+        },
+        {
+          "seat": "researcher",
+          "id": "find-twenty",
+          "who": "team",
+          "you": "Your researcher finds twenty real owners who fit, each with one true detail.",
+          "brief": "Find 20 owners among {clients} who match {run_dir}/who-fits.md. For each: name, business, town, the page they control where their contact is printed, and one true recent detail with its link. Read public pages only, never one behind a sign-in. Mark an address you could not see on their own page as unconfirmed. Never guess an address. Save as {run_dir}/people.md."
+        },
+        {
+          "id": "check-list",
+          "who": "you",
+          "taste": true,
+          "finish": true,
+          "minutes": 20,
+          "you": "Read the list. Cross off anyone you would not enjoy working for. Star the ten you want most.",
+          "brief": "The picks are theirs. Keep the crossed off names out of every later step.",
+          "proof_hint": "how many stayed and how many you starred"
+        }
+      ]
+    },
+    {
+      "id": "ten-notes",
+      "title": "Ten notes sent",
+      "finish_line": "10 notes sent, each written by you, each about one person.",
+      "take": "The first note is not a pitch. It shows you noticed something real, names one price and asks one question they can answer in a line.",
+      "moves": [
+        {
+          "seat": "researcher",
+          "id": "homework",
+          "who": "team",
+          "you": "Your researcher does the homework on your ten: three facts each and the one problem they point at.",
+          "brief": "For each starred person in {run_dir}/people.md, spend ten minutes. Note three public facts (town, years open, one recent post) and the one problem they already talk about, in their own words, with links. Say so when a detail is thin. Save as {run_dir}/homework.md."
+        },
+        {
+          "id": "first-note",
+          "who": "you",
+          "taste": true,
+          "minutes": 15,
+          "you": "Write one note to the person you most want. Four lines: their problem in their words, what you would do, your price, one small question.",
+          "brief": "They write every word. If they ask, the editor may cut words, never add ideas. No call or meeting ask in the first note. Save their note as {run_dir}/first-note.md.",
+          "proof_hint": "where the note is"
+        },
+        {
+          "id": "send-ten",
+          "who": "you",
+          "taste": true,
+          "finish": true,
+          "you": "Send ten notes, one person at a time, each changed to fit that person. Your proof is the count and the day.",
+          "brief": "Only they send. Never send or schedule a message for them and never send to many at once. After each send, the keeper adds the person and the day to {run_dir}/sent.md.",
+          "proof_hint": "how many you sent and when"
+        }
+      ]
+    },
+    {
+      "id": "conversation",
+      "title": "First real conversation",
+      "finish_line": "One owner replied and you answered their questions or talked for twenty minutes.",
+      "take": "Follow up on day 5 and day 12, then stop. Every follow-up brings one new idea. Never write just checking in.",
+      "moves": [
+        {
+          "seat": "keeper",
+          "id": "follow-up-dates",
+          "who": "team",
+          "you": "Your keeper puts a follow-up date next to every note you sent.",
+          "brief": "For each person in {run_dir}/sent.md, write two follow-up dates: 5 days and 12 days after the send. After the second with no reply, mark them quiet and stop. Save as {run_dir}/follow-ups.md."
+        },
+        {
+          "seat": "researcher",
+          "id": "follow-up-ideas",
+          "who": "team",
+          "you": "Your researcher finds one useful idea for each person who has not replied.",
+          "brief": "For each person due a follow-up, find one specific idea that helps them with {pain}, from something public and new since the first note. One line each with its link. Save as {run_dir}/follow-up-ideas.md. Ideas only, never a written message."
+        },
+        {
+          "id": "follow-up",
+          "who": "you",
+          "taste": true,
+          "minutes": 15,
+          "you": "Write and send the follow-ups that are due. One new idea each, two lines.",
+          "brief": "Only they write and send. Never offer a third follow-up to the same person.",
+          "proof_hint": "how many follow-ups you sent"
+        },
+        {
+          "id": "first-talk",
+          "who": "you",
+          "taste": true,
+          "finish": true,
+          "you": "When someone replies, say their problem back in their words. If they agree that is the problem, tell them your price.",
+          "brief": "The conversation is theirs. Keep calls to twenty minutes. If the person has to be convinced there is a problem, they are not the first client. Note what they said they need in {run_dir}/replies.md.",
+          "proof_hint": "who replied and what they said they need"
+        }
+      ]
+    },
+    {
+      "id": "first-paid",
+      "title": "First paid job",
+      "finish_line": "One client paid you, the work is handed over and you wrote down why they said yes.",
+      "take": "Get paid before you start. Someone who wants free custom work first is not your first client.",
+      "moves": [
+        {
+          "id": "ask-for-yes",
+          "who": "you",
+          "taste": true,
+          "minutes": 10,
+          "you": "Ask for the yes in one message: the job, the price and the day you start.",
+          "brief": "They write and send it. One job, one price, one start day. No extras and no discount unless they choose one.",
+          "proof_hint": "the message you sent"
+        },
+        {
+          "id": "get-paid",
+          "who": "you",
+          "taste": true,
+          "you": "Get paid before you start. Make paying easy, in the money they use.",
+          "brief": "Only they take the payment. A kind reply or a promise is not a payment. Count it only when the money arrives.",
+          "proof_hint": "the payment you can see"
+        },
+        {
+          "seat": "maker",
+          "id": "done-list",
+          "who": "team",
+          "you": "Your maker writes the short list that says when this job is done.",
+          "brief": "Read {run_dir}/offer.md and {run_dir}/replies.md. Write five lines or fewer that say what done means for this client, each one checkable. Save as {run_dir}/done-list.md. Help with the work when asked and check it against the list before it goes out."
+        },
+        {
+          "id": "hand-over",
+          "who": "you",
+          "taste": true,
+          "finish": true,
+          "you": "Hand over the work. Then ask one question: what made you say yes? Write the answer down. It is your pitch now.",
+          "brief": "They hand it over and ask the question. Save the client's answer, in the client's words, as {run_dir}/why-yes.md.",
+          "proof_hint": "the payment and why they said yes"
+        }
+      ]
+    }
+  ]
+}

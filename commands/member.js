@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
 const { loadCredentials, ensureFreshCredentials } = require('../utils/auth');
@@ -18,13 +17,13 @@ const { memberProcessPrompt, MEMBER_PROCESS_PATH } = require('../lib/member-cont
 // Runtime aliases: problem-finder, info-organizer, coordinator, task-planner, improver, problem-solver
 // memberPaths resolves steeringJsonl: path.join(workspaceRoot, '.atris', 'state', 'steering.jsonl')
 const {
-  findWorkspaceBusinessId, todayLogName, ensureMemberLog, appendMemberLifecycleLog, archiveName,
+  findWorkspaceBusinessId, ensureMemberLog, appendMemberLifecycleLog, archiveName,
   uniqueArchiveDir, parseDaysFlag, parseConfirmFlag, readRepeatedFlag, stripKnownFlags,
   stampIso, fileSafeStamp, slugHash, makeGoalId, uniqueGoalId, makeExperimentId,
   MEMBER_RUNTIME_ALIASES, memberRuntimeKind, resolveMemberRuntime, memberPaths,
-  missionFileMarkdown, ensureMissionFile, listExistingMemberSlugs, editDistance, nearestMemberSlug,
-  memberRefusalFor, requireRunnableMember, requireMemberDir, emptyMemberGoals, loadMemberGoals,
-  activeGoal, allExperiments, findExperiment, latestByTime, recentLogLines, readOptionalText,
+  missionFileMarkdown, ensureMissionFile, listExistingMemberSlugs, nearestMemberSlug,
+  memberRefusalFor, requireRunnableMember, requireMemberDir, loadMemberGoals,
+  activeGoal, allExperiments, findExperiment, latestByTime, recentLogLines,
   extractMarkdownSection, firstUsefulLine, compactSentence, activeRuntimeMissionFromNow, missionPurpose,
   MEMBER_RUN_RUNNABLE_STATUSES, MISSION_TERMINAL_STATUSES, memberRunMissionMap,
   memberRunRunnableMissionId, memberRunOwnedActiveMissionId, MEMBER_LIVE_MISSION_STATUSES,
@@ -455,7 +454,10 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   // "fatal: not a git repository", degrade to the shared checkout instead.
   // A job that says "do not commit" wants the change in the person's own
   // files; a side checkout would hide uncommitted work where they never see it.
-  const forbidsCommit = !hasFlag(args, '--worktree') && require('../lib/member-save-work').jobForbidsCommit(missionText);
+  const forbidsCommit = !hasFlag(args, '--worktree') && require('../lib/member-save-work').memberForbidsLanding(owner, missionText, cwd);
+  if (hasFlag(args, '--shared-checkout') || hasFlag(args, '--no-worktree')) {
+    startArgs.push('--shared-checkout');
+  }
   if (!forbidsCommit && !hasFlag(args, '--shared-checkout') && !hasFlag(args, '--no-worktree') && insideGitRepo(cwd)) {
     startArgs.push('--worktree');
   }
@@ -801,6 +803,13 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
     }
   }
 
+  const missionCheckout = mission.worktree_root || mission.worktree?.path;
+  if ((hasFlag(args, '--shared-checkout') || hasFlag(args, '--no-worktree'))
+    && missionCheckout && path.resolve(missionCheckout) !== path.resolve(process.cwd())) {
+    return printMemberRunResult({ started: false, state: mission.status, mission_id: mission.id, mission,
+      error: 'this job belongs to a separate checkout; start a new shared checkout job instead' }, asJson, { quiet });
+  }
+
   if (startedNewMission && !asJson) {
     if (mission.worktree?.path) console.log(`worktree: ${mission.worktree.path}`);
     if (nodeModulesLinked) console.log(`linked node_modules from ${nodeModulesSource}`);
@@ -838,7 +847,7 @@ function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
   else if (ignite && memberRunHasRealCheck(mission.verifier) && !hasFlag(runArgs, '--no-referee')) runArgs.push('--referee-if-check-edited');
   const budgetSeconds = memberRunBudgetSeconds(args);
   if (!readFlag(runArgs, '--max-ticks', '')) {
-    runArgs.push('--max-ticks', budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
+    runArgs.push('--max-ticks', budgetSeconds ? String(require('./run-front').runTickBudget([], budgetSeconds)) : '1');
   }
   if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', String(budgetSeconds || memberRunDefaultWallSeconds(name, cwd)));
   const caller = callerRuntime(args);
@@ -7713,10 +7722,10 @@ async function runMemberWake(name, { execute = false, confirmed = false, force =
 // The JSON contract (atris.member_wake.v1) is untouched; this only changes what a person sees.
 
 const WAKE_REASON_TEXT = {
-  mission_missing_or_placeholder: "it has no North Star yet, and it won't guess at important work",
+  mission_missing_or_placeholder: 'it needs a clear purpose before it can choose work',
   no_active_goal: 'it has no active goal to push on yet',
   execute_requires_confirm_autonomy_policy: 'autonomous execution waits for your explicit go-ahead',
-  workspace_dirty_in_member_scope: "there are uncommitted changes in its own lane, it won't build on a dirty floor",
+  workspace_dirty_in_member_scope: 'its files have unsaved changes that need attention first',
   blocked_experiment: 'its current experiment is blocked on a human answer',
   tick_executed_experiment_proposed: 'it proposed one bounded experiment and queued it for your review',
   safe_next_bounded_step: 'it found a safe bounded next step',
@@ -7731,7 +7740,7 @@ const WAKE_REASON_TEXT = {
   heuristic_objective_proposal_dry_run: 'it previewed an objective proposal using its built-in heuristics, without writing it',
   install_requires_clean_git: 'installing needs a clean git tree first',
   insufficient_world_model_data: 'its world model is too thin to act on yet',
-  skipped_llm_not_configured: 'no model is configured here, so it skipped quietly instead of writing another dry-run receipt',
+  skipped_llm_not_configured: 'no model is configured here',
   llm_json_parse_failed: 'the model reply did not parse, so it stopped rather than act on garbage',
   llm_json_parse_failed_heuristic_used: 'the model reply did not parse, so it fell back to built-in heuristics',
   missing_domain_input: 'it needs a domain file or domain text from you to work on',
@@ -7802,10 +7811,10 @@ function wakeBootLines(name, result) {
     '',
     `${s.cyan('\u25c8')} ${s.bold(name)} is waking up${role ? ` ${s.dim(`\u00b7 ${role}`)}` : ''}`,
     '',
-    `  mission   ${northStar ? clipText(northStar, 70) : s.dim('no North Star yet')}`,
+    `  purpose   ${northStar ? clipText(northStar, 70) : s.dim('not set yet')}`,
     `  goal      ${goal ? clipText(goal, 70) : s.dim('none yet')}`,
     ...(experiment ? [`  working   ${clipText(experiment, 70)}`] : []),
-    ...(laneCandidates !== null ? [`  lane      ${laneCandidates} task${laneCandidates === 1 ? '' : 's'} waiting in ${name}'s lane`] : []),
+    ...(laneCandidates !== null ? [`  work      ${laneCandidates} task${laneCandidates === 1 ? '' : 's'} waiting for ${name}`] : []),
     ...(result.engine && result.engine.id ? [`  engine    ${clipText(String(result.engine.reason || '').replace(`${name} does `, ''), 70)}`] : []),
     '',
     `  ${s.bold(name)} looked around and ${s.bold(decisionText)}.`,
@@ -7816,16 +7825,15 @@ function wakeBootLines(name, result) {
     lines.push('', `  On the board: ${result.created_task.display_id || result.created_task.legacy_ref || ''} ${clipText(result.created_task.title, 70)}`.trimEnd());
   }
   if (result.ask) {
-    lines.push('', `  ${s.bold('One thing from you:')}`, `    ${result.ask}`);
+    const ask = result.reason === 'mission_missing_or_placeholder'
+      ? `Add a clear purpose to atris/team/${name}/MISSION.md.` : result.ask;
+    lines.push('', `  ${s.bold('One thing from you:')}`, `    ${ask}`);
   }
   if (result.next_command) {
     const ballWithHuman = result.needs_user === true
       || result.decision === 'ask'
       || /^open_experiment_/.test(result.reason || '');
     lines.push('', `  ${s.bold(ballWithHuman ? 'Your move' : 'Next step')}`, `    ${s.cyan(result.next_command)}`);
-  }
-  if (result.receipt_path) {
-    lines.push('', `  ${s.dim(`receipt \u00b7 ${path.relative(process.cwd(), result.receipt_path)}`)}`, '');
   }
   return lines;
 }
