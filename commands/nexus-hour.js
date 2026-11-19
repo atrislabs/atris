@@ -37,6 +37,9 @@ const HELP = [
   '                                      one hour of outbound on one saved list; --list runs it on a list you already have',
   '  atris nexus hour                    minutes left, the guess, the scoreboard and the one next thing to do',
   '  atris nexus hour add "<name>" [--email --company --city --site --why "..." --source <url>]   add them and put them on the list',
+  '  atris nexus hour start ... --new-only   the whole hour adds only people new to your Nexus; it cannot be turned off until the hour ends',
+  '  atris nexus hour add "<name>" --new-only --source <url> --why "<why them>" [--email --company --title --city --site --linkedin --x]',
+  '                                      adds them only if they are new to your Nexus; anyone already known is skipped and nothing changes',
   '  atris nexus hour next               the one person who most needs work, what is known and what is missing',
   '  atris nexus hour research "<name>" --level 1|2 --confidence <0-100> --source <url> --why "<one line>"',
   '                                      level 1 is the business, level 2 is the person; nothing is kept without a source',
@@ -47,8 +50,12 @@ const HELP = [
 ];
 
 const VALUES = new Set(['guess', 'minutes', 'list', 'email', 'company', 'city', 'site', 'why', 'source', 'level',
-  'confidence', 'subject', 'body-file', 'learned', 'step', 'person']);
-const SWITCHES = new Set(['json', 'new', 'as-helper', 'help']);
+  'confidence', 'subject', 'body-file', 'learned', 'step', 'person', 'title', 'linkedin', 'x']);
+const SWITCHES = new Set(['json', 'new', 'as-helper', 'help', 'new-only']);
+// Only a new-only add sends these, so they are refused anywhere else.
+const NEW_ONLY_FIELDS = ['title', 'linkedin', 'x'];
+const NEW_ONLY = 'new_only';
+const NEW_ONLY_STATUSES = new Set(['created', 'replayed', 'skipped']);
 const AGENT_MARKS = ['CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CODEX_SANDBOX', 'CURSOR_AGENT', 'DEVIN_SESSION_ID'];
 
 const READY_AT = 75;
@@ -193,6 +200,66 @@ function storeApi(request, token) {
 }
 
 const enc = encodeURIComponent;
+
+// ---------------------------------------------------------------------------------------------
+// New-only adds: the strict way in. Anyone Nexus already knows is skipped with nothing changed.
+
+/** The signed-in account as a short one-way mark, or '' when it cannot be told. */
+function accountMark(got, token) {
+  let id = got && typeof got.account === 'string' ? got.account.trim() : '';
+  if (!id) {
+    try {
+      const part = String(token || '').split('.')[1];
+      const claims = part ? JSON.parse(Buffer.from(part.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')) : null;
+      if (claims && typeof claims.sub === 'string') id = claims.sub.trim();
+    } catch {
+      id = '';
+    }
+  }
+  return id ? crypto.createHash('sha256').update(`nexus-hour-account\n${id}`).digest('hex').slice(0, 32) : '';
+}
+
+/** The screen that checks connected data before anything is sent. Loaded only when it is used. */
+function screenFor(deps) {
+  if (typeof deps.screenNewProspect === 'function') return deps.screenNewProspect;
+  try {
+    const mod = require('../lib/nexus-new-only-screen');
+    return mod && typeof mod.screenNewProspect === 'function' ? mod.screenNewProspect : null;
+  } catch {
+    return null;
+  }
+}
+
+/** One add on one list, the same every time it is asked, whatever day it is. */
+function newOnlyRef(account, listId, fields) {
+  const parts = [account, listId, nameKey(fields.name), String(fields.email || '').toLowerCase(), nameKey(fields.company),
+    nameKey(fields.title), nameKey(fields.city), fields.website || '', fields.linkedin_url || '', fields.x || '',
+    fields.source_url, fields.words];
+  return `hour-new-${crypto.createHash('sha256').update(parts.join('\n')).digest('hex').slice(0, 40)}`;
+}
+
+/** The new-only answer from Nexus, or null when it is not one this command can trust. */
+function readNewOnly(data) {
+  if (!data || typeof data !== 'object') return null;
+  const status = String(data.status || '');
+  if (!NEW_ONLY_STATUSES.has(status)) return null;
+  if (status === 'skipped') return { status };
+  const id = String(data.person_id || '');
+  return UUID.test(id) ? { status, id: id.toLowerCase() } : null;
+}
+
+const NEW_ONLY_UNSURE = 'Nexus did not say whether they were added. Run the same command again: it will not add them twice.';
+
+function newOnlyError(result) {
+  const status = result ? result.status : 0;
+  if (status === 404) return new Error('Nexus could not find the list or the new-only capture endpoint. Nothing was saved.');
+  if (status === 405) return new Error('This Nexus server does not support adding only new people. Nothing was saved.');
+  if (status === 402) return Object.assign(new Error(LOCKED_LINE), { status: 402 });
+  if (status === 401) return new Error('Sign in to see your people. Run: atris login');
+  if (status === 503) return new Error('The people store is paused for a few minutes. Nothing was saved. Try again shortly.');
+  if (status === 0 || status >= 500) return new Error(NEW_ONLY_UNSURE);
+  return new Error(S.plainError(result));
+}
 
 async function myLists(api) {
   const data = await api.get('/nexus/lists');
@@ -395,6 +462,29 @@ async function run(ctx) {
   } catch (error) {
     return fail(error.message);
   }
+  // New-only: asked for on start or add, or kept on the clock by a new-only start. A clock that was
+  // started new-only can never add the old way, and a mode this version does not know is treated
+  // the same, so nothing quietly falls back.
+  const clockStrict = !!clock && clock.mode !== undefined;
+  const strictStart = sub === 'start' && !!flags['new-only'];
+  const strictAdd = sub === 'add' && (clockStrict || !!flags['new-only']);
+  if (flags['new-only'] && sub !== 'start' && sub !== 'add') return fail('--new-only goes with start or add. Nothing was changed.', 2);
+  if (!strictAdd && NEW_ONLY_FIELDS.some((k) => flags[k] !== undefined)) {
+    return fail('--title, --linkedin and --x go with a new-only add: atris nexus hour add "<name>" --new-only ... Nothing was changed.', 2);
+  }
+  if ((strictStart || strictAdd) && (given(flags, 'person') || flags.new)) {
+    return fail('A new-only add takes neither --person nor --new: it adds only people new to your Nexus and skips anyone already known. Nothing was changed.', 2);
+  }
+  if (strictAdd) {
+    if (clockStrict && (clock.mode !== NEW_ONLY || !clock.account)) return fail('This hour\'s clock cannot tell which account started it, so nothing was added. End it and start again with --new-only.', 1);
+    const source = given(flags, 'source');
+    if (!source) return fail('A new-only add needs the page you found them on: --source <url>. Nothing was saved.', 2);
+    if (!/^https?:\/\/\S+$/i.test(source)) return fail('--source is the web address of the page you found them on, starting with https://. Nothing was saved.', 2);
+    if (source.length > SOURCE_MOST) return fail(`Keep --source under ${SOURCE_MOST} characters. Nothing was saved.`, 2);
+    if (!given(flags, 'why')) return fail('A new-only add needs the one reason for them: --why "<why them>". Nothing was saved.', 2);
+    if (given(flags, 'why').length > WHY_MOST) return fail(`Keep --why to one line, under ${WHY_MOST} characters. Nothing was saved.`, 2);
+  }
+
   if (sub === 'start') {
     if (clock) {
       const t = timeOf(clock, now);
@@ -439,12 +529,19 @@ async function run(ctx) {
   if (sub === 'end' && given(flags, 'learned').length > LEARNED_MOST) return fail(`Keep what you learned under ${LEARNED_MOST} characters.`, 2);
 
   let token;
+  let account = '';
   try {
-    ({ token } = await ctx.getToken());
+    const got = await ctx.getToken();
+    token = got && got.token;
+    account = accountMark(got, token);
   } catch (error) {
     return fail(error && error.message);
   }
   if (!token) return fail(ctx.notLoggedIn || 'Sign in first: atris login');
+  if ((strictStart || strictAdd) && !account) return fail('Could not tell which account is signed in, so nothing was changed. Sign in again: atris login', 1);
+  if (strictAdd && clockStrict && clock.account !== account) {
+    return fail('A different account is signed in than the one that started this hour, so nothing was added. Sign in to that account, or end the hour and start a new one.', 1);
+  }
   const api = storeApi(ctx.request, token);
   const notLive = [];
   const say = (key) => { if (!notLive.includes(key)) notLive.push(key); };
@@ -525,19 +622,91 @@ async function run(ctx) {
         started_at: now.toISOString(),
         ends_at: new Date(now.getTime() + minutes * 60000).toISOString(),
         ...(guessSaved ? {} : { guess }),
+        ...(strictStart ? { mode: NEW_ONLY, account } : {}),
       };
       writeClock(file, clockNow);
       if (json) {
-        out({ ok: true, did: 'start', list: { id: String(list.id), name: clean(list.name), count: num(list.count), made }, cluster: clockNow.cluster, minutes, ends_at: clockNow.ends_at, guess_saved: guessSaved, not_live: notLive });
+        out({ ok: true, did: 'start', list: { id: String(list.id), name: clean(list.name), count: num(list.count), made }, cluster: clockNow.cluster, minutes, ends_at: clockNow.ends_at, guess_saved: guessSaved, new_only: strictStart, not_live: notLive });
         return 0;
       }
       log(`The hour started: ${minutes} minutes on ${quote(clockNow.cluster)}.`);
       log(made ? 'A new saved list was made for it.' : `It runs on your saved list ${quote(clean(list.name))}, ${plural(num(list.count), 'person', 'people')} on it.`);
+      if (strictStart) log('New people only: anyone already in your Nexus is skipped and left as it is, for the whole hour.');
       log(`Guess: ${guess}`);
       log(`Research every ${BEAT_MINUTES} minutes, two levels deep. A note is ready at confidence ${READY_AT} or more.`);
       sayNotLive();
       log('');
       log('See where it stands: atris nexus hour');
+      return 0;
+    }
+
+    if (strictAdd) {
+      // Nexus makes the card, keeps where they were found and why, and puts them on the list in one
+      // step. This side never touches the list or the card itself, not even on a replay.
+      const name = clean(words.slice(1).join(' '));
+      const email = given(flags, 'email');
+      const sourceUrl = given(flags, 'source');
+      const reason = given(flags, 'why').replace(/\s+/g, ' ');
+      const fields = { name, source_url: sourceUrl, words: `Why reach out: ${reason}\nSource: ${sourceUrl}` };
+      if (email) fields.email = email;
+      if (given(flags, 'company')) fields.company = given(flags, 'company');
+      if (given(flags, 'title')) fields.title = given(flags, 'title');
+      if (given(flags, 'city')) fields.city = given(flags, 'city');
+      if (given(flags, 'site')) fields.website = given(flags, 'site');
+      if (given(flags, 'linkedin')) fields.linkedin_url = given(flags, 'linkedin');
+      if (given(flags, 'x')) fields.x = given(flags, 'x');
+      const listId = String(clock.list_id);
+      const lists = await myLists(api);
+      if (!lists.some((l) => String(l.id).toLowerCase() === listId.toLowerCase())) {
+        return fail('This hour\'s list is not one of the signed-in account\'s saved lists, so nothing was added.', 1);
+      }
+      // What the check looked through, when it says, so the owner knows how far "new" was checked.
+      let looked = {};
+      const lookedLine = () => {
+        if (!looked.contacts_scope) return;
+        const { gmail, calendar, contacts } = looked.checked;
+        const sources = [
+          gmail && `${gmail} ${gmail === 1 ? 'mailbox' : 'mailboxes'}`,
+          calendar && `${calendar} ${calendar === 1 ? 'calendar' : 'calendars'}`,
+          contacts && `${contacts} Google Contacts ${contacts === 1 ? 'account' : 'accounts'}`,
+        ].filter(Boolean);
+        if (sources.length) log(`Checked ${sources.join(', ')}.`);
+        if (looked.contacts_scope === 'not_connected') log('Google Contacts was not checked.');
+      };
+      // Two kinds of known: you have written to or met them (the check), or Nexus already has their card.
+      const skipped = (by) => {
+        if (json) { out({ ok: true, did: 'add', new_only: true, status: 'skipped', list_id: listId, skipped_by: by, ...looked }); return 0; }
+        log(by === 'correspondence'
+          ? `${name} is already in your email, calendar or contacts, so they were skipped. Nothing was added or changed.`
+          : `${name} already has a card in your Nexus, so they were skipped. Nothing was added or changed.`);
+        lookedLine();
+        return 0;
+      };
+      const screen = screenFor(deps);
+      if (!screen) return fail('The check of your email, calendar and contacts could not run, so nothing was added.', 1, { new_only: true });
+      let screened;
+      try {
+        screened = await screen({ request: ctx.request, token, name, email: email || null });
+      } catch {
+        screened = null;
+      }
+      const verdict = screened && typeof screened === 'object' ? screened.status : '';
+      if (verdict && screened.checked && typeof screened.checked === 'object' && ['connected', 'not_connected'].includes(screened.contacts_scope)) {
+        const c = screened.checked;
+        looked = { checked: { gmail: num(c.gmail), calendar: num(c.calendar), contacts: num(c.contacts) }, contacts_scope: screened.contacts_scope };
+      }
+      if (verdict === 'matched') return skipped('correspondence');
+      if (verdict !== 'clear') return fail('Nexus could not verify this person against your connected accounts. Check your Google connections in Atris. Nothing was added.', 1, { new_only: true, ...looked });
+      const body = { ...fields, ref: newOnlyRef(account, listId, fields), list_id: listId, source: 'command_line' };
+      const result = await ctx.request('/nexus/capture/new-only', { token, method: 'POST', body, timeoutMs: WAIT_MS, retries: 0 });
+      if (!result || !result.ok) throw newOnlyError(result);
+      const got = readNewOnly(result.data);
+      if (!got) return fail(NEW_ONLY_UNSURE, 1, { new_only: true });
+      if (got.status === 'skipped') return skipped('nexus');
+      if (json) { out({ ok: true, did: 'add', new_only: true, status: got.status, id: got.id, list_id: listId, ...looked }); return 0; }
+      log(got.status === 'replayed' ? `${name} was already added by this same command. Nothing was added twice.` : `${name} is new, so they are in your Nexus and on the hour's list.`);
+      lookedLine();
+      log(`Next: atris nexus hour research ${quote(name)} --level 1 --confidence <0-100> --source <url> --why "<one line>"`);
       return 0;
     }
 
@@ -647,12 +816,13 @@ async function run(ctx) {
       const pick = nextPerson(people);
       const next = nextThing(counts, time, pick);
       if (json) {
-        out({ ok: true, running: true, cluster: clock.cluster, list_id: clock.list_id, minutes_left: time.left, minutes_used: time.used, minutes: time.total, time_up: time.up, guess, counts, next: { line: next.line, command: next.command, person_id: pick && !time.up && !counts.ready ? pick.person.id : null }, not_live: notLive });
+        out({ ok: true, running: true, cluster: clock.cluster, list_id: clock.list_id, new_only: clockStrict, minutes_left: time.left, minutes_used: time.used, minutes: time.total, time_up: time.up, guess, counts, next: { line: next.line, command: next.command, person_id: pick && !time.up && !counts.ready ? pick.person.id : null }, not_live: notLive });
         return 0;
       }
       log(`GTM hour: ${clock.cluster}`);
       log(time.up ? `Time is up (${time.total} minutes).` : `${plural(time.left, 'minute', 'minutes')} left, minute ${time.used} of ${time.total}. Next research pass at minute ${time.nextBeat}.`);
       log(`Guess: ${guess || '(none kept)'}`);
+      if (clockStrict) log('New people only: anyone already in your Nexus is skipped.');
       log('');
       for (const line of scoreboard(counts)) log(line);
       log('');

@@ -128,7 +128,8 @@ function peopleClient(request, token) {
 
 async function defaultToken() {
   const creds = await ensureFreshCredentials(apiRequestJson);
-  return { token: tokenFrom(creds) };
+  const account = creds && typeof creds.user_id === 'string' ? creds.user_id : '';
+  return { token: tokenFrom(creds), account };
 }
 
 /** One person by name: exact (any case) first, else the only name holding the words. */
