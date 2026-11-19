@@ -279,6 +279,18 @@ test('cards: finished work with a jargon title shows the plain words it reported
   assert.equal(update.state, 'working');
 });
 
+test('cards: finished work waiting for an ok says what was done, not only that it waits', (t) => {
+  const ctx = project(t);
+  const said = add(ctx, { title: 'Merged PR-12 into the repo', status: 'review', claimedBy: 'writer', metadata: { result: 'Merged in PR-12. Owners can now pay by card.' } });
+  const empty = add(ctx, { title: 'Bump lib/pay.js to v2', status: 'review', claimedBy: 'writer', metadata: { result: 'Merged commit 08ebaf9' } });
+
+  const [ask] = cardsOf(ctx, said).filter((card) => card.needs_decision);
+  assert.equal(ask.title, 'Owners can now pay by card.');
+  assert.match(ask.detail, /PR-12/, 'the raw title stays behind the detail');
+  const [bare] = cardsOf(ctx, empty).filter((card) => card.needs_decision);
+  assert.equal(bare.title, 'Finished work is waiting for your ok', 'a decision is never hidden, even with nothing plain to say');
+});
+
 // Moves a task's every time back by hours, as if it had sat that long.
 function ageTask(ctx, id, hours) {
   const at = Date.now() - hours * 3600000;
