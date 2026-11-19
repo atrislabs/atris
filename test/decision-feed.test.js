@@ -307,6 +307,37 @@ function ageNote(ctx, cardId, hours) {
   fs.writeFileSync(file, `${lines.join('\n')}\n`);
 }
 
+test('fresh: teammates answering each other do not hold an old note on the main list; in your own conversation they do', (t) => {
+  const ctx = project(t);
+  const room = require('../lib/feed-room');
+  const team = require('../lib/feed-team');
+  const theirs = room.say(ctx.root, { as: 'writer', text: 'The spring list is ready.', fromAsk: true, env: ctx.env, deps: ctx.deps }).card.id;
+  const joined = room.say(ctx.root, { as: 'writer', text: 'The autumn list is ready.', fromAsk: true, env: ctx.env, deps: ctx.deps }).card.id;
+  const mine = room.say(ctx.root, { text: 'Lets plan the week.', env: ctx.env, deps: ctx.deps }).card.id;
+  room.reply(ctx.root, joined, 'Send it on Friday.', { env: ctx.env });
+  for (const id of [theirs, joined, mine]) ageNote(ctx, id, 30);
+  const social = room.socialFile(ctx.root);
+  const old = new Date(Date.now() - 30 * 3600000).toISOString();
+  const stored = JSON.parse(fs.readFileSync(social, 'utf8'));
+  for (const entry of Object.values(stored)) { entry.updated_at = old; for (const reply of entry.replies || []) reply.at = old; }
+  fs.writeFileSync(social, JSON.stringify(stored));
+  const ids = () => cards(ctx).map((card) => card.id);
+  assert.deepEqual(ids(), [], 'all three have been quiet for over a day');
+
+  for (const id of [theirs, joined, mine]) room.reply(ctx.root, id, 'It went out to forty people.', { as: 'writer', direct: true, env: ctx.env, deps: ctx.deps });
+  assert.ok(!ids().includes(theirs), 'a teammate alone on its own old note does not bring it back');
+  assert.ok(ids().includes(joined), 'a note you commented on comes back when a teammate answers');
+  assert.ok(ids().includes(mine), 'your own note comes back when a teammate answers');
+  assert.ok(!feed.listCards(ctx.root, { since: '0', limit: 100, env: ctx.env }).cards.some((card) => card.id === theirs), 'and a delta does not bring it back either');
+  assert.equal(feed.readCard(ctx.root, theirs, { env: ctx.env }).reply_count, 1, 'the note and its comment are still there to read');
+
+  // The team is shown what you still see: the note that left is not brought up for more comments.
+  const brief = team.roomBrief(ctx.root, 'writer', { env: ctx.env });
+  const text = typeof brief === 'string' ? brief : JSON.stringify(brief);
+  assert.doesNotMatch(text, /spring list/, 'a note off the main list is not put in front of the team again');
+  assert.match(text, /autumn list/, 'a note still on it is');
+});
+
 test('fresh: a result and a team note quiet for a day leave the main list; an idea waiting for you stays; a comment brings a note back', (t) => {
   const ctx = project(t);
   const room = require('../lib/feed-room');

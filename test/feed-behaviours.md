@@ -109,6 +109,7 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 100 | found: old posts kept showing; a result or note quiet for a day leaves the main list, an idea waiting for you never does | fresh: a result and a team note quiet for a day leave the main list; an idea waiting for you stays; a comment brings a note back | yes |
 | 101 | found: some posts could not be dismissed; any card can be, for you only, and brought back | dismiss: any card leaves your feed; an idea waiting for you is dismissed as a decision; undo brings a hidden card back | yes |
 | 102 | found: teammates answered a question with only more questions; such an answer is not saved and says why | a teammate who only asks a question back is not saved: its pick fails with that reason, counts for the day and is not asked again by itself | yes |
+| 103 | found: day-old posts stayed because teammates kept commenting on them; comments keep a card fresh only in the person's own conversation, and the team is no longer shown a card that left the list | fresh: teammates answering each other do not hold an old note on the main list; in your own conversation they do | yes |
 
 ## Waiting chat windows
 
