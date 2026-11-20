@@ -24,7 +24,7 @@ const VALUE_FLAGS = new Set([
   '--reply',
   '--session', '--ask',
 ]);
-const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask', '--retry', '--run', '--independent', '--confirm', '--dry-run', '--undo']);
+const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask', '--retry', '--run', '--tagged', '--independent', '--confirm', '--dry-run', '--undo']);
 
 function parse(args) {
   const positional = [];
@@ -115,6 +115,8 @@ const HELP = [
   '                          or key; without --dry-run replaces each with a short marker (never prints the text)',
   '       atris feed react <card> 👍|❤️|😂|🔥|👀 [--as <member>]   (taps that reaction on or off, as you unless --as)',
   '       atris feed reply <card> "<text>" [--as <member>]          (a comment on any card, at most 1000 characters)',
+  '                          (yours naming @<member> asks each named, awake member to answer it once, right away, in the',
+  '                          comments; --json says who in "tagged". A tag asks for an answer, never starts the work)',
   '       atris feed discuss <card> [--retry] [--stream]',
   '                          (Atris reads your post, or your newest comment on it, with the project and the team, picks up to',
   '                          two awake members whose roles fit, and asks each for its own view as a comment. Once for each thing',
@@ -324,6 +326,8 @@ function printText(command, out, { streamed = false } = {}) {
     // Why a setup answer was not kept, in the words the desktop shows under the card.
     const note = (out.setup && out.setup.lesson_error) || out.setup_error;
     if (command === 'reply' && note) console.log(note);
+    if (command === 'reply' && Array.isArray(out.tagged) && out.tagged.length) console.log(`asked ${out.tagged.join(' and ')} to answer.`);
+    if (command === 'reply' && out.tag_note) console.log(out.tag_note);
     return;
   }
   if (out.message) console.log(`sent. ${out.reply_pending ? 'the team member answers on its next run.' : ''}`.trim());
@@ -538,7 +542,8 @@ async function run(args = [], context = {}) {
       if (flags.run) {
         // Internal: the background half that discuss starts.
         if (!positional[1] || !positional[2]) throw new feed.FeedError(400, 'usage: atris feed discuss --run <card> <round>');
-        await host.runRound(root, positional[1], positional[2], { env, deps });
+        if (flags.tagged) await host.runTagged(root, positional[1], positional[2], { env, deps });
+        else await host.runRound(root, positional[1], positional[2], { env, deps });
         return 0;
       }
       if (!positional[1]) throw new feed.FeedError(400, 'usage: atris feed discuss <card> [--retry]');
