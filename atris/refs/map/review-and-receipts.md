@@ -56,7 +56,7 @@ rg "planChecks|validateMap|lintMap|whereFromMarkers|codeIdentity|matchReceipt|fi
 
 ## Feature: Wall of shame code review (`atris code-review`, `atris cr`)
 
-**Purpose:** Check one change against the project's own recurring mistakes in `atris/SPEC.md` (qm-compatible `## Wall of shame` with `### Lens (always reviewed, reviewed on <model>, checked by CI, N examples)` headings). Distinct from the `atris review` workflow validator.
+**Purpose:** Check one change against the recurring mistakes in the project's atris/SPEC.md (qm-compatible `## Wall of shame` with `### Lens (always reviewed, reviewed on <model>, checked by CI, N examples)` headings). Distinct from the `atris review` workflow validator.
 
 - **Routing:** `bin/atris.js` routes `code-review` and `cr` to `commands/review.js` (`reviewCommand`), which returns the exit code
 - **Spec parsing:** `lib/wall-of-shame.js` (`parseSpec`) reads lenses and flags; (`addExample`) appends one dated bullet and bumps the heading count for `atris code-review add`

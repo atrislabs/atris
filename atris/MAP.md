@@ -32,7 +32,7 @@ every one of these files; `atris doc-health --fix-refs` pins old line refs.
 | brain compile command | `commands/brain.js` | brain artifacts compiled and verified here |
 | document health and recall exam | `commands/doc-health.js`, `lib/map-refs.js`, `lib/recall-exam.js`, `atris/doc-health/questions.jsonl`, `atris/doc-health/recall-seen.jsonl` | document health measurements calculated here: boot size, map coverage, lookup hops, freshness, line refs; `--recall` scores found, files opened, wrong opens and tokens read |
 | doctor health check | `commands/doctor.js` | workspace readiness checked by doctor |
-| wall of shame code review | `commands/review.js`, `lib/wall-of-shame.js`, `templates/code-review/SPEC.md` | `atris code-review` (alias `cr`): haiku triage, one reviewer per lens from `atris/SPEC.md`, over-testing counted; `init`, `add`, `--pr <n> --comment` |
+| wall of shame code review | `commands/review.js`, `lib/wall-of-shame.js`, `templates/code-review/SPEC.md` | `atris code-review` (alias `cr`): haiku triage, one reviewer per lens from the project's atris/SPEC.md, over-testing counted; `init`, `add`, `--pr <n> --comment` |
 | slop detector | `commands/slop.js` | deterministic prose lint wired into review |
 | taste notes | `atris/skills/taste/SKILL.md`, `lib/taste-notes.js` | how taste files work; the taste itself lives in each project's own TASTE.md (in its atris/taste folder) and the person's `~/.atris/taste/TASTE.md`; sync never touches either |
 | security audit (sentinel) | `lib/security-audit.js`, `lib/security-audit-classes.js`, `commands/security-review.js` | `atris sentinel` = `security-review audit`; engines hunt, another model verifies; member `atris/team/sentinel/` |
