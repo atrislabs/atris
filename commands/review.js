@@ -4,10 +4,10 @@
 // shame. Cheap triage, then one fresh read-only reviewer per relevant lens.
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { runEngineAskJobs } = require('../lib/engine-ask');
+const { runGit } = require('../lib/git-spawn');
 const { canonicalEngineName } = require('../lib/engine-registry');
 const { defaultClaudeModel } = require('../lib/claude-spend-guard');
 const { defaultBranch } = require('../lib/zen');
@@ -40,21 +40,21 @@ function usageError(message) {
   return error;
 }
 
-function run(bin, args, cwd, input) {
-  const result = spawnSync(bin, args, { cwd, input, encoding: 'utf8', maxBuffer: Infinity });
-  if (result.error) throw usageError(`${bin} could not start: ${result.error.message}`);
-  return result;
+// git returns stdout and throws a usage error on failure; check: false hands back the raw result.
+function git(root, args, { input, check = true } = {}) {
+  try {
+    const result = runGit(args, { cwd: root, input, check, maxBuffer: Infinity });
+    return check ? result.stdout : result;
+  } catch (error) {
+    throw usageError(error.message);
+  }
 }
 
-function git(root, args, input) {
-  const result = run('git', args, root, input);
-  if (result.status !== 0) throw usageError(`git ${args.join(' ')} failed: ${result.stderr.trim()}`);
-  return result.stdout;
-}
-
-function gh(root, args) {
-  const result = run('gh', args, root);
-  if (result.status !== 0) throw usageError(`gh ${args.join(' ')} failed: ${result.stderr.trim()}`);
+function gh(root, args, input) {
+  const result = spawnSync('gh', args, { cwd: root, input, encoding: 'utf8', maxBuffer: Infinity });
+  if (result.error || result.status !== 0) {
+    throw usageError(`gh ${args.join(' ')} failed: ${(result.error ? result.error.message : result.stderr).trim()}`);
+  }
   return result.stdout;
 }
 
@@ -88,7 +88,7 @@ function untrackedDiff(root) {
   const files = git(root, ['ls-files', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean);
   return files.map((file) => {
     // --no-index exits 1 when the files differ, which a new file always does.
-    const result = run('git', ['diff', '--no-index', '--', '/dev/null', file], root);
+    const result = git(root, ['diff', '--no-index', '--', '/dev/null', file], { check: false });
     if (result.status > 1) throw usageError(`git could not diff untracked ${file}: ${result.stderr.trim()}`);
     return result.stdout;
   }).join('');
@@ -145,14 +145,14 @@ function triagePrompt(lenses, diffPath) {
 
 function reviewPrompt(lens, diffPath) {
   return [
-    `You are an independent reviewer. Check one code change for one recurring mistake from this project's wall of shame: the "${lens.name}" lens. Here is the lens with the project's real past examples.`,
-    '',
-    lens.text,
-    '',
-    `The change is the unified diff in the file ${diffPath}. Read all of it, then read files in this repository it touches when you need context. The diff is the evidence; files on disk may differ from it. Judge only this lens.`,
-    '',
+    'You are an independent reviewer. Check one code change for one recurring mistake from this project\'s wall of shame. The lens and the project\'s real past examples are at the end.',
+    'Read the whole diff, then read files in this repository it touches when you need context. The diff is the evidence; files on disk may differ from it. Judge only this lens.',
     'Answer with only this JSON object:',
     '{"verdict": "accept" or "request changes", "score": <whole number 0 to 100, higher is better>, "assessment": "<one or two sentences: the concrete finding and the smallest fix, or why this lens has no concern here>"}',
+    '',
+    `The change is the unified diff in the file ${diffPath}.`,
+    '',
+    lens.text,
   ].join('\n');
 }
 
@@ -228,13 +228,7 @@ function printTable(rows, out) {
 
 function writeComment(root, pr, block) {
   const body = JSON.parse(gh(root, ['pr', 'view', pr, '--json', 'body'])).body;
-  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-cr-')), 'body.md');
-  try {
-    fs.writeFileSync(file, wall.upsertBlock(body, block));
-    gh(root, ['pr', 'edit', pr, '--body-file', file]);
-  } finally {
-    fs.rmSync(path.dirname(file), { recursive: true, force: true });
-  }
+  gh(root, ['pr', 'edit', pr, '--body-file', '-'], wall.upsertBlock(body, block));
 }
 
 function initSpec(root, out) {
@@ -283,7 +277,7 @@ async function review(root, opts, { out, err, executeAskJob }) {
   fs.writeFileSync(diffFile, change.diff);
   let result;
   try {
-    const counted = run('git', ['apply', '--numstat'], root, change.diff);
+    const counted = git(root, ['apply', '--numstat'], { input: change.diff, check: false });
     const numstat = counted.status === 0 ? counted.stdout : { error: lastLine(counted.stderr) };
     result = await reviewLenses(spec.lenses, { root, diffPath: path.relative(root, diffFile), numstat, opts, executeAskJob });
   } finally {
@@ -316,7 +310,7 @@ async function reviewCommand(args = [], deps = {}) {
   }
   try {
     const opts = parseArgs(args);
-    const top = run('git', ['rev-parse', '--show-toplevel'], process.cwd());
+    const top = runGit(['rev-parse', '--show-toplevel'], { check: false });
     const root = deps.root || (top.status === 0 ? top.stdout.trim() : process.cwd());
     if (opts.positional[0] === 'init') return initSpec(root, out);
     if (opts.positional[0] === 'add') return addToSpec(root, opts, out, err, deps.now || (() => new Date()));
