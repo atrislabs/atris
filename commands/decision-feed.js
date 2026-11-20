@@ -95,8 +95,8 @@ const HELP = [
   '       atris feed more                     (wakes up to 3 ON members to look for ideas: a ping with reason scroll)',
   '       atris feed settings [set default-engine <id>]   the one default model for members with none of their own',
   '       atris feed settings set member-engine <member> <id|none>   the model one member uses in the feed. With no choice the feed',
-  '                          runs on Codex on this computer when it is signed in, else Atris fast; Fable and Claude Code run only when you pick them here.',
-  '       atris feed engines                  the models usable on this computer right now',
+  '                          runs on Codex on this computer when it is signed in, else Atris 2 Fast; Fable and Claude Code run only when you pick them here.',
+  '       atris feed engines                  the models usable on this computer right now (the Atris models: atris-fast, atris-pro, atris-max)',
   '       atris feed members                  the team: on or off, model in effect, last active, what it is doing; [cloud on|off] when the cloud wake switch disagrees',
   '       atris feed member on|off <name>          also sets waking on notes in the cloud, in a business folder',
   '       atris feed ping [<member>] [--reason scroll|heartbeat|event|refresh|more] [--stream]',
@@ -258,7 +258,7 @@ function printText(command, out, { streamed = false } = {}) {
     return;
   }
   if (command === 'settings') {
-    console.log(`default model: ${out.engine_in_effect}${out.default_engine ? '' : ' (picked for you: Codex on this computer when it is signed in, else Atris fast)'}${out.engine_available ? '' : `, cannot run here: ${out.engine_reason}`}`);
+    console.log(`default model: ${out.engine_in_effect}${out.default_engine ? '' : ' (picked for you: Codex on this computer when it is signed in, else Atris 2 Fast)'}${out.engine_available ? '' : `, cannot run here: ${out.engine_reason}`}`);
     const standing = out.standing_yes;
     if (standing) {
       const today = standing.count_readable ? `${standing.started_today} of ${standing.per_day} started today` : 'today\'s count cannot be read, so nothing starts';

@@ -48,7 +48,7 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 40 | 200 rounds with failures and a restart leave no copies and nothing stuck | soak: 200 rounds with a failing, slow model and a restart leave no copies, nothing stuck, and an empty line | yes |
 | 41 | The models list says what can run here, local and cloud, and why not | engines: what can run here, local and cloud, each with a reason when it cannot | yes |
 | 42 | One default model; a pick that cannot run is refused, never saved | settings: one default model, stored in the project atris config; an unavailable pick is refused, never saved | yes |
-| 43 | A member's own model, else the feed default, else the house pick (Codex here, else Atris fast; never a costly model unless a person picked it for the feed) | settings: a member's own roster line, else the feed default, else the house pick | yes |
+| 43 | A member's own model, else the feed default, else the house pick (Codex here, else Atris 2 Fast; never a costly model unless a person picked it for the feed) | settings: a member's own roster line, else the feed default, else the house pick | yes |
 | 44 | ON and OFF use the existing member switch; nobody is on by accident | members: on or off from the existing member switch; a member nobody switched on is off | yes |
 | 45 | Approving an idea from an OFF member says so and starts nothing | members: approving an idea from an OFF member says so and starts nothing | yes |
 | 46 | An approval whose model cannot run is refused plainly | members: an approval whose model cannot run here is refused plainly | yes |
@@ -119,6 +119,11 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 110 | found: a card read "The work ended without a result (tick-ok)."; a known status is said in words, an unknown one and an exit number say nothing | work that ended with nothing says why in words: a status code like tick-ok is said plainly, an unknown one and an exit number say nothing | yes |
 | 111 | A running card says how long it may run: `run.limit_minutes` | a running card says how many minutes it may take: run.limit_minutes, from the same limit that stops it | no |
 | 112 | found: a teammate's question you had answered kept saying it needed you until dismissed; your comment settles it (off needs_decision and its count, gone once quiet for a day), a reaction or a teammate's comment does not, and a follow-up question does not bring it back | a teammate's question you answered in the comments stops asking for you: a reaction or a teammate's comment does not settle it, and it is never approvable | yes |
+| 113 | found: a cloud computer whose only pass was an expired mail-reading pass still listed the Atris models as ready; a missing, expired or scoped pass now reads "This computer is signed out of Atris. Sign it in again." in `feed engines`, `feed settings` and `feed members` | sign-in: no token, an expired pass and a scoped pass are signed out; a good or unreadable pass is not | yes |
+| 114 | found: ten asks while signed out each used one of the day's 60 asks; a signed-out ask now skips every member with that sentence, as the answer's own `reason` too, and uses no ask | sign-in: a ping while signed out skips every member with the sentence and uses no ask of the day | yes |
+| 115 | found: every failed thought read "Thought and had nothing worth your time"; a failed turn now logs "Could not think" with the reason, records a `failed` event, carries `error` (and `needs_sign_in`) on `member_done` and the result row, and gives its ask back | a failed thought says why: "Could not think", a failed event, an error to read, and the ask given back | yes |
+| 116 | A failed turn is said in plain words, never a status code | a failed thought on another fault says it plainly, with no status code | no |
+| 117 | Atris 2 Fast, Atris 2 Pro and Atris 2 Max are listed by name and can be any default or member model | models: Atris 2 Fast, Pro and Max are listed by name and can be the default or one member's model | no |
 
 ## Waiting chat windows
 
@@ -134,7 +139,7 @@ The one who asked then closes it in its next thought, and is asked before everyo
 
 ## Which model the feed runs on
 
-With no choice made, the feed runs on Codex on this computer when it is installed and signed in, else Atris fast. The workspace's saved engine is not used. A member's roster line is used unless it names a costly model (`fable`, `claude`); then it is passed over and reported as `skipped`. A costly model runs in the feed only when a person picked it for the feed: `atris feed settings set default-engine <id>`, `atris feed settings set member-engine <member> <id|none>`, or one ask with `atris feed talk --member <name> --engine <id>`.
+With no choice made, the feed runs on Codex on this computer when it is installed and signed in, else Atris 2 Fast. The Atris models are `atris-fast` (Atris 2 Fast), `atris-pro` (Atris 2 Pro) and `atris-max` (Atris 2 Max); they need this computer signed in to Atris, and a missing, expired or scoped pass counts as signed out (`lib/sentinel-cloud.js` `modelSignIn`). The workspace's saved engine is not used. A member's roster line is used unless it names a costly model (`fable`, `claude`); then it is passed over and reported as `skipped`. A costly model runs in the feed only when a person picked it for the feed: `atris feed settings set default-engine <id>`, `atris feed settings set member-engine <member> <id|none>`, or one ask with `atris feed talk --member <name> --engine <id>`.
 
 ## The feed asking by itself
 

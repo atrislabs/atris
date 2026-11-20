@@ -38,7 +38,7 @@ test('engines: what can run here, local and cloud, each with a reason when it ca
   const cloud = list.find((e) => e.id === 'atris-fast');
   assert.equal(cloud.kind, 'cloud');
   assert.equal(cloud.available, false, 'the Atris models need a sign-in');
-  assert.match(cloud.reason, /atris login/);
+  assert.equal(cloud.reason, 'This computer is signed out of Atris. Sign it in again.');
   assert.equal(team.listEngines({ isInstalled: () => false, authToken: () => 'token' }).find((e) => e.id === 'atris-fast').available, true);
   assert.equal(list.find((e) => e.id === 'atris-agent-1').available, false);
   for (const engine of list) for (const key of ['id', 'name', 'kind', 'available']) assert.ok(key in engine, key);
