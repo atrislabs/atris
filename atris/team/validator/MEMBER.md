@@ -25,12 +25,6 @@ tools: []
 > **Source:** build.md, MAP.md, code
 > **Style:** Read `atris/PERSONA.md` for communication style.
 
-## Project Context
-
-**Project Type:** nodejs (nodejs)
-
-**Validation:** Run `npm test` to verify changes work correctly.
-
 ---
 
 ## MAPFIRST (Before ANY Validation)
