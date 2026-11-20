@@ -18,6 +18,7 @@ test('merge results survive reversed arrival and ambiguous edits stay separate',
   for (const [local, remote] of [['7\n', '5\n'], ['5\n', '7\n']]) {
     assert.equal(safeLineMerge(base, base + local, base + remote).content, 'items\n5\n7\n');
   }
+  assert.equal(safeLineMerge('x\nz', 'z', '\nz').ok, false);
   const edited = 'one\nTWO\n';
   const inserted = 'one\nextra\ntwo\n';
   for (const [local, remote] of [[edited, inserted], [inserted, edited]]) {
@@ -105,4 +106,40 @@ test('two independent CLI clients retain their edits after racing past the fresh
   await assert.rejects(winner.run('push', 'test-co', '--from', winner.cwd, '--only', file, '--conditional'),
     error => /does not support conditional sync/.test(error.stderr));
   assert.equal(content, 'items\n5\n7\n');
+});
+
+test('install preserves a racing editor save, an open descriptor and interrupted work', async t => {
+  const io = require('node:fs');
+  const { installLocalMerge, recoverInterruptedMerges } = require('../lib/local-merge-install');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'merge-install-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const target = path.join(root, 'note.txt');
+  await fs.writeFile(target, 'latest');
+  assert.equal(installLocalMerge(root, target, 'previous', 'merged'), false);
+  assert.equal(await fs.readFile(target, 'utf8'), 'latest');
+
+  const oldFile = await fs.open(target, 'a');
+  assert.equal(installLocalMerge(root, target, 'latest', 'merged'), true);
+  await oldFile.write(' late save');
+  await oldFile.close();
+  const history = path.join(root, '.atris', 'sync', 'local-revisions');
+  const copies = await Promise.all((await fs.readdir(history)).map(name => fs.readFile(path.join(history, name, 'original'), 'utf8')));
+  assert.ok(copies.includes('latest late save'));
+  assert.equal(await fs.readFile(target, 'utf8'), 'merged');
+
+  const link = io.linkSync;
+  const mock = t.mock.method(io, 'linkSync', (source, dest) => {
+    if (dest === target && path.basename(source) === 'candidate') io.writeFileSync(dest, 'editor replacement');
+    return link(source, dest);
+  });
+  assert.equal(installLocalMerge(root, target, 'merged', 'merged again'), false);
+  mock.mock.restore();
+  assert.equal(await fs.readFile(target, 'utf8'), 'editor replacement');
+
+  const pending = path.join(root, '.atris', 'sync', 'pending-merges', '2147483647-orphan');
+  await fs.mkdir(pending);
+  await fs.writeFile(path.join(pending, 'path'), 'note.txt');
+  await fs.rename(target, path.join(pending, 'original'));
+  recoverInterruptedMerges(root);
+  assert.equal(await fs.readFile(target, 'utf8'), 'editor replacement');
 });

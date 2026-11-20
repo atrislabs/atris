@@ -10,6 +10,7 @@ const { loadBusinesses, businessMatchesSlug } = require('./business');
 const { loadManifest, saveManifest, buildManifest, computeLocalHashes, threeWayCompare, isIgnoredSyncPath } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
+const { installLocalMerge, recoverInterruptedMerges } = require('../lib/local-merge-install');
 const { resolveSafeOutputDir } = require('../lib/workspace-safety');
 const {
   buildConflictReviewPacket,
@@ -379,6 +380,7 @@ async function pullBusiness(slug) {
   // Load manifest (last sync state)
   const manifest = loadManifest(resolvedSlug || slug);
   const timeSince = manifest ? _timeSince(manifest.last_sync) : null;
+  if (!dryRun) recoverInterruptedMerges(outputDir);
   const localFilesBeforePull = fs.existsSync(outputDir) ? computeLocalHashes(outputDir) : {};
   const manifestRootMatchesOutput = !manifest || !manifest.workspace_root || (() => {
     try {
@@ -718,8 +720,7 @@ async function pullBusiness(slug) {
           const filePath = path.join(outputDir, p.replace(/^\//, ''));
           const local = fs.readFileSync(filePath, 'utf8');
           const merged = safeLineMerge(base, local, content);
-          if (merged.ok) {
-            fs.writeFileSync(filePath, merged.content);
+          if (merged.ok && installLocalMerge(outputDir, filePath, local, merged.content)) {
             console.log('  ' + p.replace(/^\//, '') + '  merged local and cloud edits');
             pulled++;
             continue;
