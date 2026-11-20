@@ -79,7 +79,7 @@ test('an agent-rewritten standing mission runs sealed until a person confirms it
     const cardId = `task:${rows[0].id}:1:question`;
     assert.throws(() => feed.decide(root, cardId, 'approve', { env: { CLAUDECODE: '1' } }), /Only a person can decide/);
     assert.equal(feed.decide(root, cardId, 'approve', { env: { USER: 'owner' } }).outcome.reason, 'standing_mission_confirmed');
-    assert.deepEqual(yesLock.handoffYesCards(stateDir), [], 'the yes cards it left are gone once the owner confirms');
+    assert.deepEqual(yesLock.handoffYesCards(stateDir), [], 'the commands it held are answered yes once the owner confirms');
     const again = JSON.parse(atris('mission', 'start', 'tidy the readme again', '--owner', 'builder', '--runner', 'claude', '--no-verify', '--json').stdout);
     atris('mission', 'run', again.mission.id, '--max-ticks', '1', '--headless', '--json');
     assert.equal(fs.readFileSync(path.join(tmp, 'stub'), 'utf8').trim().split('\n').pop(), '0', 'the next real tick publishes');
