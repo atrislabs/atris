@@ -2,6 +2,10 @@
 
 Business owners and computers, cloud sync, pull and push, sites and the local computer bridge. Exact `file:line` refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
 
+## CodeOps experiments
+
+The CLI routes through `computerCodeOpsExperiment` in `commands/computer.js`. Choice, trial storage and blind grading live in `lib/codeops-experiment.js`. See [usage and evidence](../../../docs/codeops-experiment.md).
+
 ## Product Model: Owners Have Computers
 
 This repo is the public CLI surface, so product language matters here.
