@@ -1,8 +1,9 @@
 const { spawn } = require('child_process');
+const { setTimeout: delay } = require('node:timers/promises');
 const fs = require('fs');
 const path = require('path');
 const { loadManifest, saveManifest } = require('../lib/manifest');
-const { removeBaseContents, writeBaseContents } = require('../lib/company-brain-sync');
+const { changedRange, safeLineMerge, removeBaseContents, writeBaseContents } = require('../lib/company-brain-sync');
 const { collectCloudOrphans } = require('../commands/cloud');
 
 const WATCH_IGNORED_DIRS = new Set([
@@ -38,6 +39,7 @@ function parseBusinessSyncArgs(args = []) {
   const slug = positional.find((arg) => !commandWords.has(arg)) || null;
   const dryRun = args.includes('--dry-run');
   const timeout = parseFlagValue(args, '--timeout', '120');
+  const conditional = args.includes('--conditional');
   const allowDelete = args.includes('--delete');
   const watch = args.includes('--watch');
   const intervalSec = Number.parseInt(parseFlagValue(args, '--interval', '60'), 10);
@@ -45,7 +47,7 @@ function parseBusinessSyncArgs(args = []) {
   const showOrphans = args.includes('--show-orphans');
   const help = args.includes('--help') || args.includes('-h') || positional[0] === 'help';
 
-  return { slug, dryRun, timeout, allowDelete, watch, intervalSec, debounceSec, status, review, resolve, resolvePath, take, showOrphans, help };
+  return { slug, dryRun, timeout, allowDelete, ...(conditional ? { conditional } : {}), watch, intervalSec, debounceSec, status, review, resolve, resolvePath, take, showOrphans, help };
 }
 
 function readBusinessSlug(cwd = process.cwd()) {
@@ -75,6 +77,8 @@ function buildBusinessSyncPlan(options) {
     pushArgs.push('--dry-run');
   }
   if (options.allowDelete) pushArgs.push('--delete');
+  else if (options.watch) pushArgs.push('--changed');
+  if (options.conditional) pushArgs.push('--conditional');
 
   return { pullArgs, pushArgs };
 }
@@ -361,11 +365,12 @@ function renderBusinessSyncHelp() {
     '  atris sync --status       Show local sync health',
     '  atris sync --status --show-orphans   Show local sync health plus cloud files not present locally',
     '  atris sync --dry-run      Preview pull and publish plans without writing cloud',
+    '  atris sync --conditional  Check the file revision at the instant cloud saves it',
     '  atris sync --review       List conflicts; pick local / cloud / merge per file',
     '  atris sync --review --take local|cloud',
     '                            Non-interactive: take local or cloud for every conflict',
     '  atris sync --resolve cloud|local|merge [--path <file>]',
-    '  atris sync --watch        Keep the workspace live with the same safety gates',
+    '  atris sync --watch        Sync text edits automatically. Binary files stay on their source computer.',
     '',
     'Publish safety:',
     '  Large unscoped pushes, nested workspace folders, and *.remote artifacts are blocked.',
@@ -658,57 +663,6 @@ function cleanupEmptyConflictPackets(cwd, entries) {
   return finalized;
 }
 
-function changedRange(baseLines, changedLines) {
-  let start = 0;
-  while (start < baseLines.length && start < changedLines.length && baseLines[start] === changedLines[start]) {
-    start += 1;
-  }
-
-  let baseEnd = baseLines.length;
-  let changedEnd = changedLines.length;
-  while (
-    baseEnd > start
-    && changedEnd > start
-    && baseLines[baseEnd - 1] === changedLines[changedEnd - 1]
-  ) {
-    baseEnd -= 1;
-    changedEnd -= 1;
-  }
-
-  return {
-    start,
-    end: baseEnd,
-    replacement: changedLines.slice(start, changedEnd),
-  };
-}
-
-function safeLineMerge(baseContent, localContent, remoteContent) {
-  if (localContent === remoteContent) return { ok: true, content: localContent };
-  if (localContent === baseContent) return { ok: true, content: remoteContent };
-  if (remoteContent === baseContent) return { ok: true, content: localContent };
-
-  const baseLines = baseContent.split('\n');
-  const localRange = changedRange(baseLines, localContent.split('\n'));
-  const remoteRange = changedRange(baseLines, remoteContent.split('\n'));
-  const sameRange = localRange.start === remoteRange.start && localRange.end === remoteRange.end;
-  const sameReplacement = localRange.replacement.join('\n') === remoteRange.replacement.join('\n');
-  if (sameRange && sameReplacement) return { ok: true, content: localContent };
-
-  const overlaps = localRange.start < remoteRange.end && remoteRange.start < localRange.end;
-  const sameInsertionPoint = localRange.start === localRange.end
-    && remoteRange.start === remoteRange.end
-    && localRange.start === remoteRange.start;
-  if (overlaps || sameInsertionPoint) {
-    return { ok: false, reason: 'local and cloud edits overlap' };
-  }
-
-  const merged = baseLines.slice();
-  for (const range of [localRange, remoteRange].sort((a, b) => b.start - a.start)) {
-    merged.splice(range.start, range.end - range.start, ...range.replacement);
-  }
-  return { ok: true, content: merged.join('\n') };
-}
-
 function markdownSectionRanges(content) {
   const lines = content.split('\n');
   const ranges = [];
@@ -997,7 +951,7 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd(), d
 
   console.log('');
   console.log(`Syncing ${options.slug} business workspace...`);
-  console.log('  scope: full workspace');
+  console.log('  scope: workspace text files');
   console.log('  loop: Pull -> Review -> Publish');
   console.log('  quest gate: exact files beat broad pushes');
   if (options.watch) {
@@ -1014,7 +968,6 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd(), d
   if (!options.watch) return;
 
   let lastSnapshot = collectWorkspaceSnapshot(cwd);
-  let running = false;
   let quietTicks = 0;
   let pendingLocal = false;
 
@@ -1022,27 +975,26 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd(), d
   console.log('Business workspace sync is watching this folder. Press Ctrl+C to stop.');
 
   const tickMs = 1000;
-  setInterval(async () => {
-    if (running) return;
+  while (true) {
+    await delay(tickMs);
     const current = collectWorkspaceSnapshot(cwd);
     if (snapshotsDiffer(lastSnapshot, current)) {
       pendingLocal = true;
       quietTicks = 0;
       lastSnapshot = current;
-      return;
+      continue;
     }
 
     if (pendingLocal) {
       quietTicks += 1;
-      if (quietTicks < options.debounceSec) return;
+      if (quietTicks < options.debounceSec) continue;
     }
 
     const shouldPeriodicSync = !pendingLocal && quietTicks >= options.intervalSec;
     const shouldLocalSync = pendingLocal && quietTicks >= options.debounceSec;
     quietTicks += 1;
-    if (!shouldLocalSync && !shouldPeriodicSync) return;
+    if (!shouldLocalSync && !shouldPeriodicSync) continue;
 
-    running = true;
     try {
       console.log('');
       console.log(shouldLocalSync ? 'Local workspace changed. Syncing...' : 'Checking cloud workspace...');
@@ -1069,10 +1021,8 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd(), d
       }
       pendingLocal = false;
       quietTicks = 0;
-    } finally {
-      running = false;
     }
-  }, tickMs);
+  }
 }
 
 module.exports = {
