@@ -208,8 +208,10 @@ function upsertProjectContext(content, section, before) {
  * Inject project-specific patterns into agent specs
  * @param {string} agentTeamDir - Directory containing team specs
  * @param {Object} profile - Project profile from detectProjectContext()
+ * @returns {number} how many member files changed
  */
 function injectProjectPatterns(agentTeamDir, profile) {
+  let changed = 0;
   const executorFile = path.join(agentTeamDir, 'executor', 'MEMBER.md');
   const navigatorFile = path.join(agentTeamDir, 'navigator', 'MEMBER.md');
   const validatorFile = path.join(agentTeamDir, 'validator', 'MEMBER.md');
@@ -237,7 +239,7 @@ ${profile.hasCode ? `**Validation:** Run \`${profile.testCommand}\` before marki
     
     // Insert after the Activation Prompt section
     const updated = upsertProjectContext(executorContent, testSection, 'Workflow');
-    if (updated !== executorContent) fs.writeFileSync(executorFile, updated);
+    if (updated !== executorContent) { fs.writeFileSync(executorFile, updated); changed += 1; }
   }
   } catch {}
 
@@ -259,7 +261,7 @@ When planning tasks, consider the project structure and conventions above.
 `;
     
     const updated = upsertProjectContext(navigatorContent, projectNote, 'Workflow');
-    if (updated !== navigatorContent) fs.writeFileSync(navigatorFile, updated);
+    if (updated !== navigatorContent) { fs.writeFileSync(navigatorFile, updated); changed += 1; }
   }
   } catch {}
 
@@ -279,9 +281,10 @@ ${profile.hasCode ? `**Validation:** Run \`${profile.testCommand}\` to verify ch
 `;
     
     const updated = upsertProjectContext(validatorContent, validationNote, '');
-    if (updated !== validatorContent) fs.writeFileSync(validatorFile, updated);
+    if (updated !== validatorContent) { fs.writeFileSync(validatorFile, updated); changed += 1; }
   }
   } catch {}
+  return changed;
 }
 
 function mapStubFromTree(projectRoot = process.cwd()) {
@@ -655,8 +658,7 @@ tools: []
   markReady('workspace', '.project-profile.json', `✓ Generated .project-profile.json (detected: ${profile.type}${profile.framework !== 'none' ? '/' + profile.framework : ''})`);
 
   // Inject project patterns into agent specs
-  injectProjectPatterns(teamDir, profile);
-  detail('✓ Injected project patterns into team specs');
+  if (injectProjectPatterns(teamDir, profile)) detail('✓ Injected project patterns into team specs');
 
   // Create agent instruction files for different tools
   if (withAdapters) {
