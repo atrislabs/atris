@@ -172,7 +172,7 @@ test('yes lock: mission start seals the owner steps into the mission record, and
 
 test('yes lock: a held npm command is said from its own subcommand, and a form not known here is not guessed', () => {
   const said = (...args) => yesLock.plainWhat(JSON.stringify({ tool: 'npm', args, cwd: os.tmpdir() }));
-  assert.deepEqual([['dist-tag', 'ls', 'shop'], ['dist-tag', 'rm', 'shop', 'beta'], ['dist-tag', 'add', '@a/shop@2.0.0', 'beta'], ['dist-tag', 'set', 'shop@1.0.0'], ['unpublish', 'shop']].map(a => said(...a)), ['list the npm tags of shop', 'remove the npm tag beta from shop', 'change which version of @a/shop npm installs under the tag beta', 'run this command', 'run this command']);
+  assert.deepEqual([['dist-tag', 'ls', 'shop'], ['dist-tag', 'rm', 'shop', 'beta'], ['dist-tag', 'add', '@a/shop@2.0.0', 'beta'], ['dist-tag', 'add', 'shop@2.0.0'], ['dist-tag', 'set', 'shop@1.0.0'], ['unpublish', 'shop']].map(a => said(...a)), ['list the npm tags of shop', 'remove the npm tag beta from shop', 'point the npm tag beta of @a/shop at version 2.0.0', 'point the configured default npm tag of shop at version 2.0.0', 'run this command', 'run this command']);
 });
 
 test('yes lock: holding a command again writes its unreadable record back from that command, so its card can be answered', () => {
