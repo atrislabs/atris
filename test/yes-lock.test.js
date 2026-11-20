@@ -169,3 +169,19 @@ test('yes lock: mission start seals the owner steps into the mission record, and
   assert.notEqual(bad.status, 0);
   assert.match(bad.stdout + bad.stderr, /--yes-lock takes a JSON list/);
 });
+
+test('yes lock: a held npm command is said from its own subcommand, and a form not known here is not guessed', () => {
+  const said = (...args) => yesLock.plainWhat(JSON.stringify({ tool: 'npm', args, cwd: os.tmpdir() }));
+  assert.deepEqual([['dist-tag', 'ls', 'shop'], ['dist-tag', 'rm', 'shop', 'beta'], ['dist-tag', 'add', '@a/shop@2.0.0', 'beta'], ['dist-tag', 'set', 'shop@1.0.0'], ['unpublish', 'shop']].map(a => said(...a)), ['list the npm tags of shop', 'remove the npm tag beta from shop', 'change which version of @a/shop npm installs under the tag beta', 'run this command', 'run this command']);
+});
+
+test('yes lock: holding a command again writes its unreadable record back from that command, so its card can be answered', () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yes-lock-')), seal = [{ step: 1, text: 'publish', categories: ['publish'] }];
+  const hold = () => yesLock.check({ stateDir, missionId: 'm', seal, tool: 'npm', args: ['publish'], cwd: stateDir }).hold;
+  const file = path.join(stateDir, 'yes-locks', 'm.json');
+  fs.writeFileSync(file, hold() && fs.readFileSync(file, 'utf8').replace(/"key": "[^\n]*",/, '"key": "{}",'));
+  const card = () => yesLock.askedYesLocks(stateDir, 'm')[0];
+  assert.deepEqual([card().exact, hold(), card().exact], [null, true, 'npm publish']);
+  assert.ok(yesLock.approveYesLock(stateDir, 'm', 1, seal, undefined, { hash: card().hash }));
+  fs.rmSync(stateDir, { recursive: true, force: true });
+});
