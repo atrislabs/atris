@@ -65,11 +65,21 @@ test('an agent-rewritten standing mission runs sealed until a person confirms it
     assert.equal(feed.decide(root, cardId, 'approve', { env: { USER: 'owner' } }).outcome.reason, 'standing_mission_confirmed');
     assert.equal(standing.unconfirmedSeal(started.mission, root, stateDir), null, 'confirmed words carry the owner\'s yes again');
     assert.deepEqual(yesLock.handoffYesCards(stateDir), [], 'and the old yes cards are gone');
+    const again = JSON.parse(atris('mission', 'start', 'tidy the readme again', '--owner', 'builder', '--runner', 'claude', '--no-verify', '--json').stdout);
+    atris('mission', 'run', again.mission.id, '--max-ticks', '1', '--headless', '--json');
+    assert.equal(fs.readFileSync(path.join(tmp, 'stub'), 'utf8').trim().split('\n').pop(), '0', 'the next real tick publishes');
+    assert.equal(fs.readFileSync(path.join(tmp, 'effects'), 'utf8'), 'published\n');
 
     const record = path.join(stateDir, 'standing-text.json');
     fs.writeFileSync(record, '{ broken');
     assert.equal(standing.standingConfirmed('builder', root).confirmed, false, 'an unreadable record confirms nothing');
     assert.equal(fs.readFileSync(record, 'utf8'), '{ broken', 'and is never written over');
+
+    const { kind, ...legacy } = yesLock.handoffSeal()[0];
+    fs.writeFileSync(path.join(stateDir, 'yes-locks', 'old.json'), JSON.stringify({ mission_id: 'old', owner: 'scout',
+      locks: [{ ...legacy, requests: [{ hash: 'h1', key: '{}', command: 'npm publish', asked_at: 'then' }] }] }));
+    assert.equal(kind, 'handoff');
+    assert.deepEqual(yesLock.handoffYesCards(stateDir).map((c) => c.who), ['scout'], 'a handoff record saved before kinds keeps its card');
   } finally {
     for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
     fs.rmSync(tmp, { recursive: true, force: true });
