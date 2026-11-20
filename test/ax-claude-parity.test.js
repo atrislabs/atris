@@ -13,6 +13,7 @@ const axLocalTools = require('../lib/ax-local-tools');
 const axSessions = require('../lib/ax-sessions');
 const axContext = require('../lib/ax-context');
 const axExt = require('../lib/ax-ext');
+const axCommands = require('../lib/ax-commands');
 
 function makeTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -330,4 +331,131 @@ test('chat slash commands /plan, /compact, /cost, /diff and /mcp work without ba
   assert.match(out, /no file edits/);
   assert.match(out, /no MCP servers configured/);
   assert.match(out, /nothing to compact/);
+});
+
+test('multi_edit applies atomic hunks, glob finds files and web_fetch blocks loopback/private hosts', async () => {
+  const dir = makeTempDir('ax-power-tools-');
+  const cpBase = makeTempDir('ax-power-cp-');
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  const target = path.join(dir, 'src', 'calc.js');
+  fs.writeFileSync(target, 'const x = 1;\nconst y = 2;\nmodule.exports = x + y;\n', 'utf8');
+
+  // Atomic failure leaves file untouched.
+  const bad = await axLocalTools.executeLocalFileOp({
+    type: 'multi_edit',
+    path: 'src/calc.js',
+    edits: [
+      { find: 'const x = 1;', replace: 'const x = 10;' },
+      { find: 'does not exist', replace: 'boom' },
+    ],
+  }, { cwd: dir, approveMode: 'auto' });
+  assert.equal(bad.status, 'error');
+  assert.equal(fs.readFileSync(target, 'utf8'), 'const x = 1;\nconst y = 2;\nmodule.exports = x + y;\n');
+
+  // Valid multi_edit applies both hunks with one unified diff and checkpoint.
+  const cp = axLocalTools.createCheckpointContext({ sessionId: 'me-1', turnId: 't1', baseDir: cpBase });
+  const ok = await axLocalTools.executeLocalFileOp({
+    type: 'multi_edit',
+    path: 'src/calc.js',
+    edits: [
+      { find: 'const x = 1;', replace: 'const x = 10;' },
+      { find: 'const y = 2;', replace: 'const y = 20;' },
+    ],
+  }, { cwd: dir, approveMode: 'auto', checkpoint: cp });
+  assert.equal(ok.status, 'ok');
+  assert.equal(ok.edits_applied, 2);
+  assert.match(ok.diff.patch, /\+const x = 10;/);
+  assert.match(ok.diff.patch, /\+const y = 20;/);
+
+  const globRes = await axLocalTools.executeLocalFileOp({ type: 'glob', pattern: '**/*.js' }, { cwd: dir });
+  assert.equal(globRes.status, 'ok');
+  assert.deepEqual(globRes.entries, ['src/calc.js']);
+
+  const ssrf = await axLocalTools.executeLocalFileOp({ type: 'web_fetch', url: 'http://127.0.0.1:8000/secret' }, { cwd: dir });
+  assert.equal(ssrf.status, 'error');
+  assert.match(ssrf.error, /private or loopback/i);
+});
+
+test('settings.json allow/deny rules and [a]lways approval persistence govern local_file_op', async () => {
+  const dir = makeTempDir('ax-perms-');
+  fs.mkdirSync(path.join(dir, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), JSON.stringify({
+    permissions: {
+      allow: ['bash(echo:*)'],
+      deny: ['bash(curl:*)', 'edit(.env)'],
+    },
+  }), 'utf8');
+  fs.writeFileSync(path.join(dir, '.env'), 'SECRET=1\n', 'utf8');
+  fs.writeFileSync(path.join(dir, 'ok.txt'), 'hi\n', 'utf8');
+
+  const loaded = axLocalTools.loadPermissionSettings(dir);
+  assert.ok(loaded.allow.includes('bash(echo:*)'));
+  assert.ok(loaded.deny.includes('bash(curl:*)'));
+
+  // Deny beats auto/bypass permissions!
+  const deniedCurl = await axLocalTools.executeLocalFileOp(
+    { type: 'bash', command: 'curl https://example.com' },
+    { cwd: dir, approveMode: 'auto' }
+  );
+  assert.equal(deniedCurl.status, 'error');
+  assert.equal(deniedCurl.denied, true);
+
+  const deniedEnv = await axLocalTools.executeLocalFileOp(
+    { type: 'edit', path: '.env', find: '1', replace: '2' },
+    { cwd: dir, approveMode: 'auto' }
+  );
+  assert.equal(deniedEnv.status, 'error');
+  assert.equal(deniedEnv.denied, true);
+
+  // Allow rule skips prompt even in stage mode.
+  const allowedEcho = await axLocalTools.executeLocalFileOp(
+    { type: 'bash', command: 'echo hi-rule' },
+    { cwd: dir, approveMode: 'stage' }
+  );
+  assert.equal(allowedEcho.status, 'ok');
+  assert.match(allowedEcho.output, /hi-rule/);
+
+  // Selecting 'always' persists a rule into .atris/settings.json.
+  const savedEdit = await axLocalTools.executeLocalFileOp(
+    { type: 'edit', path: 'ok.txt', find: 'hi', replace: 'hello' },
+    { cwd: dir, approveMode: 'stage', requestApproval: async () => 'always' }
+  );
+  assert.equal(savedEdit.status, 'ok');
+  const persisted = axLocalTools.loadPermissionSettings(dir);
+  assert.ok(persisted.allow.includes('edit(ok.txt)'));
+});
+
+test('custom .claude/commands and .atris/commands expand $ARGUMENTS in ax chat and headless turns', async () => {
+  const dir = makeTempDir('ax-custom-cmds-');
+  const fakeHome = makeTempDir('ax-custom-home-');
+  fs.mkdirSync(path.join(dir, '.claude', 'commands'), { recursive: true });
+  fs.writeFileSync(
+    path.join(dir, '.claude', 'commands', 'shipcheck.md'),
+    '---\ndescription: Run pre-ship checklist\n---\nVerify all tests and diff for $ARGUMENTS.\n',
+    'utf8'
+  );
+
+  const listed = axCommands.listCustomSlashCommands(dir, { homeDir: fakeHome });
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].name, 'shipcheck');
+  assert.equal(listed[0].description, 'Run pre-ship checklist');
+
+  const expanded = axCommands.expandCustomSlashCommand('/shipcheck auth module', dir, { homeDir: fakeHome });
+  assert.equal(expanded.prompt, 'Verify all tests and diff for auth module.');
+
+  let seenPrompt = '';
+  let out = '';
+  await ax.chat({
+    mode: 'pro',
+    cwd: dir,
+    input: Readable.from(['/commands\n', '/permissions\n', '/shipcheck billing\n', '/exit\n']),
+    output: { isTTY: false, write(s) { out += s; return true; } },
+    turnFunction: async (prompt) => {
+      seenPrompt = prompt;
+      return { output: 'Checklist complete.', durationMs: 12, events: [] };
+    },
+  });
+  assert.match(out, /\/shipcheck/);
+  assert.match(out, /no permission rules/);
+  assert.equal(seenPrompt, 'Verify all tests and diff for billing.');
 });
