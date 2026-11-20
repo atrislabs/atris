@@ -38,9 +38,11 @@ cd your-project
 atris init && atris
 ```
 
+Or tell your coding agent: "Set up https://github.com/atrislabs/atris". It follows [FOR_AGENTS.md](FOR_AGENTS.md).
+
 ## For Coding Agents
 
-**Read [`FOR_AGENTS.md`](FOR_AGENTS.md) first**: why agents adopt Atris, 60-second start, spread-it instructions.
+**Read [`FOR_AGENTS.md`](FOR_AGENTS.md) first**: why agents adopt Atris, the setup steps and what done means.
 
 If you're an agent, run:
 
