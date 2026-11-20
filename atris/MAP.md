@@ -32,7 +32,7 @@ every one of these files; `atris doc-health --fix-refs` pins old line refs.
 | brain compile command | `commands/brain.js` | brain artifacts compiled and verified here |
 | document health and recall exam | `commands/doc-health.js`, `lib/map-refs.js`, `lib/recall-exam.js`, `atris/doc-health/questions.jsonl`, `atris/doc-health/recall-seen.jsonl` | document health measurements calculated here: boot size, map coverage, lookup hops, freshness, line refs; `--recall` scores found, files opened, wrong opens and tokens read |
 | doctor health check | `commands/doctor.js` | workspace readiness checked by doctor; `--live` runs one real model turn (claude, else codex) and asserts the exact reply |
-| agent setup guide | `SETUP.md`, `commands/init.js` | the runbook a coding agent follows for "set up atris here"; init copies it into the project atris folder when absent |
+| agent setup guide | `FOR_AGENTS.md`, `commands/init.js` | the runbook a coding agent follows for "set up atris here" (install, init, doctor, doctor --live, first job, done means, when blocked); init copies it into the project atris folder when absent |
 | slop detector | `commands/slop.js` | deterministic prose lint wired into review |
 | taste notes | `atris/skills/taste/SKILL.md`, `lib/taste-notes.js` | how taste files work; the taste itself lives in each project's own TASTE.md (in its atris/taste folder) and the person's `~/.atris/taste/TASTE.md`; sync never touches either |
 | security audit (sentinel) | `lib/security-audit.js`, `lib/security-audit-classes.js`, `commands/security-review.js` | `atris sentinel` = `security-review audit`; engines hunt, another model verifies; member `atris/team/sentinel/` |

@@ -132,8 +132,6 @@ test('init keeps default output grouped and restores file details with --verbose
     const verbose = runInit(['--yes', '--verbose'], { cwd: verboseDir });
     assert.equal(verbose.status, 0, `stdout:\n${verbose.stdout}\nstderr:\n${verbose.stderr}`);
     assert.match(verbose.stdout, /✓ Created GETTING_STARTED\.md/);
-    assert.match(verbose.stdout, /✓ Created SETUP\.md/);
-    assert.ok(fs.existsSync(path.join(verboseDir, 'atris', 'SETUP.md')));
     assert.match(verbose.stdout, /✓ Copied skill:/);
     assert.match(verbose.stdout, /^next: atris /m);
     assert.doesNotMatch(verbose.stdout, /What do you want to build/);

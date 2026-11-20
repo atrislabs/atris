@@ -42,8 +42,9 @@ test('doctor --live falls back to codex and fails on a different reply', async (
 test('doctor --live keeps the engine error text', async (t) => {
   const r = await live(t, { ran: { ok: false, reason: 'exit_1', stdout: '', stderr: 'Invalid API key. Please run /login', duration_ms: 900 } });
   assert.equal(r.code, 1);
-  assert.match(r.out, /failed with claude \(claude-haiku-5-5\)\. exit_1: Invalid API key\. Please run \/login$/);
+  assert.match(r.out, /failed with claude \(asked for claude-haiku-5-5\)\. exit_1: Invalid API key\. Please run \/login$/);
   assert.equal(r.receipt.error, 'exit_1: Invalid API key. Please run /login');
+  assert.equal(r.receipt.model, null);
 });
 
 test('doctor --live with no coding tool says what to install and runs nothing', async (t) => {

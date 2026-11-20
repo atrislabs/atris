@@ -229,7 +229,7 @@ async function runLiveCheck(options = {}) {
   const ask = require('../lib/engine-ask');
   const runAsk = options.runAsk || ask.runAskProcess;
   const engine = LIVE_ENGINES.find((bin) => probe(bin)) || null;
-  const result = { ok: false, action: 'doctor_live', at: new Date().toISOString(), engine, model: null, seconds: null, expected: LIVE_REPLY, reply: null, error: null };
+  const result = { ok: false, action: 'doctor_live', at: new Date().toISOString(), engine, model: null, requested_model: null, seconds: null, expected: LIVE_REPLY, reply: null, error: null };
   if (!engine) {
     result.error = 'no coding tool found. install claude code or codex, sign in to it, then run atris doctor --live again.';
   } else {
@@ -239,7 +239,9 @@ async function runLiveCheck(options = {}) {
     });
     const ran = await runAsk(invocation, { cwd: root, timeoutMs: LIVE_TIMEOUT_MS });
     const flag = invocation.args.indexOf('--model');
-    result.model = ran.model_ran || (flag >= 0 ? invocation.args[flag + 1] : null);
+    // model is only what the tool says ran; what we asked for is kept apart.
+    result.requested_model = flag >= 0 ? invocation.args[flag + 1] : null;
+    result.model = ran.model_ran || null;
     result.seconds = Math.round((ran.duration_ms || 0) / 100) / 10;
     result.reply = String(ran.stdout || '').trim();
     result.ok = Boolean(ran.ok) && result.reply === LIVE_REPLY;
@@ -263,7 +265,8 @@ async function runLiveCheck(options = {}) {
 }
 
 function renderLive(result) {
-  const tool = result.engine ? ` with ${result.engine}${result.model ? ` (${result.model})` : ''}` : '';
+  const model = result.model || (result.requested_model ? `asked for ${result.requested_model}` : '');
+  const tool = result.engine ? ` with ${result.engine}${model ? ` (${model})` : ''}` : '';
   return result.ok
     ? `atris doctor --live: passed in ${result.seconds} seconds${tool}.`
     : `atris doctor --live: failed${tool}. ${result.error}`;
