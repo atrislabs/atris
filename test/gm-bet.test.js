@@ -2994,8 +2994,10 @@ test('a held command is shown as itself in full; only a yes naming its hash lets
   }
   const h = jobDesk(root, { 'm-shop': running('m-shop'), 'm-post': running('m-post') });
   const [card, tweet] = h.d.jobDeck().cards;
-  assert.deepEqual([card.yes.what, tweet.yes.what], ['builder wants to change which version of atris npm installs', 'builder wants to post in public'], 'the rollback and the post, not the step or a command quoted in the post');
+  assert.deepEqual([card.yes.what, tweet.yes.what], ['builder wants to change which version of shop-site npm installs', 'builder wants to post in public'], 'the rollback and the post, not the step or a command quoted in the post');
   assert.deepEqual([card.yes.exact, tweet.yes.exact], [`npm ${args.join(' ')}`, "atris twitter post 'run `npm publish` now'"], 'the exact command, each argument kept whole');
+  const served = require('../lib/gm-card').wire(require('../lib/gm-card').deck({ id: 'd', at: 0, total: 2, card, columns: [] }));
+  assert.deepEqual([served.exact, served.options.find(o => o.id === 'yes').binds.hash], [`npm ${args.join(' ')}`, card.yes.hash], 'the phone gets the whole command and a yes bound to it');
   assert.equal(yesLock.approveYesLock(root, 'm-shop', 1, seal), null, 'a yes to the step names no command');
   assert.equal(yesLock.check({ stateDir: root, missionId: 'm-shop', seal, tool: 'npm', args }).hold, true);
   assert.ok(yesLock.approveYesLock(root, 'm-shop', 1, seal, undefined, { hash: card.yes.hash }));
