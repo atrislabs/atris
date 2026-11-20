@@ -463,7 +463,7 @@ async function pushAtris() {
   const yes = process.argv.includes('--yes');
   const allowDelete = process.argv.includes('--delete');
   const allowMassDelete = process.argv.includes('--delete-all');
-  const conditional = process.argv.includes('--conditional');
+  let conditional = process.argv.includes('--conditional');
   if (conditional && (force || allowDelete || allowMassDelete)) {
     throw new Error('Conditional sync supports file writes only. Remove --force and delete flags.');
   }
@@ -621,6 +621,7 @@ async function pushAtris() {
       { method: 'GET', token: creds.token, timeoutMs: 60000 }
     );
     if (snapshotResult.ok && snapshotResult.data && Array.isArray(snapshotResult.data.files)) {
+      conditional ||= snapshotResult.data.supports_conditional_sync === true;
       const cloudHashes = filterSyncFiles(buildCloudHashMap(snapshotResult.data.files));
       const manifestFiles = filterSyncFiles((manifest && manifest.files) || {});
       const driftFiles = [];

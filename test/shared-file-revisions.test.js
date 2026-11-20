@@ -33,6 +33,8 @@ test('two independent CLI clients retain their edits after racing past the fresh
   const base = 'items\n';
   let content = base;
   const written = [];
+  let automatic = true;
+  let supportsRoute = true;
   let firstWrite;
   const bothWritersArrived = new Promise(resolve => { firstWrite = resolve; });
   const server = http.createServer(async (req, res) => {
@@ -45,10 +47,11 @@ test('two independent CLI clients retain their edits after racing past the fresh
     const row = { path: file, size: Buffer.byteLength(content), hash: hash(content) };
     if (url.pathname.endsWith('/snapshot')) {
       if (url.searchParams.get('include_content') === 'true') row.content = content;
-      return respond({ files: [row] });
+      return respond({ files: [row], supports_conditional_sync: automatic });
     }
     if (url.pathname.endsWith('/files/batch')) return respond({ files: [{ ...row, content }] });
     if (url.pathname.endsWith('/sync/conditional')) {
+      if (!supportsRoute) return respond({}, 404);
       let data = '';
       for await (const chunk of req) data += chunk;
       const [write] = JSON.parse(data).files;
@@ -81,10 +84,11 @@ test('two independent CLI clients retain their edits after racing past the fresh
   }));
   await Promise.all(clients.map((c, i) => fs.appendFile(c.file, i ? '5\n' : '7\n')));
   const results = await Promise.allSettled(clients.map(c =>
-    c.run('push', 'test-co', '--from', c.cwd, '--only', file, '--conditional')
+    c.run('push', 'test-co', '--from', c.cwd, '--only', file)
   ));
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 1, JSON.stringify(results));
   assert.deepEqual(written.map(write => write.expected_hash), [hash(base), hash(base)]);
+  assert.match(results.find(result => result.status === 'rejected').reason.stderr, /did not accept every revision/);
   const loser = clients[results.findIndex(result => result.status === 'rejected')];
   await loser.run('pull', 'test-co', '--into', loser.cwd, '--keep-local', '--fail-on-conflict');
   assert.equal(await fs.readFile(loser.file, 'utf8'), 'items\n5\n7\n');
@@ -93,4 +97,12 @@ test('two independent CLI clients retain their edits after racing past the fresh
   const winner = clients.find(client => client !== loser);
   await winner.run('pull', 'test-co', '--into', winner.cwd, '--keep-local', '--fail-on-conflict');
   assert.equal(await fs.readFile(winner.file, 'utf8'), content);
+
+  // An explicitly guarded client must not fall back to an unconditional upload.
+  automatic = false;
+  supportsRoute = false;
+  await fs.appendFile(winner.file, 'must stay local\n');
+  await assert.rejects(winner.run('push', 'test-co', '--from', winner.cwd, '--only', file, '--conditional'),
+    error => /does not support conditional sync/.test(error.stderr));
+  assert.equal(content, 'items\n5\n7\n');
 });
