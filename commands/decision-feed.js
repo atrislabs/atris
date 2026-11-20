@@ -22,9 +22,9 @@ const VALUE_FLAGS = new Set([
   '--filter', '--limit', '--cursor', '--since', '--as', '--title', '--why', '--body', '--detail',
   '--visual', '--kind', '--lane', '--note', '--story', '--reason', '--card', '--proof', '--text', '--engine', '--choose', '--member', '--wait', '--cards', '--goal',
   '--reply',
-  '--session', '--ask',
+  '--session', '--ask', '--append-b64', '--failed',
 ]);
-const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask', '--retry', '--run', '--tagged', '--independent', '--confirm', '--dry-run', '--undo']);
+const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask', '--retry', '--run', '--tagged', '--independent', '--confirm', '--dry-run', '--undo', '--done', '--needs-sign-in']);
 
 function parse(args) {
   const positional = [];
@@ -135,6 +135,11 @@ const HELP = [
   '       atris feed setup skip [<card>]      skip the setup question waiting for you; nothing is saved',
   '       atris feed doctor [--no-call]       before a demo: what is ready, what is not, and the one thing to do (exits 1 when not ready)',
   '       atris feed repair                   put right runs, replies and approvals left half done; says what it fixed',
+  '       atris feed turns [--json]           with ATRIS_FEED_TURNS=caller, the questions for an Atris model waiting for someone else',
+  '                          to ask them, oldest first, and whether a teammate is still thinking. The feed never asks the model itself then.',
+  '       atris feed turns show <id> --json   one waiting question, in full',
+  '       atris feed turns answer <id> --append-b64 <text in base64>   add to its answer (as many times as needed)',
+  '       atris feed turns answer <id> --done | --failed "<one plain sentence>" [--needs-sign-in]   finish it',
   '       atris feed notes [--member <name>]  what the owner taught the team in card conversations; notes forget <id> removes one',
   '',
   'Ideas wait for a person. Approve hands the idea to its team member and starts it',
@@ -570,6 +575,11 @@ async function run(args = [], context = {}) {
       }
     } else if (sub === 'repair') {
       out = team().repair(root, { env, deps });
+    } else if (sub === 'turns') {
+      // The caller makes the model call; this computer keeps the files (lib/feed-turns.js). Always JSON.
+      const result = require('../lib/feed-turns').command(root, positional.slice(1), flags);
+      console.log(JSON.stringify(result.out));
+      return result.code;
     } else if (sub === 'run') {
       // Internal: the detached runner that decide, ping and more start.
       if (!positional[1]) throw new feed.FeedError(400, 'usage: atris feed run <run id>');
@@ -596,7 +606,7 @@ async function run(args = [], context = {}) {
 const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'dismiss', 'talk', 'messages', 'revise', 'more', 'run', 'help',
   'waiting',
   'settings', 'engines', 'members', 'member', 'ping', 'think', 'emit', 'events', 'start', 'doctor', 'repair', 'notes',
-  'say', 'react', 'reply', 'replies', 'discuss', 'work', 'clear', 'setup', 'scrub-keys']);
+  'say', 'react', 'reply', 'replies', 'discuss', 'work', 'clear', 'setup', 'scrub-keys', 'turns']);
 
 const LEGACY_BARE_NOTICE = 'note: bare `atris feed` now opens the decision feed. Output is not a terminal, so this run showed the '
   + 'business group feed as before; that ends next release. Use `atris feed list` for the group feed, `atris feed cards --json` for the new one.';
