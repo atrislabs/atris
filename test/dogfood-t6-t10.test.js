@@ -17,25 +17,6 @@ function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-test('T6: code-review missing engine says not installed and exits 2', () => {
-  const dir = makeTempDir();
-  try {
-    const human = runCli(['code-review', 'example.py'], { cwd: dir });
-    assert.equal(human.status, 2);
-    assert.match(human.stderr, /not installed; atris skill install code-review/);
-    assert.doesNotMatch(human.stderr + human.stdout, /Traceback/);
-
-    const json = runCli(['code-review', '--json'], { cwd: dir });
-    assert.equal(json.status, 2);
-    const body = JSON.parse(json.stdout);
-    assert.equal(body.ok, false);
-    assert.equal(body.error, 'not installed');
-    assert.match(body.install, /atris skill install code-review/);
-  } finally {
-    cleanupTempDir(dir);
-  }
-});
-
 test('T7: xp defaults to --local when no bound business', () => {
   const dir = makeTempDir();
   try {

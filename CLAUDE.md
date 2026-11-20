@@ -30,6 +30,8 @@ Guidance for working on the **Atris CLI itself** (this repo builds the `atris` p
 
 **Commits** credit Atris, not Claude: end with `Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>`. No `--no-verify`; a blocked commit means stop and report.
 
+**Check the plan against `atris/SPEC.md` before writing code.** It lists the mistakes this repo keeps making. Run `atris code-review` before shipping; a lens that asks for changes blocks the change.
+
 **Prose ships through the slop gate.** `atris slop detect <path>` is deterministic and wired into review; no em dashes, no hype copy, lowercase over shouting.
 
 **`atris/logs/` is gitignored.** Don't try to commit journal state.
