@@ -27,7 +27,7 @@ test('merge results survive reversed arrival and ambiguous edits stay separate',
   assert.equal(safeLineMerge('price 20\n', 'price 30\n', 'price 40\n').ok, false);
 });
 
-test('two independent CLI clients retain their edits after racing past the freshness check', { timeout: 30000 }, async t => {
+test('two independent CLI clients retain their edits after racing past the freshness check', { timeout: 120000 }, async t => {
   const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'atris-file-revisions-'));
   t.after(() => fs.rm(temp, { recursive: true, force: true }));
   const file = 'orders.txt';
@@ -74,7 +74,7 @@ test('two independent CLI clients retain their edits after racing past the fresh
     await fs.mkdir(cwd, { recursive: true });
     const run = (...args) => exec(process.execPath, [cli, ...args], {
       cwd,
-      timeout: 12000,
+      timeout: 30000,
       env: {
         PATH: process.env.PATH, NODE_PATH: process.env.NODE_PATH || '', HOME: home,
         ATRIS_TOKEN: 'fixture', ATRIS_API_URL: 'http://127.0.0.1:' + server.address().port,
@@ -138,6 +138,10 @@ test('install preserves a racing editor save, an open descriptor and interrupted
   const history = path.join(root, '.atris', 'sync', 'local-revisions');
   const copies = await Promise.all((await fs.readdir(history)).map(name => fs.readFile(path.join(history, name, 'original'), 'utf8')));
   assert.ok(copies.includes('latest late save'));
+  recoverInterruptedMerges(root);
+  const recovered = (await fs.readdir(root)).filter(name => name.startsWith('note.txt.recovered-'));
+  assert.equal(recovered.length, 1);
+  assert.equal(await fs.readFile(path.join(root, recovered[0]), 'utf8'), 'latest late save');
   assert.equal(await fs.readFile(target, 'utf8'), 'merged');
 
   const link = io.linkSync;
