@@ -76,7 +76,7 @@ function httpRequest(urlString, options) {
 
     const req = transport.request(requestOptions, (res) => {
       // Follow redirects (301, 302, 307, 308)
-      if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
+      if (!options.noRedirects && [301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
         res.resume();
         let redirectUrl;
         try {
@@ -144,7 +144,8 @@ async function apiRequestJson(pathname, options = {}) {
   if (authToken) {
     // Renew first if this is the active agent client's token and it is
     // missing or within 60 seconds of expiry. Any other token is untouched.
-    authToken = await agentClientRenewal().freshTokenFor(authToken);
+    // Bounded single-dispatch callers explicitly avoid renewal delays/replays.
+    if (!options.noAuthRenewal) authToken = await agentClientRenewal().freshTokenFor(authToken);
     headers.Authorization = `Bearer ${authToken}`;
   }
   if (!headers['User-Agent'] && !headers['user-agent']) {
@@ -176,6 +177,7 @@ async function apiRequestJson(pathname, options = {}) {
         headers,
         body: bodyPayload,
         timeoutMs: options.timeoutMs,
+        noRedirects: options.noRedirects,
       });
 
       const text = result.body.toString('utf8');
@@ -191,7 +193,7 @@ async function apiRequestJson(pathname, options = {}) {
       const ok = result.status >= 200 && result.status < 300;
 
       // A 401 on an agent client token: fetch a new token once, retry once.
-      if (result.status === 401 && authToken && !options.agentClientRetried) {
+      if (result.status === 401 && authToken && !options.agentClientRetried && !options.noAuthRenewal) {
         const renewed = await agentClientRenewal().tokenAfterUnauthorized(authToken);
         if (renewed) {
           return apiRequestJson(pathname, { ...options, token: renewed, agentClientRetried: true });
