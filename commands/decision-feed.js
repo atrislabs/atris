@@ -223,6 +223,7 @@ function printText(command, out, { streamed = false } = {}) {
     else if (outcome.started) console.log('approved. the team member started on it.');
     else if (outcome.reason === 'queued') console.log(`approved. it starts when a slot frees up (number ${outcome.position} in line).`);
     else if (outcome.reason === 'accepted') console.log('accepted.');
+    else if (outcome.reason === 'standing_mission_confirmed') console.log('confirmed. these words carry your yes again.');
     else console.log(`approved. not started: ${outcome.reason || 'unknown'}`);
     return;
   }
