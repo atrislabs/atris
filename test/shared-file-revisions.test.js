@@ -153,6 +153,16 @@ test('install preserves a racing editor save, an open descriptor and interrupted
   mock.mock.restore();
   assert.equal(await fs.readFile(target, 'utf8'), 'editor replacement');
 
+  const longName = path.join(root, 'a'.repeat(196) + '.txt');
+  await fs.writeFile(longName, 'before');
+  const held = await fs.open(longName, 'a');
+  assert.equal(installLocalMerge(root, longName, hash('before'), 'after'), true);
+  await held.write(' later');
+  await held.close();
+  recoverInterruptedMerges(root);
+  const shortName = (await fs.readdir(root)).find(name => name.startsWith('recovered-'));
+  assert.equal(await fs.readFile(path.join(root, shortName), 'utf8'), 'before later');
+
   const pending = path.join(root, '.atris', 'sync', 'pending-merges', '2147483647-orphan');
   await fs.mkdir(pending);
   await fs.writeFile(path.join(pending, 'path'), 'note.txt');
