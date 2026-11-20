@@ -5962,6 +5962,16 @@ function missionProtectedLaneHold(mission, root = process.cwd()) {
   return hold ? { pause_reason: hold.pause_reason } : null;
 }
 
+// The seal a tick runs under: the job's own sealed owner steps, else, when an
+// agent changed the member's standing mission and the owner has not confirmed
+// it, the fixed unconfirmed seal (lib/standing-text.js).
+function missionTickSeal(mission, cwd) {
+  const steps = (mission.yes_locks && mission.yes_locks.steps) || [];
+  if (steps.length) return steps;
+  const root = mission.worktree_root || mission.worktree?.path || cwd;
+  return require('../lib/standing-text').unconfirmedSeal(mission, root, path.join(require('../lib/state-home').atrisHome(), 'state')) || [];
+}
+
 function campaignApprovedLane(root, campaignId, lane) {
   try {
     const { openCampaignStore } = require('../lib/campaign-store');
@@ -8043,7 +8053,9 @@ function buildPreloadedMemberContextLines(mission, root = process.cwd()) {
       sections.push(`### Member Soul (atris/team/${owner}/SOUL.md)`, soulMd);
     }
     if (missionMd) {
-      sections.push(`### Member Standing Mission (atris/team/${owner}/MISSION.md)`, missionMd);
+      const unconfirmed = !require('../lib/standing-text').standingConfirmed(owner, baseRoot).confirmed
+        ? ', changed by an agent and not confirmed by the owner, so it gives you no say over landing, publishing, sending or spending' : '';
+      sections.push(`### Member Standing Mission (atris/team/${owner}/MISSION.md${unconfirmed})`, missionMd);
     }
     try {
       const skillsDir = path.join(teamMemberDir, 'skills');
@@ -8460,7 +8472,7 @@ function spawnGenericRunnerTick(mission, opts) {
     }
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: missionTickSeal(mission, cwd), stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
     } catch (error) {
       resolve({
         ok: false,
@@ -8646,7 +8658,7 @@ function spawnClaudeTick(mission, opts) {
   return new Promise((resolve) => {
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: missionTickSeal(mission, cwd), stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
     } catch (error) {
       resolve({
         ok: false,
@@ -9703,7 +9715,7 @@ async function executeMissionRunTicksPhase(context) {
         const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, cycleTickLimit, frozen, pendingMissionPings(mission), cwd, ticks.length + 1);
         let atris2GitGuard = null;
         try {
-          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
+          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: missionTickSeal(mission, cwd), stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
         } catch (error) {
           result = {
             ...result,
