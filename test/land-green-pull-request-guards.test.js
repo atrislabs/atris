@@ -552,4 +552,43 @@ test('hold words match whole words: apostrophes and spaces are read, threshold a
   }
 });
 
+// 2026-11-19: in 7 days the hourly lander rechecked unchanged clashes 11,569 times, closed pull requests 5,842.
+test('a clash and a closed pull request are not checked again until something moves, and still show as not checked', () => {
+  const { root, bare } = makeRepo();
+  try {
+    const state = path.join(bare, 'land-state.json');
+    branchWith(root, 'feat/clash', 'shared.txt', 'branch side\n');
+    const shut = branchWith(root, 'feat/shut', 'shut.txt');
+    const masterCommit = (file) => { fs.writeFileSync(path.join(root, file), `master ${Date.now()}\n`); commitAll(root, `master ${file}`); git(root, ['push', '-q', 'origin', 'master']); };
+    masterCommit('shared.txt');
+    const prs = { 'feat/shut': [pr({ number: 12, state: 'CLOSED', headRefName: 'feat/shut', headRefOid: shut })] };
+    const jobs = [];
+    const go = () => {
+      const result = run(root, fakeGh(prs), {
+        stateFile: state, limit: 10, fileConflictTask: (cwd, job) => { jobs.push('clash'); return { id: 'T1', inserted: true }; },
+        closeCatchUpJobs: () => { jobs.push('close'); return []; },
+      });
+      return Object.assign(Object.fromEntries(result.verdicts.map((v) => [v.branch, v])), { result });
+    };
+    const one = go();
+    assert.deepEqual([one['feat/clash'].reason, one['feat/shut'].reason], ['merge_conflict', 'pull_request_closed']);
+    masterCommit('elsewhere.txt');
+    const two = go();
+    assert.deepEqual([two['feat/clash'].reason, two['feat/clash'].was], ['waiting_for_change', 'merge_conflict']);
+    assert.match(two['feat/clash'].detail, /merge conflict in shared\.txt; tries again once the branch moves or master changes those files/);
+    assert.deepEqual([two['feat/shut'].reason, two['feat/shut'].was], ['waiting_for_change', 'pull_request_closed']);
+    assert.deepEqual(two.result.not_rechecked, { merge_conflict: 1, pull_request_closed: 1 });
+    assert.deepEqual(jobs, ['clash', 'close'], 'no job work on the run where nothing moved');
+    // Master changing the clashing file, a push to origin's copy and a reopen are all moves.
+    masterCommit('shared.txt');
+    assert.equal(go()['feat/clash'].reason, 'merge_conflict');
+    git(root, ['push', '-q', 'origin', 'feat/clash']);
+    prs['feat/shut'] = [pr({ number: 12, headRefName: 'feat/shut', headRefOid: shut })];
+    const three = go();
+    assert.deepEqual([three['feat/clash'].reason, three['feat/shut'].action], ['merge_conflict', 'queued']);
+  } finally {
+    cleanup(root, bare);
+  }
+});
+
 test.after(() => cleanup(tmpTasks));
