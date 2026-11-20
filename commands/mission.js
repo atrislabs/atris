@@ -2173,7 +2173,7 @@ function readYesLockSeal(raw, asJson) {
   }
   const ok = Array.isArray(list) && list.every(l => l && Number.isInteger(l.step) && l.step > 0 && Array.isArray(l.categories) && l.categories.length && l.categories.every(c => YES_LOCK_CATEGORIES.has(c)));
   if (!ok) exitMissionError('--yes-lock takes a JSON list of {step, text, categories}, with categories from publish, tag, post, send, merge, deploy, spend', 2, asJson);
-  return list.map(l => ({ step: l.step, text: String(l.text || '').slice(0, 200), categories: [...new Set(l.categories)] }));
+  return list.map(l => ({ step: l.step, ...(l.kind ? { kind: String(l.kind) } : {}), text: String(l.text || '').slice(0, 200), categories: [...new Set(l.categories)] }));
 }
 
 function applyMissionStartPatch(mission, patch) {
