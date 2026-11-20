@@ -92,7 +92,7 @@ test('exports fleet and fleetWorkspaceStatus as functions', () => {
 test('help prints every subcommand and returns without touching the hub', async () => {
   const { stdout, stderr, networkCalls } = await capture(() => fleet(['help']));
   assert.match(stdout, /atris fleet: coordinate agent swarm via Swarlo/);
-  for (const line of ['fleet --global', 'fleet post <msg>', 'fleet task <prompt>', 'fleet claim <key>', 'fleet done <key>', 'fleet members', 'fleet prune [min]', 'fleet watch [sec]']) {
+  for (const line of ['fleet --global', 'fleet post <msg>', 'fleet task <prompt>', 'fleet claim <key>', 'fleet done <key>', 'fleet members', 'fleet prune [min]', 'fleet watch', 'fleet tail [sec]']) {
     assert.ok(stdout.includes(line), `help should mention "${line}"`);
   }
   assert.strictEqual(stderr, '');
@@ -201,7 +201,7 @@ test('hub mutations without --global are refused with exit code 1 and no network
   const root = makeWorkspace({ members: ['alpha'] });
   process.chdir(root);
 
-  const mutations = ['post', 'say', 'task', 'claim', 'done', 'report', 'prune', 'watch', 'tail'];
+  const mutations = ['post', 'say', 'task', 'claim', 'done', 'report', 'prune', 'tail'];
   for (const sub of mutations) {
     process.exitCode = undefined;
     const res = await capture(() => fleet([sub, 'something']));
