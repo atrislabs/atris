@@ -477,6 +477,15 @@ function initAtris() {
     markReady('workspace', 'PERSONA.md', '✓ Created PERSONA.md');
   }
 
+  // The setup guide that matches this atris version, for the agent a person
+  // asked to set atris up. Never overwrites the project's own copy.
+  const setupFile = path.join(targetDir, 'SETUP.md');
+  const setupSource = path.join(__dirname, '..', 'SETUP.md');
+  if (!fs.existsSync(setupFile) && fs.existsSync(setupSource)) {
+    fs.copyFileSync(setupSource, setupFile);
+    markReady('workspace', 'SETUP.md', '✓ Created SETUP.md');
+  }
+
   const brain = ensureWorkspaceBrain(cwd);
   for (const rel of brain.created) {
     const name = rel.replace(/^atris\//, '').replace(/\/$/, '');
