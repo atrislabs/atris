@@ -20,6 +20,7 @@ const axSessions = require('./lib/ax-sessions');
 const axContext = require('./lib/ax-context');
 const axExt = require('./lib/ax-ext');
 const { runWriter1, buildSwapHandoff, createFlowSession, runFlowTurn } = require('./lib/writer-1');
+const axCommands = require('./lib/ax-commands');
 
 const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
 const BACKEND = {
@@ -1296,6 +1297,8 @@ const CHAT_COMMANDS = Object.freeze([
   { name: '/undo', description: 'restore workspace files to before the last turn', type: 'undo' },
   { name: '/sessions', description: 'list or switch saved workspace sessions', type: 'sessions' },
   { name: '/mcp', description: 'show configured MCP servers and tools', type: 'mcp' },
+  { name: '/commands', description: 'list custom project/user slash commands', type: 'commands' },
+  { name: '/permissions', description: 'show active allow/deny tool rules', type: 'permissions' },
   { name: '/export', description: 'export this session transcript to markdown', type: 'export' },
   { name: '/log', description: 'append a note to today\'s journal', type: 'log' },
   { name: '/today', description: 'show today\'s journal', type: 'today' },
@@ -1396,6 +1399,15 @@ function runChatSlash(line, options = {}) {
   }
   const command = CHAT_COMMAND_BY_NAME.get(parsed.name);
   if (!command) {
+    const custom = axCommands.expandCustomSlashCommand(line, cwd);
+    if (custom) {
+      return {
+        type: 'custom',
+        command: custom.command,
+        prompt: custom.prompt,
+        output: `· /${custom.command.name} (${custom.command.source})`,
+      };
+    }
     return { type: 'unknown', output: `unknown command ${parsed.name}\n${chatMenu(options)}` };
   }
   if (command.type === 'help') {
@@ -1559,6 +1571,24 @@ function runChatSlash(line, options = {}) {
       configs,
       output: configs.map((c) => `  ${c.name}  ${c.command} ${(c.args || []).join(' ')}`.trimEnd()).join('\n'),
     };
+  }
+  if (command.type === 'commands') {
+    const custom = axCommands.listCustomSlashCommands(cwd);
+    if (!custom.length) {
+      return { type: 'commands', output: '· no custom commands found (.atris/commands/*.md or .claude/commands/*.md)' };
+    }
+    return {
+      type: 'commands',
+      output: custom.map((c) => `  ${c.slash.padEnd(18)} ${c.description} (${c.source})`).join('\n'),
+    };
+  }
+  if (command.type === 'permissions') {
+    const perms = axLocalTools.loadPermissionSettings(cwd);
+    const lines = [];
+    if (perms.allow.length) lines.push(`allow: ${perms.allow.join(', ')}`);
+    if (perms.deny.length) lines.push(`deny: ${perms.deny.join(', ')}`);
+    if (!lines.length) return { type: 'permissions', output: '· no permission rules in .atris/settings.json or .claude/settings.json' };
+    return { type: 'permissions', output: lines.join('\n') };
   }
   if (command.type === 'export') {
     const md = axSessions.exportSessionMarkdown({
@@ -4045,7 +4075,8 @@ async function runHeadlessTurn(message, options = {}) {
 
   try {
     const cwd = options.cwd || process.cwd();
-    const expanded = axContext.expandAtMentions(message, cwd);
+    const customCmd = axCommands.expandCustomSlashCommand(message, cwd);
+    const expanded = axContext.expandAtMentions(customCmd ? customCmd.prompt : message, cwd);
     const result = await turnFunction(expanded.prompt, {
       mode,
       cwd,
@@ -4116,7 +4147,8 @@ async function runStreamJsonTurn(message, options = {}) {
     }
   }
 
-  const expanded = axContext.expandAtMentions(message, cwd);
+  const customCmd = axCommands.expandCustomSlashCommand(message, cwd);
+  const expanded = axContext.expandAtMentions(customCmd ? customCmd.prompt : message, cwd);
   const memory = process.env.AX_NO_PROJECT_MEMORY === '1' ? { files: [], summary: '' } : axContext.loadProjectMemory(cwd);
 
   emit({
@@ -4318,7 +4350,11 @@ async function chat(options = {}) {
       reasoningEffort: session.reasoningEffort,
       isTTY: output.isTTY,
     });
-    if (slash) {
+    let effectiveInput = trimmed;
+    if (slash && slash.type === 'custom') {
+      output.write(`${paint(slash.output, [ANSI.muted], output)}\n`);
+      effectiveInput = slash.prompt;
+    } else if (slash) {
       if (slash.type === 'exit') return true;
       if (slash.mode) {
         const previousMode = mode;
@@ -4494,7 +4530,7 @@ async function chat(options = {}) {
       lastCompactionNotice = compactedTurns;
       output.write(`${paint(`· context: ${compactedTurns} earlier turn${compactedTurns === 1 ? '' : 's'} compacted into a digest`, [ANSI.muted], output)}\n`);
     }
-    const expanded = axContext.expandAtMentions(trimmed, cwd);
+    const expanded = axContext.expandAtMentions(effectiveInput, cwd);
     if (expanded.attachments.length) {
       for (const att of expanded.attachments) {
         output.write(`${formatAuxRow('attach', `${att.path} (${att.lines} ${att.kind === 'dir' ? 'entries' : 'lines'})`, output)}\n`);
@@ -4642,13 +4678,14 @@ async function chat(options = {}) {
       const settle = (raw) => {
         if (pendingApprovalAbort === controller) pendingApprovalAbort = null;
         const ans = String(raw || '').trim().toLowerCase();
+        if (ans === 'a' || ans === 'always') return resolve('always');
         if (ans === 's' || ans === 'session') return resolve('session');
         if (ans === 'y' || ans === 'yes') return resolve('allow');
         resolve('deny');
       };
       controller.signal.addEventListener('abort', () => settle('n'), { once: true });
       try {
-        rl.question(paint(`allow ${op} ${target}? [y]es / [s]ession / [n]o: `, [ANSI.warn], baseOutput), { signal: controller.signal }, settle);
+        rl.question(paint(`allow ${op} ${target}? [y]es / [s]ession / [a]lways / [n]o: `, [ANSI.warn], baseOutput), { signal: controller.signal }, settle);
       } catch {
         settle('n');
       }
