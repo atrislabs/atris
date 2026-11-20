@@ -80,3 +80,7 @@ Mission engine resource readings: `commands/mission.js:9302` starts the paired r
 ## Revision reports across out-of-order commit dates
 
 Mission receipt test runners: `test/helpers/mission-json.js:22` runs the actual CLI with full tick JSON and the original twenty-second limit; `test/helpers/mission-json.js:34` keeps checked real Git commands and the original fifteen-second limit. Four mission completion/cache/baseline/receipt suites share these wrappers while retaining every original test body and initial-commit order. Check: `node --test test/mission-complete-guard.test.js test/mission-step-receipt-cache.test.js test/mission-worktree-baseline.test.js test/mission-worktree-receipt.test.js`.
+
+## The your-yes lock and its yes cards
+
+A held command is one request bound to its exact words and folder by a hash: `lib/yes-lock.js` (`check`). Its card shows that command in full, never the step's words: `lib/yes-lock.js` (`askedYesLocks`, `heldWords`, `exactCommand`), turned into a card by `lib/gm-bet.js` (`heldYes`, `publicJob`) in the same words a handed-off run gets (`lib/yes-lock.js` `heldAsk`). A yes or a no names that hash, or it does nothing: `lib/yes-lock.js` (`approveYesLock`, `denyYesLock`), answered from the phone by `lib/gm-bet.js` (`answerYes`). The card shows the exact command on its own smaller line (`lib/gm-card.js` `yes`, `deck`; `lib/gm-phone-page.js`). A request whose arguments cannot be read back gets no yes (`lib/gm-card.js` `yesOptions`). Checks: `test/gm-bet.test.js`, `test/yes-lock.test.js`, `test/yes-lock-attacks.test.js`.
