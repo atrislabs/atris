@@ -14,6 +14,7 @@ const { resolveSafeOutputDir } = require('../lib/workspace-safety');
 const {
   buildConflictReviewPacket,
   readBaseContent,
+  safeLineMerge,
   removeBaseContents,
   writeBaseContents,
   writeConflictReviewPacket,
@@ -709,8 +710,23 @@ async function pullBusiness(slug) {
       console.log(`  ! ${p.replace(/^\//, '')}  overwritten (--force)`);
       pulled++;
     } else {
-      // Save remote version alongside local
       const content = remoteContent[p];
+      if (failOnConflict && !noManifest && typeof content === 'string') {
+        const base = readBaseContent(outputDir, p);
+        const baseHash = effectiveManifest?.files?.[p]?.hash;
+        if (base !== null && crypto.createHash('sha256').update(base).digest('hex') === baseHash) {
+          const filePath = path.join(outputDir, p.replace(/^\//, ''));
+          const local = fs.readFileSync(filePath, 'utf8');
+          const merged = safeLineMerge(base, local, content);
+          if (merged.ok) {
+            fs.writeFileSync(filePath, merged.content);
+            console.log('  ' + p.replace(/^\//, '') + '  merged local and cloud edits');
+            pulled++;
+            continue;
+          }
+        }
+      }
+      // Preserve both versions when their changes cannot be combined.
       conflictRemoteContents[p] = content || '';
       conflictChanges.push({ path: p, status: 'conflict_updated', action: 'review' });
       if (content || content === '') {
