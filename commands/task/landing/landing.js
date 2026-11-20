@@ -419,7 +419,8 @@ function cmdReady(args) {
     // The proof is the one thing this run made that the job would have kept; print it so it is not lost.
     console.error(`ready refused: ${err.message}`);
     console.error(`Your work is still in ${workRoot || process.cwd()}. The proof you gave was:\n${proof}`);
-    process.exit(1);
+    // Its own exit code, so a flight can tell a lost claim from a hand-in it should try again.
+    process.exit(3);
   }
   if (!result.ready) {
     console.error(`ready failed: ${result.reason}`);
