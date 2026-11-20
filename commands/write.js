@@ -24,6 +24,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const { scanFile, RULES, loadProjectRules } = require('./slop');
 const { isHelpToken } = require('../lib/noninteractive');
+const writer1 = require('../lib/writer-1');
 
 const WRITING_DIR = path.join('atris', 'writing');
 // Beats are question-shaped (Pollan: "almost everything I write is a quest to
@@ -196,6 +197,9 @@ function review(argv, root = process.cwd()) {
   const { topic, beats, counts } = syncStates(slug, root);
   const draftPath = path.join(sessionDir(slug, root), 'draft.md');
   const findings = scanFile(draftPath, RULES.concat(loadProjectRules(root)));
+  let draftRaw = '';
+  try { draftRaw = fs.readFileSync(draftPath, 'utf8'); } catch {}
+  const craft = writer1.analyzeWritingCraft(draftRaw);
   const empty = beats.filter((b) => (counts.get(b.n) || 0) === 0);
 
   if (json) {
@@ -203,11 +207,22 @@ function review(argv, root = process.cwd()) {
       slug, topic, ok: findings.length === 0 && empty.length === 0,
       beats: beats.map((b) => ({ n: b.n, title: b.title, state: STATE_WORD[b.state], words: counts.get(b.n) || 0 })),
       slop: findings.map((f) => ({ line: f.line, rule: f.rule, why: f.why, snippet: f.snippet })),
+      craft: {
+        words: craft.words,
+        sentences: craft.sentences,
+        avgWordsPerSentence: craft.avgWordsPerSentence,
+        readSeconds: craft.readSeconds,
+        hardTellCount: craft.hardTellCount,
+        hedgeCount: craft.hedgeCount,
+      },
     }, null, 2));
     return findings.length || empty.length ? 1 : 0;
   }
 
   console.log(`\n  review: ${topic}\n`);
+  if (craft.words > 0) {
+    console.log(`  craft: ${craft.words} words · ${craft.sentences} sentences · avg ${craft.avgWordsPerSentence}w · ~${craft.readSeconds}s aloud`);
+  }
   if (empty.length) {
     console.log(`  ⚠ ${empty.length} beat${empty.length === 1 ? '' : 's'} still empty: ${empty.map((b) => b.title).join(', ')}`);
   }
@@ -379,15 +394,159 @@ function coach(argv, root = process.cwd()) {
   return 0;
 }
 
+async function flow(argv, root = process.cwd(), options = {}) {
+  if ((argv || []).some(isHelpToken)) {
+    console.log('  usage: atris write flow [slug-or-topic]');
+    return 0;
+  }
+  const arg = (argv || []).find((a) => !a.startsWith('-')) || '';
+  let session = null;
+  if (arg) {
+    const slug = slugify(arg);
+    session = writer1.loadFlowSession(slug, root) || writer1.createFlowSession(arg, slug);
+  } else {
+    const latest = resolveSlug(null, root);
+    if (latest) {
+      session = writer1.loadFlowSession(latest, root) || writer1.createFlowSession(readPlan(latest, root).topic, latest);
+    } else {
+      session = writer1.createFlowSession();
+    }
+  }
+  const ax = require('../ax');
+  await ax.chat({
+    mode: 'flow',
+    cwd: root,
+    flowSession: session,
+    persistFlow: options.persistFlow !== undefined ? options.persistFlow : true,
+    input: options.input,
+    output: options.output,
+    stageRunner: options.stageRunner,
+  });
+  return 0;
+}
+
+async function draft(argv, root = process.cwd(), options = {}) {
+  if ((argv || []).some(isHelpToken)) {
+    console.log('  usage: atris write draft "<topic>" [--out <file>] [--skip-gather] [--skip-edit]');
+    return 0;
+  }
+  const flag = (name) => { const i = (argv || []).indexOf(name); return i !== -1 ? argv[i + 1] : null; };
+  const outFile = flag('--out');
+  const skipGather = (argv || []).includes('--skip-gather');
+  const skipEdit = (argv || []).includes('--skip-edit');
+  const promptParts = [];
+  for (let i = 0; i < (argv || []).length; i += 1) {
+    if (argv[i] === '--out') { i += 1; continue; }
+    if (argv[i].startsWith('-')) continue;
+    promptParts.push(argv[i]);
+  }
+  const prompt = promptParts.join(' ').trim();
+  if (!prompt) {
+    console.error('  usage: atris write draft "<topic>" [--out <file>]');
+    return 2;
+  }
+  const result = await writer1.runWriter1(prompt, {
+    cwd: root,
+    skipGather,
+    skipEdit,
+    stageRunner: options.stageRunner,
+    onStage: (evt) => {
+      if (evt.phase === 'start') console.error(`  · ${evt.stage.name} (${evt.stage.tier} · ${evt.stage.model})...`);
+      else if (evt.phase === 'done') console.error(`  · ${evt.stage.name} done (${evt.durationMs}ms)${evt.guard ? ` · ${evt.guard.reason}` : ''}`);
+    },
+  });
+  if (outFile) {
+    const abs = path.resolve(root, outFile);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, `${result.output}\n`, 'utf8');
+    console.log(`  ✓ saved ${path.relative(root, abs)} (${result.craft.words} words, ${result.slop.findings.length} slop tells)`);
+  } else {
+    console.log(result.output);
+  }
+  return 0;
+}
+
+async function polish(argv, root = process.cwd(), options = {}) {
+  if ((argv || []).some(isHelpToken)) {
+    console.log('  usage: atris write polish <file> [--apply]');
+    return 0;
+  }
+  const apply = (argv || []).includes('--apply');
+  const target = (argv || []).find((a) => !a.startsWith('-'));
+  if (!target) {
+    console.error('  usage: atris write polish <file> [--apply]');
+    return 2;
+  }
+  const abs = path.resolve(root, target);
+  if (!fs.existsSync(abs)) {
+    console.error(`  file not found: ${target}`);
+    return 2;
+  }
+  const before = fs.readFileSync(abs, 'utf8');
+  const stageRunner = options.stageRunner || writer1.runLocalStage;
+  const { editRes } = await writer1.runLightEditStage(before, writer1.WRITER_1_STAGES.edit, stageRunner, { cwd: root });
+  const guard = writer1.evaluateLightEdit(before, (editRes && editRes.output) || '');
+  const cleaned = writer1.cleanProseSlop(guard.text);
+  const craft = writer1.analyzeWritingCraft(cleaned.text);
+
+  if (apply) {
+    fs.writeFileSync(abs, `${cleaned.text}\n`, 'utf8');
+    console.log(`  ✓ polished ${target} · ${guard.reason} · ${craft.words} words`);
+  } else {
+    console.log(`  preview (${guard.reason} · ${craft.words} words · ${craft.hardTellCount} tells)\n`);
+    console.log(cleaned.text);
+    console.log(`\n  pass --apply to write back to ${target}`);
+  }
+  return 0;
+}
+
+function record(argv, root = process.cwd()) {
+  if ((argv || []).some(isHelpToken)) {
+    console.log('  usage: atris write record [slug]');
+    return 0;
+  }
+  const arg = (argv || []).find((a) => !a.startsWith('-'));
+  const slug = arg && fs.existsSync(path.join(sessionDir(arg, root), 'flow.json'))
+    ? arg
+    : resolveSlug(arg, root);
+  if (!slug) {
+    console.error('  no writing session found. start one: atris write start "<topic>" or atris write flow');
+    return 2;
+  }
+  const loaded = writer1.loadFlowSession(slug, root);
+  if (loaded) {
+    console.log(writer1.formatWrittenByYouRecord(loaded));
+    return 0;
+  }
+  const plan = readPlan(slug, root);
+  let draftText = '';
+  try { draftText = fs.readFileSync(path.join(sessionDir(slug, root), 'draft.md'), 'utf8'); } catch {}
+  const craft = writer1.analyzeWritingCraft(draftText);
+  const lines = [
+    `# ${plan.topic}`,
+    '',
+    `Written by you (${slug})`,
+    `${craft.words} words, ${craft.sentences} sentences, 0 pasted`,
+    '',
+    draftText.trim(),
+  ];
+  console.log(lines.join('\n'));
+  return 0;
+}
+
 function help() {
   console.log(`
   atris write: guided writing sessions (you write every word; atris structures + reviews)
 
     atris write                   the coach: knows where you are, gets you going
     atris write start "<topic>" [--dump "..."] [--beats "a | b | c"]
+    atris write flow [slug]       co-write in flow state with Neon Low + Atris Fast (saves to disk)
+    atris write draft "<topic>"   three-tier writer-1 draft (Terra Low -> Neon Low -> Atris Fast)
+    atris write polish <file>     light grammar pass on Atris Fast under a 15% voice-guard cap
+    atris write record [slug]     export a Noteflow-compatible "Written by you" record
     atris write coach [slug]      the coach: cheers your best line, asks the next question (--offline for no-LLM)
     atris write status [slug]     progress against the outline (beats landed)
-    atris write review [slug]     taste gate: slop scan + writing-policy passes (read-only)
+    atris write review [slug]     taste gate: slop scan + craft stats + writing-policy passes (read-only)
     atris write pass <n> [slug]   mark beat n passed, the human calls it
     atris write list              all sessions
 
@@ -400,6 +559,10 @@ function help() {
 function writeCommand(argv) {
   const sub = argv[0];
   if (sub === 'start') return start(argv.slice(1));
+  if (sub === 'flow') return flow(argv.slice(1));
+  if (sub === 'draft') return draft(argv.slice(1));
+  if (sub === 'polish') return polish(argv.slice(1));
+  if (sub === 'record') return record(argv.slice(1));
   if (sub === 'coach' || sub === 'kick') return coach(argv.slice(1));
   if (sub === 'status') return status(argv.slice(1));
   if (sub === 'review') return review(argv.slice(1));
@@ -412,4 +575,4 @@ function writeCommand(argv) {
   return start(argv);
 }
 
-module.exports = { writeCommand, start, status, review, pass, coach, dumpSeeds, listSessions, readPlan, draftWordCounts, syncStates, slugify };
+module.exports = { writeCommand, start, flow, draft, polish, record, status, review, pass, coach, dumpSeeds, listSessions, readPlan, draftWordCounts, syncStates, slugify };

@@ -19,6 +19,7 @@ const axLocalTools = require('./lib/ax-local-tools');
 const axSessions = require('./lib/ax-sessions');
 const axContext = require('./lib/ax-context');
 const axExt = require('./lib/ax-ext');
+const { runWriter1, buildSwapHandoff, createFlowSession, runFlowTurn } = require('./lib/writer-1');
 
 const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
 const BACKEND = {
@@ -83,7 +84,7 @@ const ANSI = {
   magenta: '\x1b[35m'
 };
 
-const TIER_COLORS = { alpha: '\x1b[93m', rapid: '\x1b[33m', fast: '\x1b[32m', pro: '\x1b[36m', max: '\x1b[35m' };
+const TIER_COLORS = { alpha: '\x1b[93m', rapid: '\x1b[33m', fast: '\x1b[32m', pro: '\x1b[36m', max: '\x1b[35m', 'writer-1': '\x1b[95m', flow: '\x1b[96m' };
 
 // Extend backend_api by adding one row here. Keep mutating endpoints narrow;
 // any non-get method is approval-gated before the HTTP request is made.
@@ -109,6 +110,16 @@ const MODEL_ALIASES = Object.freeze({
   fast: 'fast',
   pro: 'pro',
   max: 'max',
+  neon: 'max',
+  'gemini-4-neon': 'max',
+  'gemini-4-neon-high': 'max',
+  'writer-1': 'writer-1',
+  writer: 'writer-1',
+  flow: 'flow',
+  cowrite: 'flow',
+  'co-write': 'flow',
+  terra: 'model:openai:gpt-6.1-terra',
+  'gpt-6.1-terra': 'model:openai:gpt-6.1-terra',
   rapid: 'rapid',
   alpha: 'alpha',
 });
@@ -128,6 +139,9 @@ const MODEL_CHOICES = Object.freeze([
   { mode: 'model:xai:grok-4.6', label: 'Grok 4.6' },
   { mode: 'model:openrouter:deepseek/deepseek-v4.1-flash', label: 'DeepSeek V4.1 Flash' },
   { mode: 'model:openrouter:z-ai/glm-5.3-flash', label: 'GLM 5.3 Flash' },
+  { mode: 'writer-1', label: 'Writer-1 (Terra + Neon + Atris Fast)' },
+  { mode: 'flow', label: 'Writer-1 Flow (Co-write with Neon)' },
+  { mode: 'model:openai:gpt-6.1-terra', label: 'GPT-6.1 Terra' },
 ].map(choice => Object.freeze(choice)));
 
 function squashModelName(value) {
@@ -169,9 +183,11 @@ function modelChoiceList(currentMode, options = {}) {
 
 function modelForMode(mode) {
   if (String(mode || '').startsWith('model:')) return mode.slice('model:'.length);
+  if (mode === 'flow' || mode === 'cowrite' || mode === 'co-write') return 'atris:writer-1:flow';
+  if (mode === 'writer-1' || mode === 'writer') return 'atris:writer-1';
   if (mode === 'code-fast') return CODE_FAST.model;
   if (mode === 'mercury') return 'inception:mercury-3-preview-1002';
-  if (mode === 'max') return 'atris:max';
+  if (mode === 'max' || mode === 'neon') return 'atris:max';
   if (mode === 'alpha') return 'atris:alpha';
   if (mode === 'rapid') return 'atris:rapid';
   return mode === 'fast' ? 'atris:fast' : 'atris:pro';
@@ -223,9 +239,11 @@ function tierLabel(mode) {
     const choice = MODEL_CHOICES.find(item => item.mode === mode);
     return choice ? choice.label : mode.slice('model:'.length);
   }
+  if (mode === 'flow' || mode === 'cowrite' || mode === 'co-write') return 'Atris Flow';
+  if (mode === 'writer-1' || mode === 'writer') return 'Atris Writer-1';
   if (mode === 'code-fast') return 'Atris Code Fast';
   if (mode === 'mercury') return 'mercury 3 (test model)';
-  if (mode === 'max') return 'Atris 2 Max';
+  if (mode === 'max' || mode === 'neon') return 'Atris 2 Max';
   if (mode === 'alpha') return 'Atris Alpha';
   if (mode === 'rapid') return 'Atris Rapid';
   if (mode === 'fast') return 'Atris 2 Fast';
@@ -1069,9 +1087,11 @@ function resolveRoute(message, options = {}) {
 
 function normalizeMode(mode) {
   if (String(mode || '').startsWith('model:')) return mode;
+  if (mode === 'flow' || mode === 'cowrite' || mode === 'co-write') return 'flow';
+  if (mode === 'writer-1' || mode === 'writer') return 'writer-1';
   if (mode === 'code-fast' || mode === 'code') return 'code-fast';
   if (mode === 'mercury') return 'mercury';
-  if (mode === 'max') return 'max';
+  if (mode === 'max' || mode === 'neon') return 'max';
   if (mode === 'alpha') return 'alpha';
   if (mode === 'rapid') return 'rapid';
   return mode === 'fast' ? 'fast' : 'pro';
@@ -1234,7 +1254,9 @@ const TIER_BLURBS = {
   rapid: 'cheap chat and first-hop tools',
   fast: 'quick answers, lowest latency',
   pro: 'deeper tool loop for real work',
-  max: 'highest reasoning for the hardest jobs',
+  max: 'highest reasoning for the hardest jobs (Neon)',
+  'writer-1': 'three-tier writing team (Terra gather, Neon write, Atris Fast grammar)',
+  flow: 'co-write in flow state with Neon (type "lock it" to finish)',
   alpha: 'experimental preview lane',
 };
 
@@ -3915,8 +3937,98 @@ async function postCodeFastTurn(message, options = {}) {
   });
 }
 
+async function postWriter1Turn(message, options = {}) {
+  const output = options.output || process.stdout;
+  const showProgress = options.showProgress !== false;
+  const contextHint = Array.isArray(options.history) && options.history.length
+    ? options.history.slice(-4).map((h) => `${h.role}: ${String(h.content || '').slice(0, 400)}`).join('\n')
+    : '';
+  const result = await runWriter1(message, {
+    cwd: options.cwd || process.cwd(),
+    contextHint,
+    stageRunner: options.stageRunner,
+    skipGather: options.skipGather,
+    skipEdit: options.skipEdit,
+    onStage: (evt) => {
+      if (!showProgress) return;
+      if (evt.phase === 'start') {
+        output.write(`${paint(`· ${evt.stage.name} (${evt.stage.tier} · ${evt.stage.model})...`, [ANSI.muted], output)}\n`);
+      } else if (evt.phase === 'done') {
+        const extra = evt.guard ? ` · ${evt.guard.reason}` : '';
+        output.write(`${paint(`· ${evt.stage.name} done (${formatDuration(evt.durationMs)})${extra}`, [ANSI.muted], output)}\n`);
+      } else if (evt.phase === 'fallback') {
+        output.write(`${paint(`· ${evt.stage.name} skipped (${evt.error})`, [ANSI.muted], output)}\n`);
+      }
+    },
+  });
+  if (showProgress && result.output) {
+    output.write(`\n${result.output}\n`);
+  }
+  return {
+    output: result.output,
+    durationMs: result.durationMs,
+    events: [],
+    stages: result.stages,
+    editGuard: result.editGuard,
+    slop: result.slop,
+  };
+}
+
+async function postFlowTurn(message, options = {}) {
+  const output = options.output || process.stdout;
+  const showProgress = options.showProgress !== false;
+  const cwd = options.cwd || process.cwd();
+  const flowSession = options.flowSession || createFlowSession();
+  const persist = options.persistFlow !== undefined
+    ? Boolean(options.persistFlow)
+    : (!process.env.NODE_TEST_CONTEXT && insideWorkspaceCwd(cwd));
+  const result = await runFlowTurn(message, flowSession, {
+    cwd,
+    persist,
+    stageRunner: options.stageRunner,
+    skipGather: options.skipGather,
+    skipEdit: options.skipEdit,
+    onStage: (evt) => {
+      if (!showProgress) return;
+      if (evt.phase === 'start' && evt.stage.name === 'gather') {
+        output.write(`${paint(`· quiet fact check (${evt.stage.model})...`, [ANSI.muted], output)}\n`);
+      } else if (evt.phase === 'done' && evt.stage.name === 'edit' && evt.guard) {
+        output.write(`${paint(`· grammar pass (${formatDuration(evt.durationMs)}) · ${evt.guard.reason}`, [ANSI.muted], output)}\n`);
+      }
+    },
+  });
+  if (showProgress && result.output) {
+    if (result.phase === 'beat' && (result.line || result.next)) {
+      if (result.line) output.write(`${paint(result.line, [ANSI.bold], output)}\n\n`);
+      if (result.next) output.write(`${paint(result.next, [ANSI.accent], output)}\n`);
+    } else {
+      output.write(`${result.output}\n`);
+    }
+    if (result.saved && result.saved.draftFile) {
+      output.write(`${paint(`· saved ${path.relative(cwd, result.saved.draftFile)} + record.md`, [ANSI.muted], output)}\n`);
+    }
+  }
+  return {
+    output: result.output,
+    durationMs: result.durationMs,
+    events: [],
+    phase: result.phase,
+    line: result.line,
+    next: result.next,
+    beatCount: result.beatCount,
+    stages: result.stages,
+    editGuard: result.editGuard,
+    slop: result.slop,
+    craft: result.craft,
+    saved: result.saved,
+  };
+}
+
 function turnFunctionForMode(mode) {
-  return normalizeMode(mode) === 'code-fast' ? postCodeFastTurn : postTurn;
+  const normalized = normalizeMode(mode);
+  if (normalized === 'flow') return postFlowTurn;
+  if (normalized === 'writer-1') return postWriter1Turn;
+  return normalized === 'code-fast' ? postCodeFastTurn : postTurn;
 }
 
 async function runHeadlessTurn(message, options = {}) {
@@ -4109,6 +4221,7 @@ async function chat(options = {}) {
   const sessionDiffs = [];
   const sessionGrants = new Set();
   let sessionCredits = 0;
+  let flowSession = options.flowSession || createFlowSession();
   let lastCompactionNotice = 0;
   let conversationId = options.conversationId || axSessions.createSessionId();
   if (options.continueSession) {
@@ -4159,7 +4272,7 @@ async function chat(options = {}) {
     const endpointRoute = routeForTurn === 'local' ? 'local' : 'cloud';
     const key = `${normalizeMode(mode)}:${endpointRoute}`;
     if (runtimePreflight.has(key)) return true;
-    if (options.skipRuntimePreflight || options.turnFunction || options.business || normalizeMode(mode) === 'code-fast') {
+    if (options.skipRuntimePreflight || options.turnFunction || options.business || normalizeMode(mode) === 'code-fast' || normalizeMode(mode) === 'writer-1' || normalizeMode(mode) === 'flow') {
       runtimePreflight.add(key);
       return true;
     }
@@ -4207,7 +4320,18 @@ async function chat(options = {}) {
     });
     if (slash) {
       if (slash.type === 'exit') return true;
-      if (slash.mode) mode = slash.mode;
+      if (slash.mode) {
+        const previousMode = mode;
+        mode = slash.mode;
+        if (previousMode !== slash.mode && history.length > 0) {
+          const handoff = buildSwapHandoff(history, previousMode, slash.mode);
+          if (handoff) {
+            history.length = 0;
+            history.push({ role: 'assistant', content: handoff.summary });
+            slash.output = `${slash.output} · compacted ${handoff.compactedCount} turn${handoff.compactedCount === 1 ? '' : 's'} for clean swap`;
+          }
+        }
+      }
       if (slash.approveMode) session.approveMode = slash.approveMode;
       if (typeof slash.planMode === 'boolean') session.planMode = slash.planMode;
       if (Object.prototype.hasOwnProperty.call(slash, 'reasoningEffort')) {
@@ -4239,6 +4363,7 @@ async function chat(options = {}) {
         history.length = 0;
         sessionDiffs.length = 0;
         sessionCredits = 0;
+        flowSession = createFlowSession();
         conversationId = axSessions.createSessionId();
       }
       if (slash.type === 'status') {
@@ -4384,6 +4509,9 @@ async function chat(options = {}) {
         mode,
         cwd,
         history,
+        flowSession,
+        persistFlow: options.persistFlow,
+        stageRunner: options.stageRunner,
         input,
         output,
         route,
@@ -5379,8 +5507,14 @@ async function main() {
     args.splice(modelIdx, 2);
   }
 
-  const explicitLane = modelLane || (args.includes('--code-fast') || args.includes('--code')
-    ? 'code-fast'
+  const explicitLane = modelLane || (args.includes('--flow')
+    ? 'flow'
+    : args.includes('--writer-1')
+      ? 'writer-1'
+    : args.includes('--neon')
+      ? 'max'
+    : args.includes('--code-fast') || args.includes('--code')
+      ? 'code-fast'
     : args.includes('--mercury')
       ? 'mercury'
     : args.includes('--max')
@@ -5530,7 +5664,7 @@ async function main() {
     args.splice(firstPositionalIdx, 1);
   }
   const prompt = args
-    .filter(arg => !['--auto', '--auto-approve', '--max', '--fast', '--rapid', '--alpha', '--mercury', '--diffuse', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--print', '--headless', '--local', '--cloud', '--help', '-h', '--effort'].includes(arg))
+    .filter(arg => !['--auto', '--auto-approve', '--dangerously-skip-permissions', '--flow', '--writer-1', '--neon', '--max', '--fast', '--rapid', '--alpha', '--mercury', '--diffuse', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--print', '--headless', '--local', '--cloud', '--help', '-h', '--effort'].includes(arg))
     .join(' ')
     .trim();
 
@@ -5911,7 +6045,11 @@ module.exports = {
   postApprovalExecution,
   postCodeFastTurn,
   postTurn,
+  postWriter1Turn,
+  postFlowTurn,
   postTurnTimeoutMs,
+  buildSwapHandoff,
+  createFlowSession,
   readApprovalStore,
   removeStoredApproval,
   renderStreamingMarkdown,
