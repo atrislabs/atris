@@ -190,6 +190,20 @@ function detectProjectContext(projectRoot = process.cwd()) {
   return detected;
 }
 
+// One Project Context block: the heading, its body, and the `---` rule init writes after it.
+const PROJECT_CONTEXT_BLOCK = /^## Project Context\n(?:(?!## |---\n)[^\n]*\n)*(?:---\n\n)?/gm;
+
+// Put `section` in a member file exactly once. A block already there (from an earlier init, or
+// shipped in the template) is replaced, extra copies are dropped, and only a file with none
+// gets it inserted ahead of the `## <before>` heading.
+function upsertProjectContext(content, section, before) {
+  let found = false;
+  const replaced = content.replace(PROJECT_CONTEXT_BLOCK, () => (found ? '' : ((found = true), section)));
+  if (found) return replaced;
+  const at = content.indexOf(`---\n\n## ${before}`);
+  return at === -1 ? content : content.slice(0, at) + section + content.slice(at + 5);
+}
+
 /**
  * Inject project-specific patterns into agent specs
  * @param {string} agentTeamDir - Directory containing team specs
@@ -204,7 +218,7 @@ function injectProjectPatterns(agentTeamDir, profile) {
   // Inject into executor.md
   try {
   if (fs.existsSync(executorFile)) {
-    let executorContent = fs.readFileSync(executorFile, 'utf8');
+    const executorContent = fs.readFileSync(executorFile, 'utf8');
     
     // Add project-specific test command section
     const testSection = `## Project Context
@@ -222,17 +236,15 @@ ${profile.hasCode ? `**Validation:** Run \`${profile.testCommand}\` before marki
 `;
     
     // Insert after the Activation Prompt section
-    if (executorContent.includes('---\n\n## Workflow')) {
-      executorContent = executorContent.replace('---\n\n## Workflow', `${testSection}## Workflow`);
-      fs.writeFileSync(executorFile, executorContent);
-    }
+    const updated = upsertProjectContext(executorContent, testSection, 'Workflow');
+    if (updated !== executorContent) fs.writeFileSync(executorFile, updated);
   }
   } catch {}
 
   // Inject into navigator.md
   try {
   if (fs.existsSync(navigatorFile)) {
-    let navigatorContent = fs.readFileSync(navigatorFile, 'utf8');
+    const navigatorContent = fs.readFileSync(navigatorFile, 'utf8');
     
     const projectNote = `## Project Context
 
@@ -246,17 +258,15 @@ When planning tasks, consider the project structure and conventions above.
 
 `;
     
-    if (navigatorContent.includes('---\n\n## Workflow')) {
-      navigatorContent = navigatorContent.replace('---\n\n## Workflow', `${projectNote}## Workflow`);
-      fs.writeFileSync(navigatorFile, navigatorContent);
-    }
+    const updated = upsertProjectContext(navigatorContent, projectNote, 'Workflow');
+    if (updated !== navigatorContent) fs.writeFileSync(navigatorFile, updated);
   }
   } catch {}
 
   // Inject into validator.md
   try {
   if (fs.existsSync(validatorFile)) {
-    let validatorContent = fs.readFileSync(validatorFile, 'utf8');
+    const validatorContent = fs.readFileSync(validatorFile, 'utf8');
     
     const validationNote = `## Project Context
 
@@ -268,10 +278,8 @@ ${profile.hasCode ? `**Validation:** Run \`${profile.testCommand}\` to verify ch
 
 `;
     
-    if (validatorContent.includes('---\n\n## ')) {
-      validatorContent = validatorContent.replace('---\n\n## ', `${validationNote}## `);
-      fs.writeFileSync(validatorFile, validatorContent);
-    }
+    const updated = upsertProjectContext(validatorContent, validationNote, '');
+    if (updated !== validatorContent) fs.writeFileSync(validatorFile, updated);
   }
   } catch {}
 }
