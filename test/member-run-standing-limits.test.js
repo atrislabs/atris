@@ -81,7 +81,7 @@ test('an agent-rewritten standing mission runs sealed until a person confirms it
     assert.equal(feed.decide(root, cardId, 'approve', { env: { USER: 'owner' } }).outcome.reason, 'standing_mission_confirmed');
     assert.deepEqual(yesLock.handoffYesCards(stateDir), [], 'the commands it held are answered yes once the owner confirms');
     const retry = yesLock.check({ stateDir, missionId: started.mission.id, seal: yesLock.unconfirmedSeal(), tool: 'npm', args: ['publish'], cwd: root });
-    assert.ok(retry && retry.consume, 'the held publish, tried again in its own run, now goes through');
+    assert.ok(retry && retry.consume, 'the held publish, tried again in its own run, is now let through by the lock');
     const again = JSON.parse(atris('mission', 'start', 'tidy the readme again', '--owner', 'builder', '--runner', 'claude', '--no-verify', '--json').stdout);
     atris('mission', 'run', again.mission.id, '--max-ticks', '1', '--headless', '--json');
     assert.equal(fs.readFileSync(path.join(tmp, 'stub'), 'utf8').trim().split('\n').pop(), '0', 'the next real tick publishes');
