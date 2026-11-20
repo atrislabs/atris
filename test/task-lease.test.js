@@ -165,3 +165,31 @@ test('sweep preview does not create a missing database', (t) => {
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(fs.readdirSync(cwd), []);
 });
+test('a run whose claim ran out and was claimed again writes nothing to the job', (t) => {
+  const db = setup(t);
+  const { id } = tasks.addTask(db, { title: 'login', workspaceRoot: os.tmpdir() });
+  const first = tasks.claimTask(db, { id, claimedBy: 'fleet-a', leaseMinutes: 1, leasePid: 1 }).event.event_id;
+  tasks.expireLeases(db, { now: Date.now() + 120000, isAlive: () => false });
+  const second = tasks.claimTask(db, { id, claimedBy: 'fleet-a' }).event.event_id;
+  const events = () => db.prepare('SELECT count(*) AS n FROM task_events WHERE task_id = ?').get(id).n;
+  const before = events();
+  process.env.ATRIS_CLAIM = first;
+  t.after(() => { delete process.env.ATRIS_CLAIM; });
+  const lost = { code: 'claim_lost', claimed_by: 'fleet-a' };
+  assert.throws(() => tasks.readyTask(db, { id, actor: 'fleet-a', proof: 'checked' }), lost);
+  assert.throws(() => tasks.noteTask(db, { id, actor: 'fleet-a', content: 'halfway' }), lost);
+  assert.throws(() => tasks.tagTask(db, { id, actor: 'fleet-a', add: ['needs-human'] }), lost);
+  assert.throws(() => tasks.releaseTask(db, { id, actor: 'fleet-a' }), lost);
+  assert.equal(events(), before);
+  assert.equal(tasks.getTask(db, id).status, 'claimed');
+  assert.equal(tasks.getTask(db, id).metadata.tags, undefined);
+  delete process.env.ATRIS_CLAIM;
+  tasks.releaseTask(db, { id, actor: 'fleet-a' });
+  const third = tasks.claimTask(db, { id, claimedBy: 'fleet-b' }).event.event_id;
+  // With no token, a name that claimed before may not hand in on someone else's later claim.
+  assert.throws(() => tasks.readyTask(db, { id, actor: 'fleet-a', proof: 'checked' }), { code: 'claim_lost', claimed_by: 'fleet-b' });
+  process.env.ATRIS_CLAIM = second;
+  assert.throws(() => tasks.noteTask(db, { id, actor: 'fleet-a', content: 'late' }), { code: 'claim_lost' });
+  process.env.ATRIS_CLAIM = third;
+  assert.equal(tasks.readyTask(db, { id, actor: 'fleet-b', proof: 'checked' }).ready, true);
+});

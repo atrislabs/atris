@@ -9996,6 +9996,17 @@ function memberGoTask(owner, root, { claim, requireCheck = false }) {
 // mission is complete, or ready: checked and waiting on a person), else back
 // on the list with a one-line reason.
 function memberGoFinishTask(owner, task, result, thrown = null) {
+  try {
+    return memberGoSettleTask(owner, task, result, thrown);
+  } catch (error) {
+    // Another run claimed the job after this run's claim ended: nothing was written to it (see claimFence).
+    if (!error || error.code !== 'claim_lost') throw error;
+    const workRoot = (result && result.worktree && result.worktree.path) || (result && result.mission && result.mission.worktree && result.mission.worktree.path);
+    return { id: task.id, title: task.title, outcome: 'claim_lost', reason: `${error.message}${workRoot ? ` This run's work is in ${workRoot}.` : ''}` };
+  }
+}
+
+function memberGoSettleTask(owner, task, result, thrown) {
   const taskDb = require('../lib/task-db');
   const db = taskDb.open();
   const mission = (result && result.mission) || {};
@@ -10309,14 +10320,24 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   const required = require('../lib/member-task-pick').taskCheck(pulled.task).command;
   const runFlags = required ? [...stripKnownFlags(nextFlags, ['--verify'], []), '--verify', required] : nextFlags;
   let result = null;
+  // The run, the engine it starts and its last writes on the job all carry the claim made for it, so none of them
+  // writes once another run has claimed the job (see claimFence in lib/task-db.js).
+  const claimBefore = process.env.ATRIS_CLAIM;
+  if (pulled.claim) process.env.ATRIS_CLAIM = pulled.claim;
+  let task;
   try {
-    // The job rides to the merge line so it closes itself when its change merges.
-    result = await memberRunWith(owner, [effectivePrompt, '--ignite', ...runFlags], { quiet: asJson, closeTaskIds: [pulled.task.id] });
-  } catch (error) {
-    memberGoFinishTask(owner, pulled.task, null, error);
-    throw error;
+    try {
+      // The job rides to the merge line so it closes itself when its change merges.
+      result = await memberRunWith(owner, [effectivePrompt, '--ignite', ...runFlags], { quiet: asJson, closeTaskIds: [pulled.task.id] });
+    } catch (error) {
+      memberGoFinishTask(owner, pulled.task, null, error);
+      throw error;
+    }
+    task = memberGoFinishTask(owner, pulled.task, result);
+  } finally {
+    if (claimBefore === undefined) delete process.env.ATRIS_CLAIM;
+    else process.env.ATRIS_CLAIM = claimBefore;
   }
-  const task = memberGoFinishTask(owner, pulled.task, result);
   const merged = { ...(result || {}), task };
   if (asJson) console.log(JSON.stringify(needsCheck
     ? { task, work_step: { summary: result?.work_step?.summary || null }, error: result?.error || null }
@@ -10325,6 +10346,7 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   else if (task.outcome === 'done') console.log(`Task "${task.title}" merged and closed itself.`);
   else if (task.outcome === 'needs_human' && task.held_for === 'review') console.log(`Task "${task.title}" waits for a person to review it: ${task.reason}`);
   else if (task.outcome === 'needs_human') console.log(`Task "${task.title}" failed three times in a row and now waits for a person: ${task.reason}`);
+  else if (task.outcome === 'claim_lost') console.log(task.reason);
   else console.log(`Task "${task.title}" went back on the list: ${task.reason}`);
   return merged;
 }
