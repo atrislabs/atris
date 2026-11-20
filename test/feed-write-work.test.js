@@ -93,5 +93,5 @@ test('failed work: a summary that is only a model name is not shown as the membe
   await feed.runEntry(ctx.root, entry.id, deps);
   const back = feed.listCards(ctx.root, { filter: 'all', limit: 100, env: ctx.env }).cards.find((c) => c.id === card.id);
   assert.doesNotMatch(back.last_failure.reason, /Atris 2 Fast/);
-  assert.match(back.last_failure.reason, /ended without a result \(the check did not pass\)/);
+  assert.match(back.last_failure.reason, /ended without a result: the check did not pass\./);
 });
