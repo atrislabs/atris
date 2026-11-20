@@ -99,13 +99,26 @@ test('two independent CLI clients retain their edits after racing past the fresh
   await winner.run('pull', 'test-co', '--into', winner.cwd, '--keep-local', '--fail-on-conflict');
   assert.equal(await fs.readFile(winner.file, 'utf8'), content);
 
+  // A local save made while the snapshot request is in flight must survive an ordinary pull.
+  const original = content;
+  content += 'remote update\n';
+  const saveDuringSnapshot = req => {
+    if (req.url.includes('/snapshot?')) require('node:fs').writeFileSync(winner.file, original + 'late local save\n');
+  };
+  server.prependListener('request', saveDuringSnapshot);
+  await assert.rejects(winner.run('pull', 'test-co', '--into', winner.cwd, '--keep-local', '--fail-on-conflict'),
+    error => error.code === 2);
+  server.off('request', saveDuringSnapshot);
+  assert.equal(await fs.readFile(winner.file, 'utf8'), original + 'late local save\n');
+  await winner.run('pull', 'test-co', '--into', winner.cwd);
+
   // An explicitly guarded client must not fall back to an unconditional upload.
   automatic = false;
   supportsRoute = false;
   await fs.appendFile(winner.file, 'must stay local\n');
   await assert.rejects(winner.run('push', 'test-co', '--from', winner.cwd, '--only', file, '--conditional'),
     error => /does not support conditional sync/.test(error.stderr));
-  assert.equal(content, 'items\n5\n7\n');
+  assert.equal(content, original + 'remote update\n');
 });
 
 test('install preserves a racing editor save, an open descriptor and interrupted work', async t => {
@@ -115,11 +128,11 @@ test('install preserves a racing editor save, an open descriptor and interrupted
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const target = path.join(root, 'note.txt');
   await fs.writeFile(target, 'latest');
-  assert.equal(installLocalMerge(root, target, 'previous', 'merged'), false);
+  assert.equal(installLocalMerge(root, target, hash('previous'), 'merged'), false);
   assert.equal(await fs.readFile(target, 'utf8'), 'latest');
 
   const oldFile = await fs.open(target, 'a');
-  assert.equal(installLocalMerge(root, target, 'latest', 'merged'), true);
+  assert.equal(installLocalMerge(root, target, hash('latest'), 'merged'), true);
   await oldFile.write(' late save');
   await oldFile.close();
   const history = path.join(root, '.atris', 'sync', 'local-revisions');
@@ -132,7 +145,7 @@ test('install preserves a racing editor save, an open descriptor and interrupted
     if (dest === target && path.basename(source) === 'candidate') io.writeFileSync(dest, 'editor replacement');
     return link(source, dest);
   });
-  assert.equal(installLocalMerge(root, target, 'merged', 'merged again'), false);
+  assert.equal(installLocalMerge(root, target, hash('merged'), 'merged again'), false);
   mock.mock.restore();
   assert.equal(await fs.readFile(target, 'utf8'), 'editor replacement');
 

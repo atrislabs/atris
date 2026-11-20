@@ -678,6 +678,7 @@ async function pullBusiness(slug) {
   let deleted = 0;
   let conflictCount = 0;
   let unchangedCount = diff.unchanged.length;
+  const protectLocal = !force && failOnConflict;
   const conflictChanges = [];
   const conflictRemoteContents = {};
 
@@ -689,7 +690,28 @@ async function pullBusiness(slug) {
     if (!content && content !== '') continue;
     const localPath = path.join(outputDir, p.replace(/^\//, ''));
     fs.mkdirSync(path.dirname(localPath), { recursive: true });
-    fs.writeFileSync(localPath, content);
+    if (protectLocal) {
+      const expected = localFiles[p]?.hash;
+      let installed;
+      if (expected) {
+        installed = installLocalMerge(outputDir, localPath, expected, content);
+      } else {
+        try {
+          fs.writeFileSync(localPath, content, { flag: 'wx' });
+          installed = true;
+        } catch (error) {
+          if (error.code !== 'EEXIST') throw error;
+        }
+      }
+      if (!installed) {
+        conflictRemoteContents[p] = content;
+        conflictChanges.push({ path: p, status: 'conflict_updated', action: 'review' });
+        conflictCount++;
+        continue;
+      }
+    } else {
+      fs.writeFileSync(localPath, content);
+    }
     const label = diff.newRemote.includes(p)
       ? 'new on computer'
       : diff.deletedLocal.includes(p)
@@ -718,9 +740,14 @@ async function pullBusiness(slug) {
         const baseHash = effectiveManifest?.files?.[p]?.hash;
         if (base !== null && crypto.createHash('sha256').update(base).digest('hex') === baseHash) {
           const filePath = path.join(outputDir, p.replace(/^\//, ''));
-          const local = fs.readFileSync(filePath, 'utf8');
-          const merged = safeLineMerge(base, local, content);
-          if (merged.ok && installLocalMerge(outputDir, filePath, local, merged.content)) {
+          let local;
+          try {
+            local = fs.readFileSync(filePath, 'utf8');
+          } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+          }
+          const merged = local === undefined ? null : safeLineMerge(base, local, content);
+          if (merged?.ok && installLocalMerge(outputDir, filePath, crypto.createHash('sha256').update(local).digest('hex'), merged.content)) {
             console.log('  ' + p.replace(/^\//, '') + '  merged local and cloud edits');
             pulled++;
             continue;
@@ -751,7 +778,13 @@ async function pullBusiness(slug) {
 
     if (force || !localChanged) {
       const localPath = path.join(outputDir, p.replace(/^\//, ''));
-      fs.rmSync(localPath, { force: true });
+      if (protectLocal && !installLocalMerge(outputDir, localPath, localHash, null)) {
+        conflictRemoteContents[p] = '';
+        conflictChanges.push({ path: p, status: 'conflict_remote_deleted_local_updated', action: 'review' });
+        conflictCount++;
+        continue;
+      }
+      if (!protectLocal) fs.rmSync(localPath, { force: true });
       pruneEmptyParentDirs(localPath, outputDir);
       console.log(`  - ${p.replace(/^\//, '')}  deleted on computer`);
       deleted++;
