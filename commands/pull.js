@@ -701,6 +701,13 @@ async function pullBusiness(slug) {
           installed = true;
         } catch (error) {
           if (error.code !== 'EEXIST') throw error;
+          // The local upload scan omits dotfiles. Reuse a matching copy or advance
+          // a verified base, while keeping an independently modified file for review.
+          if (fs.lstatSync(localPath).isFile()) {
+            installed = fs.readFileSync(localPath).equals(Buffer.from(content));
+            const baseHash = effectiveManifest?.files?.[p]?.hash;
+            if (!installed && baseHash) installed = installLocalMerge(outputDir, localPath, baseHash, content);
+          }
         }
       }
       if (!installed) {

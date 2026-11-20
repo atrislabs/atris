@@ -46,11 +46,15 @@ test('two independent CLI clients retain their edits after racing past the fresh
     };
     if (url.pathname === '/business/') return respond([{ id: 'b', workspace_id: 'w', slug: 'test-co', name: 'Test' }]);
     const row = { path: file, size: Buffer.byteLength(content), hash: hash(content) };
+    const dotfile = { path: '.gitignore', size: 5, hash: hash('dist\n') };
     if (url.pathname.endsWith('/snapshot')) {
-      if (url.searchParams.get('include_content') === 'true') row.content = content;
-      return respond({ files: [row], supports_conditional_sync: automatic });
+      if (url.searchParams.get('include_content') === 'true') {
+        row.content = content;
+        dotfile.content = 'dist\n';
+      }
+      return respond({ files: [row, dotfile], supports_conditional_sync: automatic });
     }
-    if (url.pathname.endsWith('/files/batch')) return respond({ files: [{ ...row, content }] });
+    if (url.pathname.endsWith('/files/batch')) return respond({ files: [{ ...row, content }, { ...dotfile, content: 'dist\n' }] });
     if (url.pathname.endsWith('/sync/conditional')) {
       if (!supportsRoute) return respond({}, 404);
       let data = '';
@@ -80,7 +84,9 @@ test('two independent CLI clients retain their edits after racing past the fresh
         ATRIS_TOKEN: 'fixture', ATRIS_API_URL: 'http://127.0.0.1:' + server.address().port,
       },
     });
-    await run('pull', 'test-co', '--into', cwd);
+    await fs.writeFile(path.join(cwd, '.gitignore'), 'dist\n');
+    await run('pull', 'test-co', '--into', cwd, '--keep-local', '--fail-on-conflict');
+    assert.equal(await fs.readFile(path.join(cwd, '.gitignore'), 'utf8'), 'dist\n');
     return { run, cwd, file: path.join(cwd, file) };
   }));
   await Promise.all(clients.map((c, i) => fs.appendFile(c.file, i ? '5\n' : '7\n')));
