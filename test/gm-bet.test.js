@@ -2984,13 +2984,18 @@ test('yes lock on the desk: do it locks the owner steps before the job runs; a h
 test('a held command is shown as itself in full; only a yes naming its hash lets it run', () => {
   const root = workspace();
   const yesLock = require('../lib/yes-lock');
-  const seal = [{ step: 1, text: 'publish the shop page', categories: ['publish'] }];
-  yesLock.writeYesLocks(root, 'm-shop', { seal });
+  const seal = [{ step: 1, text: 'publish the shop page', categories: ['publish', 'post'] }];
   const args = ['dist-tag', 'add', `shop-site@0.0.1-${'x'.repeat(120)}`, 'latest'];
-  assert.equal(yesLock.check({ stateDir: root, missionId: 'm-shop', seal, tool: 'npm', args }).hold, true);
-  const h = jobDesk(root, { 'm-shop': { id: 'm-shop', owner: 'builder', status: 'running', created_at: new Date(NOW).toISOString(), human_asks: [] } });
-  const [card] = h.d.jobDeck().cards;
+  const post = ['twitter', 'post', 'run `npm publish` now'];
+  const running = id => ({ id, owner: 'builder', status: 'running', created_at: new Date(NOW).toISOString(), human_asks: [] });
+  for (const [id, tool, a] of [['m-shop', 'npm', args], ['m-post', 'atris', post]]) {
+    yesLock.writeYesLocks(root, id, { seal });
+    assert.equal(yesLock.check({ stateDir: root, missionId: id, seal, tool, args: a }).hold, true);
+  }
+  const h = jobDesk(root, { 'm-shop': running('m-shop'), 'm-post': running('m-post') });
+  const [card, tweet] = h.d.jobDeck().cards;
   assert.equal(card.yes.what, `builder wants to run a command that changes npm: "${args.join(' ')}"`, 'the rollback, past 120 characters, not the step');
+  assert.equal(tweet.yes.what, 'builder wants to run a command that changes Atris: "twitter post run `npm publish` now"', 'a command quoted inside the post is not what runs');
   assert.equal(yesLock.approveYesLock(root, 'm-shop', 1, seal), null, 'a yes to the step names no command');
   assert.equal(yesLock.check({ stateDir: root, missionId: 'm-shop', seal, tool: 'npm', args }).hold, true);
   assert.ok(yesLock.approveYesLock(root, 'm-shop', 1, seal, undefined, { hash: card.yes.hash }));
