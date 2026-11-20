@@ -92,7 +92,7 @@ test('code-review triages, reviews each lens and counts over-testing', async () 
   assert.equal(fs.readdirSync(path.join(root, '.atris', 'reviews')).filter((f) => f.endsWith('.diff')).length, 0);
   const receipt = fs.readFileSync(path.join(root, report.receipt), 'utf8');
   assert.match(receipt, new RegExp(`Reviewed commit: \`${git('rev-parse', 'HEAD')}\` plus uncommitted changes`));
-  assert.match(receipt, /\| Regex \| .* \| No verdict \| - \| answer held no JSON object/);
+  assert.match(receipt, /\| Regex \| .* \| No verdict \| - \| answer held no JSON verdict/);
 
   fs.rmSync(path.join(root, 'test'), { recursive: true });
   const accept = async (job) => (job.label === 'triage'
@@ -100,7 +100,7 @@ test('code-review triages, reviews each lens and counts over-testing', async () 
     : { ok: true, stdout: '{"verdict":"accept","score":80,"assessment":"Fine."}' });
   const again = capture();
   assert.equal(await reviewCommand(['--diff', 'HEAD~1..HEAD'], { root, executeAskJob: accept, ...again }), 0);
-  assert.match(again.lines.join('\n'), /triage gave no usable answer \(timeout\), so every lens was reviewed/);
+  assert.match(again.lines.join('\n'), /triage gave no usable answer \(timeout: slow\), so every lens was reviewed/);
   assert.match(again.lines.join('\n'), /Arbitrary limits\s+accept\s+80\/100/);
   fs.rmSync(root, { recursive: true, force: true });
 });

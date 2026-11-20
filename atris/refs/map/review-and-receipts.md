@@ -60,9 +60,9 @@ rg "planChecks|validateMap|lintMap|whereFromMarkers|codeIdentity|matchReceipt|fi
 
 - **Routing:** `bin/atris.js` routes `code-review` and `cr` to `commands/review.js` (`reviewCommand`), which returns the exit code
 - **Spec parsing:** `lib/wall-of-shame.js` (`parseSpec`) reads lenses and flags; (`addExample`) appends one dated bullet and bumps the heading count for `atris code-review add`
-- **Diff target:** `commands/review.js` (`collectChange`): default is the merge base with origin's default branch (`originDefault`) plus uncommitted and untracked files (`untrackedDiff`); `--diff <range>` and `--pr <n>` (gh)
+- **Diff target:** `commands/review.js` (`collectChange`): default is the merge base with origin's default branch (`defaultBranch` in `lib/zen.js`) plus uncommitted and untracked files (`untrackedDiff`); `--diff <range>` and `--pr <n>` (gh)
 - **Triage and reviewers:** `commands/review.js` (`reviewLenses`) starts always-reviewed lenses alongside one haiku triage call, then one read-only `runEngineAskJobs` job per relevant lens; reviewers read the diff from a temp file under `.atris/reviews/`
-- **Verdicts:** `lib/wall-of-shame.js` (`parseVerdict`, `parseTriage`); a failed or garbled answer is `no verdict`, never accept; a failed triage reviews every lens
+- **Verdicts:** `lib/wall-of-shame.js` (`parseVerdict`, `parseTriage`, both on `extractJson` from `lib/security-audit.js`); a failed or garbled answer is `no verdict`, never accept; a failed triage reviews every lens
 - **Over-testing:** `lib/wall-of-shame.js` (`overTesting`) over `git apply --numstat`, no model call
 - **Report:** `lib/wall-of-shame.js` (`reportBlock`, `upsertBlock`); receipt at `.atris/reviews/<head-sha>.md`; `--pr <n> --comment` updates the block in the PR description (`writeComment`)
 - **Starter spec:** `templates/code-review/SPEC.md`, written by `atris code-review init` (`initSpec`)

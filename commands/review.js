@@ -10,6 +10,7 @@ const { spawnSync } = require('child_process');
 const { runEngineAskJobs } = require('../lib/engine-ask');
 const { canonicalEngineName } = require('../lib/engine-registry');
 const { defaultClaudeModel } = require('../lib/claude-spend-guard');
+const { defaultBranch } = require('../lib/zen');
 const wall = require('../lib/wall-of-shame');
 
 const SPEC = path.join('atris', 'SPEC.md');
@@ -83,18 +84,14 @@ function parseArgs(args) {
   return opts;
 }
 
-function originDefault(root) {
-  const head = run('git', ['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], root);
-  if (head.status === 0 && head.stdout.trim()) return head.stdout.trim();
-  for (const ref of ['origin/main', 'origin/master']) {
-    if (run('git', ['rev-parse', '--verify', '--quiet', ref], root).status === 0) return ref;
-  }
-  throw usageError('no origin default branch found. Pass --diff <range> or --pr <n>.');
-}
-
 function untrackedDiff(root) {
   const files = git(root, ['ls-files', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean);
-  return files.map((file) => run('git', ['diff', '--no-index', '--', '/dev/null', file], root).stdout).join('');
+  return files.map((file) => {
+    // --no-index exits 1 when the files differ, which a new file always does.
+    const result = run('git', ['diff', '--no-index', '--', '/dev/null', file], root);
+    if (result.status > 1) throw usageError(`git could not diff untracked ${file}: ${result.stderr.trim()}`);
+    return result.stdout;
+  }).join('');
 }
 
 function collectChange(root, opts) {
@@ -114,7 +111,9 @@ function collectChange(root, opts) {
       target: opts.diff,
     };
   }
-  const base = originDefault(root);
+  const branch = defaultBranch(root, 'origin');
+  if (!branch) throw usageError('no origin default branch found. Pass --diff <range> or --pr <n>.');
+  const base = `origin/${branch}`;
   const mergeBase = git(root, ['merge-base', 'HEAD', base]).trim();
   return {
     diff: git(root, ['diff', '-M', mergeBase]) + untrackedDiff(root),
@@ -171,12 +170,12 @@ function whoAnswered(answer) {
 }
 
 function lastLine(text) {
-  return String(text || '').trim().split('\n').pop().slice(0, 300);
+  return String(text || '').trim().split('\n').pop();
 }
 
 function answerRow(lens, answer) {
   const base = { lens: lens.name, reviewer: whoAnswered(answer) };
-  if (!answer.ok) return { ...base, verdict: 'no verdict', assessment: `reviewer failed (${answer.reason}): ${lastLine(answer.stderr || answer.stdout)}` };
+  if (!answer.ok) return { ...base, verdict: 'no verdict', assessment: `reviewer failed (${answer.reason}): ${lastLine(answer.stderr || answer.stdout)}`, raw: `${answer.stderr || ''}${answer.stdout || ''}` };
   const parsed = wall.parseVerdict(answer.stdout);
   if (parsed.error) return { ...base, verdict: 'no verdict', assessment: `${parsed.error}: ${lastLine(answer.stdout)}`, raw: answer.stdout };
   return { ...base, ...parsed };
@@ -198,7 +197,7 @@ async function reviewLenses(lenses, { root, diffPath, numstat, opts, executeAskJ
     if (!triaged.length) return;
     const [answer] = await ask([{ engine: opts.engine || 'haiku', model: '', context: 'light', label: 'triage', prompt: triagePrompt(triaged, diffPath) }]);
     const skip = answer.ok ? wall.parseTriage(answer.stdout, triaged.map((lens) => lens.name)) : null;
-    if (!skip) note = `triage gave no usable answer (${answer.ok ? 'no lens list' : answer.reason}), so every lens was reviewed.`;
+    if (!skip) note = `triage gave no usable answer (${answer.ok ? 'no lens list' : answer.reason}: ${lastLine(answer.stderr || answer.stdout)}), so every lens was reviewed.`;
     for (const [name, reason] of skip || []) rows.set(name, { lens: name, reviewer: whoAnswered(answer), verdict: 'not relevant', assessment: reason });
     const relevant = triaged.filter((lens) => !rows.has(lens.name));
     (await ask(relevant.map(job))).forEach((a, i) => rows.set(relevant[i].name, answerRow(relevant[i], a)));
