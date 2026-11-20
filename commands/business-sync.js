@@ -76,6 +76,7 @@ function buildBusinessSyncPlan(options) {
     pushArgs.push('--dry-run');
   }
   if (options.allowDelete) pushArgs.push('--delete');
+  else if (options.watch) pushArgs.push('--changed');
 
   return { pullArgs, pushArgs };
 }
@@ -366,7 +367,7 @@ function renderBusinessSyncHelp() {
     '  atris sync --review --take local|cloud',
     '                            Non-interactive: take local or cloud for every conflict',
     '  atris sync --resolve cloud|local|merge [--path <file>]',
-    '  atris sync --watch        Keep the workspace live with the same safety gates',
+    '  atris sync --watch        Sync text edits automatically. Binary files stay on their source computer.',
     '',
     'Publish safety:',
     '  Large unscoped pushes, nested workspace folders, and *.remote artifacts are blocked.',
@@ -998,7 +999,7 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd(), d
 
   console.log('');
   console.log(`Syncing ${options.slug} business workspace...`);
-  console.log('  scope: full workspace');
+  console.log('  scope: workspace text files');
   console.log('  loop: Pull -> Review -> Publish');
   console.log('  quest gate: exact files beat broad pushes');
   if (options.watch) {
