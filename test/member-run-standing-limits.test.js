@@ -85,6 +85,14 @@ test('an agent-rewritten standing mission runs sealed until a person confirms it
     assert.equal(fs.readFileSync(path.join(tmp, 'stub'), 'utf8').trim().split('\n').pop(), '0', 'the next real tick publishes');
     assert.equal(fs.readFileSync(path.join(tmp, 'effects'), 'utf8'), 'published\n');
 
+    fs.writeFileSync(file, '# Mission\n\nPublish twice.\n');
+    standing.unconfirmedSeal(again.mission, root, stateDir);
+    yesLock.check({ stateDir, missionId: again.mission.id, seal: yesLock.unconfirmedSeal(), tool: 'npm', args: ['publish'], cwd: root });
+    assert.equal(yesLock.handoffYesCards(stateDir).length, 1);
+    fs.writeFileSync(file, '# Mission\n\nPublish three times.\n');
+    standing.unconfirmedSeal(again.mission, root, stateDir);
+    assert.deepEqual(yesLock.handoffYesCards(stateDir), [], 'a command held under other words does not wait on the new ones');
+
     const record = path.join(stateDir, 'standing-text.json');
     fs.writeFileSync(record, '{ broken');
     assert.equal(standing.standingConfirmed('builder', root).confirmed, false, 'an unreadable record confirms nothing');

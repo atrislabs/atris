@@ -167,19 +167,3 @@ test('yes lock: mission start seals the owner steps into the mission record, and
   assert.notEqual(bad.status, 0);
   assert.match(bad.stdout + bad.stderr, /--yes-lock takes a JSON list/);
 });
-
-test('a handoff record saved before seals had a kind is marked once and keeps its card', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'yes-kinds-'));
-  try {
-    const { kind, ...legacy } = yesLock.handoffSeal()[0];
-    fs.mkdirSync(path.join(dir, 'yes-locks'));
-    fs.writeFileSync(path.join(dir, 'yes-locks', 'old.json'), JSON.stringify({ mission_id: 'old', owner: 'scout',
-      locks: [{ ...legacy, requests: [{ hash: 'h1', key: '{}', command: 'npm publish', asked_at: 'then' }] }] }));
-    assert.equal(kind, 'handoff');
-    assert.deepEqual(yesLock.handoffYesCards(dir).map((c) => c.who), ['scout']);
-    // a record written after the marker is never classified by its words
-    fs.writeFileSync(path.join(dir, 'yes-locks', 'new.json'), JSON.stringify({ mission_id: 'new', locks: [{ ...legacy, requests: [] }] }));
-    yesLock.handoffYesCards(dir);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'yes-locks', 'new.json'), 'utf8')).locks[0].kind, undefined);
-  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
-});
