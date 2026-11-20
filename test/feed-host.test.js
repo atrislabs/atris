@@ -420,3 +420,108 @@ test('the command: atris feed discuss answers JSON at once, says it in its help,
   assert.equal(spawned.length, 1);
   assert.match(lines.join('\n'), /atris feed discuss <card> \[--retry\]/);
 });
+
+// ------------------------------------------------------------ naming a teammate with @
+
+function tagRig(ctx) {
+  ctx.env.ATRIS_FEED_MEMBER_GAP_SECONDS = '0';
+  const runs = [];
+  ctx.deps.spawnTagged = (_root, cardId, roundId) => { runs.push([cardId, roundId]); return null; };
+  return runs;
+}
+
+test('naming a teammate with @ on any card: that teammate answers that comment once, right away, as an answer; never the work', async (t) => {
+  const ctx = project(t, ['scout', 'writer', 'closer']);
+  const runs = tagRig(ctx);
+  answers(ctx, { member: (me) => `${me} says the plan is strong on reach but thin on price; I would test one price first.` });
+  const idea = feed.proposeCard(ctx.root, { as: 'scout', title: 'Call the ten oldest leads', why: 'Old leads answer more often', env: ctx.env }).card;
+  const said = room.reply(ctx.root, idea.id, '@closer can you review this plan?', { env: ctx.env, deps: ctx.deps });
+  assert.deepEqual(said.tagged, ['closer'], 'the member who will answer');
+  assert.equal(said.tag_note, undefined);
+  assert.equal(runs.length, 1, 'asked at once, in the background');
+  assert.equal(ctx.spawned.length, 0, 'a tag never starts the work');
+  assert.equal(said.card.discussion.status, 'asking');
+  await host.runTagged(ctx.root, ...runs[0], { env: ctx.env, deps: ctx.deps });
+  assert.equal(memberTurns(ctx).length, 1);
+  assert.equal(hostTurns(ctx).length, 0, 'Atris picks no one else');
+  const prompt = memberTurns(ctx)[0].prompt;
+  assert.match(prompt, /You are closer[\s\S]*named you in a comment/);
+  assert.match(prompt, /The owner's comment: @closer can you review this plan\?/);
+  assert.match(prompt, /Never answer only with a question/);
+  const saved = room.replies(ctx.root, idea.id, { env: ctx.env }).replies;
+  assert.deepEqual(saved.map((r) => r.author.type === 'user' ? 'you' : r.author.id), ['you', 'agent:closer']);
+  assert.equal(saved[1].text, 'closer says the plan is strong on reach but thin on price; I would test one price first.');
+  const d = feed.readCard(ctx.root, idea.id, { env: ctx.env }).discussion;
+  assert.deepEqual([d.status, d.picks.map((p) => [p.member, p.status])], ['done', [['closer', 'answered']]]);
+  // Once: the same round never runs again, and the person's next plain words do not bring Atris in on this card.
+  assert.deepEqual(await host.runTagged(ctx.root, ...runs[0], { env: ctx.env, deps: ctx.deps }), { ran: false });
+  room.reply(ctx.root, idea.id, 'Thanks, that helps.', { env: ctx.env, deps: ctx.deps });
+  const after = await discuss(ctx, idea.id);
+  assert.equal(after.out.started, false);
+  assert.equal(ctx.turns.length, 1);
+  // And the member cannot answer that comment twice by any path, even in other words.
+  answers(ctx, { member: () => 'A second, different answer to the same comment.' });
+  await assert.rejects(require('../lib/feed-team').askMember(ctx.root, { member: 'closer', cardId: idea.id, text: '', answering: { id: saved[0].id, text: saved[0].text }, env: ctx.env, deps: ctx.deps }), /already answered that comment/);
+});
+
+test('several names: each named member answers once, in turn; an unknown name stays plain text; a sleeping one is said plainly', async (t) => {
+  const ctx = project(t, ['scout', 'writer', 'closer']);
+  const runs = tagRig(ctx);
+  answers(ctx, { member: (me) => `${me} would keep the first offer small.` });
+  require('../lib/member-switches').setMemberAwake('scout', false, ctx.root);
+  const card = post(ctx);
+  const said = room.reply(ctx.root, card.id, 'What do @Writer and @closer, and @nobody, think? Also @scout.', { env: ctx.env, deps: ctx.deps });
+  assert.deepEqual(said.tagged, ['writer', 'closer']);
+  assert.match(said.tag_note, /^scout is asleep or cannot run here, so it will not answer\. Wake it to ask\.$/);
+  assert.equal(said.reply.text, 'What do @Writer and @closer, and @nobody, think? Also @scout.', 'kept as written');
+  assert.equal(runs.length, 1, 'one round for the comment');
+  // The person's comment on a post also goes to Atris (the desktop asks it): the named members answer, no one else.
+  const asked = await discuss(ctx, card.id);
+  assert.equal(asked.out.started, false);
+  await host.runTagged(ctx.root, ...runs[0], { env: ctx.env, deps: ctx.deps });
+  assert.equal(hostTurns(ctx).length, 0);
+  const saved = room.replies(ctx.root, card.id, { env: ctx.env }).replies.slice(1);
+  assert.deepEqual(saved.map((r) => [r.author.id, r.text]), [['agent:writer', 'writer would keep the first offer small.'], ['agent:closer', 'closer would keep the first offer small.']]);
+  assert.match(memberTurns(ctx)[1].prompt, /writer: writer would keep the first offer small\./, 'the second reads the first');
+  // No name the team knows: a plain comment, nobody asked.
+  const plain = room.reply(ctx.root, card.id, 'Mail me at a@writer.com or ask @nobody.', { env: ctx.env, deps: ctx.deps });
+  assert.deepEqual(plain.tagged, []);
+  assert.equal(runs.length, 1);
+});
+
+test('a named member who only asks a question back: nothing is saved, the card says so, and --retry asks the same member again', async (t) => {
+  const ctx = project(t, ['writer', 'closer']);
+  const runs = tagRig(ctx);
+  let reply = 'What budget do you have in mind?';
+  answers(ctx, { member: () => reply });
+  const card = post(ctx);
+  room.reply(ctx.root, card.id, '@writer review this please', { env: ctx.env, deps: ctx.deps });
+  await host.runTagged(ctx.root, ...runs[0], { env: ctx.env, deps: ctx.deps });
+  let d = feed.readCard(ctx.root, card.id, { env: ctx.env }).discussion;
+  assert.deepEqual([d.status, d.picks[0].status, d.picks[0].error, d.can_retry], ['failed', 'failed', 'Only asked a question.', true]);
+  assert.equal(room.replies(ctx.root, card.id, { env: ctx.env }).reply_count, 1, 'only the person\'s comment');
+  reply = 'Keep it short and lead with the price.';
+  await discuss(ctx, card.id, { retry: true });
+  d = feed.readCard(ctx.root, card.id, { env: ctx.env }).discussion;
+  assert.deepEqual([d.status, d.picks.map((p) => [p.member, p.status])], ['done', [['writer', 'answered']]]);
+  assert.equal(hostTurns(ctx).length, 0);
+});
+
+test('the command: atris feed reply --json says who will answer in "tagged"', async (t) => {
+  const ctx = project(t, ['writer']);
+  tagRig(ctx);
+  const card = post(ctx);
+  const lines = [];
+  const log = console.log;
+  console.log = (line) => lines.push(String(line));
+  try {
+    await decisionFeed.run(['reply', card.id, '@writer thoughts?', '--json'], { cwd: ctx.root, env: ctx.env, deps: ctx.deps });
+    await decisionFeed.run(['reply', card.id, 'no names here', '--json'], { cwd: ctx.root, env: ctx.env, deps: ctx.deps });
+  } finally {
+    console.log = log;
+  }
+  const [first, second] = lines.map((line) => JSON.parse(line));
+  assert.deepEqual(first.tagged, ['writer']);
+  assert.equal(first.reply.text, '@writer thoughts?');
+  assert.deepEqual(second.tagged, []);
+});
