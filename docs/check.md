@@ -210,7 +210,7 @@ arrives as `PORT`), `each` plus `{file}` in `run` (one run per file),
 `names_changed`, `confirm` (a note from init for a person to clear).
 
 Map level: `risk`, `gates`, `default`, `importers_except`, `broad`, `owners`,
-`budget`, `normal_needs_lane`, `skip_lines`,
+`budget`, `normal_needs_lane`, `skip_lines`, `waiting_limit` (a whole number, 10 when unset),
 `secret_scan` (the project's own scan command), `parallel`,
 `proof.coverage_floor` and `push` (`update`: rebase or merge, `via`,
 `lane_status`, `low_risk_ahead_of_lane`, `max_files` 5, `max_lines` 200).
@@ -383,6 +383,14 @@ new commits changed and tries again, three times at most.
 
 `push.via` hands the final push to the project's own command (like `npm run
 ship`) instead.
+
+After the push result it prints one line, like `6 finished changes are waiting
+to land here, 4 clash with master.`: the branches the hourly lander would pick
+up and how many of them conflict with the default branch. The lander's run
+prints the same line. `atris worktree start` prints `12 changes are waiting to
+land here. Clear those first.` only when the count is over the map's
+`waiting_limit` (10 when unset). None of these lines blocks anything or
+changes an exit code.
 
 `atris check land <sha> --lane no-screen`, on a runner: fetch the staged ref,
 run everything (skipping checks a receipt for the same code already passed),
