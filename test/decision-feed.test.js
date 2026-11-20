@@ -910,6 +910,52 @@ test('a teammate\'s question is answered in the comments, never approved; it can
   assert.equal(cardsOf(ctx, asked.source.id).length, 0);
 });
 
+test('a teammate\'s question you answered in the comments stops asking for you: a reaction or a teammate\'s comment does not settle it, and it is never approvable', (t) => {
+  const ctx = project(t);
+  const room = require('../lib/feed-room');
+  const asked = feed.proposeCard(ctx.root, { as: 'scout', kind: 'question', title: 'Which city should we start in?', why: 'The first city sets the plan', env: ctx.env }).card;
+  const page = () => feed.listCards(ctx.root, { limit: 100, env: ctx.env });
+  const mine = () => page().cards.find((card) => card.id === asked.id);
+  const waiting = () => cards(ctx, 'needs_decision').some((card) => card.id === asked.id);
+  assert.equal(mine().needs_decision, true, 'an asked question needs you');
+  assert.ok(waiting());
+  const before = page().counts.needs_decision;
+
+  // A reaction and a teammate's comment are not your answer.
+  room.react(ctx.root, asked.id, room.EMOJI[0], { env: ctx.env });
+  room.reply(ctx.root, asked.id, 'Austin has the most leads.', { as: 'writer', direct: true, env: ctx.env, deps: ctx.deps });
+  assert.equal(mine().needs_decision, true, 'a reaction or a teammate comment does not settle it');
+  assert.equal(page().counts.needs_decision, before);
+  assert.equal(mine().can_decide, false);
+
+  // Your comment answers it: it leaves the needs_decision list and count, stays on the main list while fresh.
+  const said = room.reply(ctx.root, asked.id, 'Start in Austin.', { env: ctx.env, deps: ctx.deps });
+  assert.equal(said.card.needs_decision, false, 'the card handed back after your comment no longer needs you');
+  const card = mine();
+  assert.ok(card, 'still on the main list while the talk is fresh');
+  assert.equal(card.needs_decision, false);
+  assert.equal(card.can_decide, false);
+  assert.ok(!waiting(), 'off the needs_decision list');
+  assert.equal(page().counts.needs_decision, before - 1, 'the count drops');
+  assert.equal(feed.readCard(ctx.root, asked.id, { env: ctx.env }).needs_decision, false);
+  assert.throws(() => feed.decide(ctx.root, asked.id, 'approve', { env: ctx.env, deps: ctx.deps }), (e) => e.status === 409);
+  assert.equal(ctx.spawned.length, 0, 'nothing started');
+
+  // The one who asked asks again: one answer settles the card, it does not come back.
+  room.reply(ctx.root, asked.id, 'Austin it is. Should we also try Dallas next?', { as: 'scout', direct: true, env: ctx.env, deps: ctx.deps });
+  assert.equal(mine().needs_decision, false, 'a follow-up question does not bring it back');
+  assert.equal(page().counts.needs_decision, before - 1);
+
+  // Quiet for a day, like any other card: it leaves the main list.
+  ageTask(ctx, asked.source.id, 30);
+  const social = room.socialFile(ctx.root);
+  const old = new Date(Date.now() - 26 * 3600000).toISOString();
+  const stored = JSON.parse(fs.readFileSync(social, 'utf8'));
+  for (const entry of Object.values(stored)) { entry.updated_at = old; for (const reply of entry.replies || []) reply.at = old; }
+  fs.writeFileSync(social, JSON.stringify(stored));
+  assert.equal(mine(), undefined, 'an answered question quiet for a day leaves the main list');
+});
+
 test('work that ended with nothing says why in words: a status code like tick-ok is said plainly, an unknown one and an exit number say nothing', (t) => {
   const ctx = project(t);
   const why = feed._internal.endedWhy;

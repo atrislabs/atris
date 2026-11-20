@@ -118,6 +118,7 @@ Some found failures live in the desktop app or the backend. Their rows here prov
 | 109 | found: approving a teammate's question started work; a question is now answered in the comments, never approved, and can still be dismissed | a teammate's question is answered in the comments, never approved; it can still be talked over and dismissed | yes |
 | 110 | found: a card read "The work ended without a result (tick-ok)."; a known status is said in words, an unknown one and an exit number say nothing | work that ended with nothing says why in words: a status code like tick-ok is said plainly, an unknown one and an exit number say nothing | yes |
 | 111 | A running card says how long it may run: `run.limit_minutes` | a running card says how many minutes it may take: run.limit_minutes, from the same limit that stops it | no |
+| 112 | found: a teammate's question you had answered kept saying it needed you until dismissed; your comment settles it (off needs_decision and its count, gone once quiet for a day), a reaction or a teammate's comment does not, and a follow-up question does not bring it back | a teammate's question you answered in the comments stops asking for you: a reaction or a teammate's comment does not settle it, and it is never approvable | yes |
 
 ## Waiting chat windows
 
