@@ -1,4 +1,5 @@
 const { spawn } = require('child_process');
+const { setTimeout: delay } = require('node:timers/promises');
 const fs = require('fs');
 const path = require('path');
 const { loadManifest, saveManifest } = require('../lib/manifest');
@@ -76,6 +77,7 @@ function buildBusinessSyncPlan(options) {
     pushArgs.push('--dry-run');
   }
   if (options.allowDelete) pushArgs.push('--delete');
+  else if (options.watch) pushArgs.push('--changed');
   if (options.conditional) pushArgs.push('--conditional');
 
   return { pullArgs, pushArgs };
@@ -368,7 +370,7 @@ function renderBusinessSyncHelp() {
     '  atris sync --review --take local|cloud',
     '                            Non-interactive: take local or cloud for every conflict',
     '  atris sync --resolve cloud|local|merge [--path <file>]',
-    '  atris sync --watch        Keep the workspace live with the same safety gates',
+    '  atris sync --watch        Sync text edits automatically. Binary files stay on their source computer.',
     '',
     'Publish safety:',
     '  Large unscoped pushes, nested workspace folders, and *.remote artifacts are blocked.',
@@ -949,7 +951,7 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd(), d
 
   console.log('');
   console.log(`Syncing ${options.slug} business workspace...`);
-  console.log('  scope: full workspace');
+  console.log('  scope: workspace text files');
   console.log('  loop: Pull -> Review -> Publish');
   console.log('  quest gate: exact files beat broad pushes');
   if (options.watch) {
@@ -966,7 +968,6 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd(), d
   if (!options.watch) return;
 
   let lastSnapshot = collectWorkspaceSnapshot(cwd);
-  let running = false;
   let quietTicks = 0;
   let pendingLocal = false;
 
@@ -974,27 +975,26 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd(), d
   console.log('Business workspace sync is watching this folder. Press Ctrl+C to stop.');
 
   const tickMs = 1000;
-  setInterval(async () => {
-    if (running) return;
+  while (true) {
+    await delay(tickMs);
     const current = collectWorkspaceSnapshot(cwd);
     if (snapshotsDiffer(lastSnapshot, current)) {
       pendingLocal = true;
       quietTicks = 0;
       lastSnapshot = current;
-      return;
+      continue;
     }
 
     if (pendingLocal) {
       quietTicks += 1;
-      if (quietTicks < options.debounceSec) return;
+      if (quietTicks < options.debounceSec) continue;
     }
 
     const shouldPeriodicSync = !pendingLocal && quietTicks >= options.intervalSec;
     const shouldLocalSync = pendingLocal && quietTicks >= options.debounceSec;
     quietTicks += 1;
-    if (!shouldLocalSync && !shouldPeriodicSync) return;
+    if (!shouldLocalSync && !shouldPeriodicSync) continue;
 
-    running = true;
     try {
       console.log('');
       console.log(shouldLocalSync ? 'Local workspace changed. Syncing...' : 'Checking cloud workspace...');
@@ -1021,10 +1021,8 @@ async function businessSync(args = process.argv.slice(3), cwd = process.cwd(), d
       }
       pendingLocal = false;
       quietTicks = 0;
-    } finally {
-      running = false;
     }
-  }, tickMs);
+  }
 }
 
 module.exports = {
