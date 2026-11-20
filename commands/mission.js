@@ -2092,7 +2092,10 @@ function missionFromArgs(args) {
     exitMissionError('mission start got more than one --yes-lock, so it is not clear which seal applies; nothing started', 2, wantsJson(args));
   }
   const handoffSeal = String(process.env.ATRIS_HANDOFF_YES_LOCK || '').trim();
-  const yesLocks = readYesLockSeal(handoffSeal || readFlag(args, '--yes-lock', ''), wantsJson(args));
+  // A run woken by a handoff runs under the fixed handoff seal, kind and all,
+  // as Atris made it; the environment only says that it was woken.
+  const flagSeal = readYesLockSeal(handoffSeal || readFlag(args, '--yes-lock', ''), wantsJson(args));
+  const yesLocks = handoffSeal ? require('../lib/yes-lock').handoffSeal() : flagSeal;
   const yesLockParent = yesLocks.length
     ? String((handoffSeal ? process.env.ATRIS_HANDOFF_YES_LOCK_PARENT : readFlag(args, '--yes-lock-parent', '')) || '').trim()
     : '';
@@ -2173,7 +2176,7 @@ function readYesLockSeal(raw, asJson) {
   }
   const ok = Array.isArray(list) && list.every(l => l && Number.isInteger(l.step) && l.step > 0 && Array.isArray(l.categories) && l.categories.length && l.categories.every(c => YES_LOCK_CATEGORIES.has(c)));
   if (!ok) exitMissionError('--yes-lock takes a JSON list of {step, text, categories}, with categories from publish, tag, post, send, merge, deploy, spend', 2, asJson);
-  return list.map(l => ({ step: l.step, ...(l.kind ? { kind: String(l.kind) } : {}), text: String(l.text || '').slice(0, 200), categories: [...new Set(l.categories)] }));
+  return list.map(l => ({ step: l.step, text: String(l.text || '').slice(0, 200), categories: [...new Set(l.categories)] }));
 }
 
 function applyMissionStartPatch(mission, patch) {
