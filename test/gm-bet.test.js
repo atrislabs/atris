@@ -2966,17 +2966,35 @@ test('yes lock on the desk: do it locks the owner steps before the job runs; a h
   assert.deepEqual([held.hold, held.steps], [true, [3]]);
   h.d.pollJobs();
   const card = h.d.next();
-  assert.deepEqual([card.kind, card.job.what], ['yes', 'publish the page and post the recording on x']);
+  assert.deepEqual([card.kind, card.job.what], ['yes', 'builder wants to publish this package to npm'], 'the card names the held command, not the step');
   const yes = await h.d.answerYes();
   assert.deepEqual([yes.ok, yes.ack], [true, 'told builder yes.']);
   const ping = h.cli.find(a => a[1] === 'ping');
   assert.deepEqual(ping.slice(0, 3), ['mission', 'ping', 'm-new']);
-  assert.match(ping[3], /the owner said yes to step 3: publish the page and post the recording on x\. the guard lets it through now/);
+  assert.match(ping[3], /the owner said yes to step 3: builder wants to npm publish\. the guard lets it through now/);
   assert.ok(yesLock.effectiveLocks(root, 'm-new', seal).locks[0].approved_at);
   assert.deepEqual(yesLock.check({ stateDir: root, missionId: 'm-new', seal, tool: 'npm', args: ['publish'] }).consume, [3], 'now it runs, once');
   // the job is told about the lock in its own words
   const start = h.cli.find(a => a[1] === 'start');
   assert.match(start[2], /a step marked "your yes" is locked until the owner says yes: publishing, pushing tags, releases, posting, sending, and merging to master are held by the guard on your PATH/);
+});
+
+// The yes card once showed the step's words ("publish the shop page") and its
+// yes let whatever the step held run: here a rollback the owner never saw.
+test('a held command is shown as itself in full; only a yes naming its hash lets it run', () => {
+  const root = workspace();
+  const yesLock = require('../lib/yes-lock');
+  const seal = [{ step: 1, text: 'publish the shop page', categories: ['publish'] }];
+  yesLock.writeYesLocks(root, 'm-shop', { seal });
+  const args = ['dist-tag', 'add', `shop-site@0.0.1-${'x'.repeat(120)}`, 'latest'];
+  assert.equal(yesLock.check({ stateDir: root, missionId: 'm-shop', seal, tool: 'npm', args }).hold, true);
+  const h = jobDesk(root, { 'm-shop': { id: 'm-shop', owner: 'builder', status: 'running', created_at: new Date(NOW).toISOString(), human_asks: [] } });
+  const [card] = h.d.jobDeck().cards;
+  assert.equal(card.yes.what, `builder wants to run a command that changes npm: "${args.join(' ')}"`, 'the rollback, past 120 characters, not the step');
+  assert.equal(yesLock.approveYesLock(root, 'm-shop', 1, seal), null, 'a yes to the step names no command');
+  assert.equal(yesLock.check({ stateDir: root, missionId: 'm-shop', seal, tool: 'npm', args }).hold, true);
+  assert.ok(yesLock.approveYesLock(root, 'm-shop', 1, seal, undefined, { hash: card.yes.hash }));
+  assert.ok(yesLock.check({ stateDir: root, missionId: 'm-shop', seal, tool: 'npm', args }).consume, 'the card\'s own yes lets it run once');
 });
 
 test('page: the working line is static and lists who has each job; do it hands off to the next card', () => {
