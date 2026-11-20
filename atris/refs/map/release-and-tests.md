@@ -8,13 +8,17 @@ Releases, version checks, publish and the balanced CI test groups. Code refs and
 rg "releaseAtris|releasePreflight|release preflight" commands/release.js bin/atris.js test/release-preflight.test.js  # Release command plus pre-tag preflight
 ```
 
+## Choosing CI tests
+
+`scripts/ci-test-plan.js` (`comparisonBase`, `buildMatrix`) finds the changes in the queued commit and divides the selected files among workers. `scripts/ci-impact-check.js` (`plan`) maps changed files to tests and explains when the full suite is needed. `.github/workflows/ci.yml` requires planning, tests and deck lint to pass. Scheduled and manual runs use all eight full-suite groups.
+
 ## Feature: Release (`atris release`)
 
 **Purpose:** Tag a release, bump version, create GitHub release, draft /launch post
 
 - **Entry point:** `commands/release.js:16` (releaseAtris function)
 - **Preflight:** `commands/release.js` (`releasePreflight`) checks master, a clean tree, local master vs origin/master, no existing `v<version>` tag, then `npm test` with `CI=true`; git failures skip the suite
-- **Dispatch/help:** `bin/atris.js:2797` routes `release`, `bin/atris.js:2803` routes `release preflight`, `bin/atris.js` (`showReleaseHelp`) and `bin/atris.js:614` list the preflight command
+- **Dispatch/help:** `bin/atris.js:2761` routes `release`, `bin/atris.js:2767` routes `release preflight`, `bin/atris.js` (`showReleaseHelp`) and `bin/atris.js:600` list the preflight command
 - **Flags:** `--dry-run` prints the draft without mutating
 - **Steps:** git log since last tag → determine bump (minor if scorecard reward≥5, else patch) → run `npm version --no-git-tag-version` so package.json and package-lock.json move together → commit both files → tag → push → `gh release create` → print launch post
 - **Helpers:**

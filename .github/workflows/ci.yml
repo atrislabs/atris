@@ -1,64 +1,67 @@
 name: CI
 
-# No run on push to master: the merge queue already tested the exact merged
-# commit, and a third run only held machines other changes were waiting on.
 on:
   pull_request:
   merge_group:
+  schedule:
+    - cron: '23 8 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-# A newer push to the same pull request replaces the older run.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # The full set. It guards master: every merge queue run (and any other
-  # event) runs all eight shards. Pull requests get the quick job instead.
-  unit:
-    name: unit (${{ matrix.shard }}/8)
-    if: github.event_name != 'pull_request'
+  plan:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.pick.outputs.mode }}
+      base: ${{ steps.pick.outputs.base }}
+      matrix: ${{ steps.pick.outputs.matrix }}
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Enough history to compare stacked groups. A missing ancestor
+          # selects the full suite instead of an incomplete change list.
+          fetch-depth: 32
+
+      - name: Read the merge queue target
+        id: target
+        if: github.event_name == 'merge_group'
+        continue-on-error: true
+        env:
+          TARGET_REF: ${{ github.event.merge_group.base_ref }}
+        run: |
+          case "$TARGET_REF" in refs/heads/*) ;; *) exit 1 ;; esac
+          git check-ref-format "$TARGET_REF"
+          git fetch --no-tags --depth=32 origin "+$TARGET_REF:refs/remotes/origin/${TARGET_REF#refs/heads/}"
 
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
           package-manager-cache: false
 
-      - run: npm ci
-
-      - name: Unit tests
-        # Assigns expensive files first using measured GitHub run times.
-        # commands.test.js remains split by test/helpers/test-part.js.
+      - name: Select affected tests
+        id: pick
         env:
-          ATRIS_TEST_SPLIT: '1'
-        run: node scripts/ci-test-shard.js ${{ matrix.shard }}/8
+          TARGET_READ: ${{ steps.target.outcome }}
+        run: node scripts/ci-test-plan.js
 
-  # The per change check on a pull request: the quick list plus every test
-  # file the pull request adds or edits, split three ways by recorded run
-  # time. The merge queue runs the full set.
-  quick:
-    name: quick (${{ matrix.group }}/3)
-    if: github.event_name == 'pull_request'
+  unit:
+    needs: plan
+    name: unit (${{ matrix.group }})
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
-      matrix:
-        group: [1, 2, 3]
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v6
         with:
-          # The pull request merge commit and its first parent, the base.
           fetch-depth: 2
 
       - uses: actions/setup-node@v6
@@ -68,13 +71,19 @@ jobs:
 
       - run: npm ci
 
-      - name: Quick tests and the tests this pull request touches
+      - name: Run selected tests
+        env:
+          MODE: ${{ needs.plan.outputs.mode }}
+          BASE: ${{ needs.plan.outputs.base }}
+          GROUP: ${{ matrix.group }}
+          FILES: ${{ toJSON(matrix.files) }}
         run: |
-          git rev-parse --verify --quiet 'HEAD^2' > /dev/null || {
-            echo 'expected the pull request merge commit; nothing to compare with.'
-            exit 1
-          }
-          node scripts/ci-quick-check.js 'HEAD^1' ${{ matrix.group }}/3
+          case "$MODE" in
+            selected) node -e 'process.exitCode = require("./scripts/ci-impact-check").runFiles(JSON.parse(process.env.FILES), process.cwd())' ;;
+            quick) node scripts/ci-quick-check.js "$BASE" "$GROUP" ;;
+            full) ATRIS_TEST_SPLIT=1 node scripts/ci-test-shard.js "$GROUP" ;;
+            *) exit 1 ;;
+          esac
 
   decks:
     runs-on: ubuntu-latest
@@ -92,19 +101,18 @@ jobs:
       - name: Lint shipped deck specs
         run: npm run lint:decks
 
-  # The required check. A skipped or cancelled job can never count as green:
-  # on a pull request it needs the quick job and the deck lint to pass. In
-  # the merge queue it needs every shard and the deck lint to pass.
+  # GitHub requires this check on both pull requests and the combined commit.
   test:
     if: always()
-    needs: [unit, quick, decks]
+    needs: [plan, unit, decks]
     runs-on: ubuntu-latest
     steps:
       - name: All checks passed
+        env:
+          PLAN: ${{ needs.plan.result }}
+          UNIT: ${{ needs.unit.result }}
+          DECKS: ${{ needs.decks.result }}
         run: |
-          test "${{ needs.decks.result }}" = success
-          if [ "${{ github.event_name }}" = pull_request ]; then
-            test "${{ needs.quick.result }}" = success
-          else
-            test "${{ needs.unit.result }}" = success
-          fi
+          test "$PLAN" = success
+          test "$UNIT" = success
+          test "$DECKS" = success

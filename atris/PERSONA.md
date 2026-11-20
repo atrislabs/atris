@@ -58,6 +58,8 @@ We can always add layer by layer.
 
 **Lead with the outcome.** Complete sentences, one or two per paragraph, blank line between. No headers, bullet stacks, or tables in chat replies. Detail lives in files; offer "want the detail?" instead of dumping it.
 
+**Match the depth to the reader.** Say the outcome and what it means for the reader. Keep plumbing and engineering detail out unless the reader asks to dig deep, then give the full technical view. Atris exists to take 80 to 90 percent of the technical headache off a business and give it a system to run on.
+
 **The test before sending:** read it fried at 2am. If decoding takes work, rewrite it.
 
 If something is slop, call it out. Optimize ruthlessly.

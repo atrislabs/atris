@@ -4,7 +4,7 @@ Packs, apps, buying, Google and Slack integrations and outside CLI wrappers. Cod
 
 ## Quick Reference Index
 
-**Explicit Pack recovery:** `commands/pack.js:2699` handles `pack run <existing-dir> --recover <receipt.json>`; `lib/pack-capabilities.js:488` validates the authoritative journal and prior failed exit, and `lib/pack-capabilities.js:890` prevents writes to completed files during recovery. `test/pack-run.test.js:2091` covers corrupt history and `test/pack-run.test.js:2232` exercises process exit and empty arguments. Contract and limits: `atris/features/pack-recovery/plan.md`.
+**Explicit Pack recovery:** `commands/pack.js:2693` handles `pack run <existing-dir> --recover <receipt.json>`; `lib/pack-capabilities.js:488` validates the authoritative journal and prior failed exit, and `lib/pack-capabilities.js:890` prevents writes to completed files during recovery. `test/pack-run.test.js:2091` covers corrupt history and `test/pack-run.test.js:2232` exercises process exit and empty arguments. Contract and limits: `atris/features/pack-recovery/plan.md`.
 
 ## Search shortcuts: Modular commands
 
@@ -56,9 +56,9 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Command:** `commands/github.js` (`githubCommand`)
 - **Shared wrapper:** `lib/official-cli-integration.js` (`createOfficialCliCommand`)
-- **Help line:** `bin/atris.js:616` (`github cli wrapper`)
+- **Help line:** `bin/atris.js:602` (`github cli wrapper`)
 - **Known command:** `lib/known-commands.js` (`github`)
-- **Routing:** `bin/atris.js:2141` (`command === 'github'`)
+- **Routing:** `bin/atris.js:2100` (`command === 'github'`)
 - **Subcommands:** `commands/github.js:12` (`pr list`), `commands/github.js:18` (`pr create`), `commands/github.js:24` (`pr checks`), `commands/github.js:30` (`pr view`)
 - **Regression:** `test/official-cli-integrations.test.js:38` (workspace-free help), `test/official-cli-integrations.test.js:53` (missing `gh` install hint), `test/official-cli-integrations.test.js:67` (auth status), `test/official-cli-integrations.test.js:84` (passthrough args)
 
@@ -70,9 +70,9 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Command:** `commands/vercel.js` (`vercelCommand`)
 - **Shared wrapper:** `lib/official-cli-integration.js` (`createOfficialCliCommand`)
-- **Help line:** `bin/atris.js:617` (`vercel cli wrapper`)
+- **Help line:** `bin/atris.js:603` (`vercel cli wrapper`)
 - **Known command:** `lib/known-commands.js` (`vercel`)
-- **Routing:** `bin/atris.js:2144` (`command === 'vercel'`)
+- **Routing:** `bin/atris.js:2103` (`command === 'vercel'`)
 - **Subcommands:** `commands/vercel.js` (`deploy`), `commands/vercel.js` (`ls`), `commands/vercel.js` (`logs`), `commands/vercel.js` (`inspect`)
 - **Regression:** `test/official-cli-integrations.test.js:100` (workspace-free help), `test/official-cli-integrations.test.js:115` (missing `vercel` install hint), `test/official-cli-integrations.test.js:129` (auth status), `test/official-cli-integrations.test.js:146` (passthrough args)
 
@@ -84,9 +84,9 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Command:** `commands/supabase.js` (`supabaseCommand`)
 - **Shared wrapper:** `lib/official-cli-integration.js` (`createOfficialCliCommand`)
-- **Help line:** `bin/atris.js:618` (`supabase cli wrapper`)
+- **Help line:** `bin/atris.js:604` (`supabase cli wrapper`)
 - **Known command:** `lib/known-commands.js` (`supabase`)
-- **Routing:** `bin/atris.js:2147` (`command === 'supabase'`)
+- **Routing:** `bin/atris.js:2106` (`command === 'supabase'`)
 - **Subcommands:** `commands/supabase.js` (`status`), `commands/supabase.js:19` (`db push`), `commands/supabase.js:25` (`functions list`), `commands/supabase.js:31` (`functions deploy`)
 - **Regression:** `test/official-cli-integrations.test.js:226` (workspace-free help), `test/official-cli-integrations.test.js:241` (missing `supabase` install hint), `test/official-cli-integrations.test.js:255` (auth status), `test/official-cli-integrations.test.js:272` (status passthrough), `test/official-cli-integrations.test.js:288` (db passthrough)
 
@@ -98,9 +98,9 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Command:** `commands/linear.js` (`linearCommand`)
 - **Shared wrapper:** `lib/official-cli-integration.js` (`createOfficialCliCommand`)
-- **Help line:** `bin/atris.js:619` (`linear cli wrapper`)
+- **Help line:** `bin/atris.js:605` (`linear cli wrapper`)
 - **Known command:** `lib/known-commands.js` (`linear`)
-- **Routing:** `bin/atris.js:2150` (`command === 'linear'`)
+- **Routing:** `bin/atris.js:2109` (`command === 'linear'`)
 - **Subcommands:** `commands/linear.js:12` (`issue list`), `commands/linear.js:18` (`issue create`), `commands/linear.js:24` (`issue view`), `commands/linear.js:30` (`issue update`)
 - **Regression:** `test/official-cli-integrations.test.js:304` (workspace-free help), `test/official-cli-integrations.test.js:319` (missing `linear` install hint), `test/official-cli-integrations.test.js:333` (auth status), `test/official-cli-integrations.test.js:350` (passthrough args)
 
@@ -112,9 +112,9 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Command:** `commands/stripe.js` (`stripeCommand`)
 - **Shared wrapper:** `lib/official-cli-integration.js` (`createOfficialCliCommand`)
-- **Help line:** `bin/atris.js:620` (`stripe cli wrapper`)
+- **Help line:** `bin/atris.js:606` (`stripe cli wrapper`)
 - **Known command:** `lib/known-commands.js` (`stripe`)
-- **Routing:** `bin/atris.js:2153` (`command === 'stripe'`)
+- **Routing:** `bin/atris.js:2112` (`command === 'stripe'`)
 - **Subcommands:** `commands/stripe.js` (`listen`), `commands/stripe.js` (`trigger`), `commands/stripe.js:24` (`products list`), `commands/stripe.js:30` (`products create`)
 - **Regression:** `test/official-cli-integrations.test.js:366` (workspace-free help), `test/official-cli-integrations.test.js:381` (missing `stripe` install hint), `test/official-cli-integrations.test.js:395` (auth status), `test/official-cli-integrations.test.js:412` (listen passthrough), `test/official-cli-integrations.test.js:428` (products passthrough)
 
@@ -140,7 +140,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - `atris slack [channels]` (`commands/integrations.js:1205`): Slack channel listing; unbound scratch folders refuse every slack verb via `requireAccountBound` before this runs
 - `atris integrations` (`commands/integrations.js:1279`): Show status of all integrations
 - **Auth:** Uses `getAuthToken()` (`lib/integrations-core.js`) from `~/.atris/credentials.json`
-- **Routing:** `bin/atris.js:3047` (`command === 'gmail'`) and `bin/atris.js:3102` (`command === 'slack'`): use `requireAccountBound`, or a named business for gmail; both extract `--account <id>` first and do not treat that selector as the workspace opt-in, so scratch `gmail send --account foo` and `slack send --account foo` refuse like the bare verbs; a refused gate returns before `gmailCommand` / `slackCommand` so send cannot fall through; `--help` still prints usage
+- **Routing:** `bin/atris.js:3011` (`command === 'gmail'`) and `bin/atris.js:3066` (`command === 'slack'`): use `requireAccountBound`, or a named business for gmail; both extract `--account <id>` first and do not treat that selector as the workspace opt-in, so scratch `gmail send --account foo` and `slack send --account foo` refuse like the bare verbs; a refused gate returns before `gmailCommand` / `slackCommand` so send cannot fall through; `--help` still prints usage
 - **Help:** `bin/atris.js` (`showIntegrationsHelp`) routes `integrations --help` before auth/session state or backend status checks; Gmail subcommand help is in `commands/integrations.js:660`
 - **Gmail regressions:** `test/gmail-triage.test.js` (rule reasons, verdict log rows, read-only Gmail calls), `test/gmail-verdicts.test.js` (legacy rows, reason passthrough, daily account summaries), `test/gmail-account.test.js:99` (connect validation), `test/gmail-account.test.js:129` (poll success), `test/gmail-account.test.js:182` (timeout), `test/gmail-account.test.js:298` (inbox mailbox header), `test/gmail-account.test.js:386` (send request), `test/gmail-account.test.js:436` (unowned send refusal), `test/gmail-account.test.js:471` (send usage), `test/gmail-account.test.js:501` (voice clear), `test/gmail-account.test.js:531` (piped voice), `test/gmail-account.test.js:564` (account roster), `test/gmail-account.test.js:610` (interactive display-name picker), `test/dogfood-pass3-27-28.test.js` (unbound scratch `gmail connect`, `gmail send --account foo`, and `slack send --account foo` exit 2 with no network, lookup, or send)
 - **Regression:** `test/commands-2.test.js:1468-1483` covers integrations help without login errors or `.atris` creation
@@ -156,4 +156,4 @@ Pack CLI test runner: `test/helpers/pack-cli.js:8` binds each original fifteen- 
 
 - Account request context and business header: `lib/integrations-core.js:30`; capability checks: `lib/integrations-core.js:252`; mail default migration: `lib/integrations-core.js:273`; selector resolution: `lib/integrations-core.js:369` checks exact names and emails before display labels and refuses ambiguous matches.
 - Google account cache, sign-in and commands: `lib/integrations-core.js:605`, `lib/integrations-core.js:620`, `commands/integrations.js:446`, `commands/integrations.js:544`. Retry and json failure formatting live at `lib/integrations-core.js:649` and `lib/integrations-core.js:653`. Modern sign-in uses its own status and explains incomplete results; older mail sign-in remains unconfirmed. Account lists show reconnect commands in text and json.
-- Calendar ordering, partial results and scoped search errors: `lib/integrations-core.js:716`, `lib/integrations-core.js:733`, `commands/integrations.js:888`. Router: `bin/atris.js:3072`. Tests: `test/google-accounts.test.js`, `test/google-accounts-http.test.js`.
+- Calendar ordering, partial results and scoped search errors: `lib/integrations-core.js:716`, `lib/integrations-core.js:733`, `commands/integrations.js:888`. Router: `bin/atris.js:3036`. Tests: `test/google-accounts.test.js`, `test/google-accounts-http.test.js`.

@@ -464,6 +464,9 @@ test('the rules block is short, plain and written idempotently between its marke
     assert.ok(block.includes(needed), needed);
   }
   assert.match(live.rulesBlock(''), /--as <your-name>/);
+  assert.ok(block.indexOf('atris memory search') < block.indexOf('`atris memory read <path>`'), 'search comes before reading the source from the start');
+  assert.ok(block.indexOf('atris memory read') < block.indexOf('atris memory show'), 'the overview comes last, as an option');
+  assert.doesNotMatch(block, /Start each task with|atris memory ask/, 'no overview required at startup and no extra model call');
 
   const dir = tmp();
   const file = path.join(dir, 'AGENTS.md');

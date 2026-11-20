@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 const os = require('os');
 const { execFileSync, spawnSync } = require('child_process');
 const { loadCredentials, ensureFreshCredentials } = require('../utils/auth');
@@ -18,13 +17,13 @@ const { memberProcessPrompt, MEMBER_PROCESS_PATH } = require('../lib/member-cont
 // Runtime aliases: problem-finder, info-organizer, coordinator, task-planner, improver, problem-solver
 // memberPaths resolves steeringJsonl: path.join(workspaceRoot, '.atris', 'state', 'steering.jsonl')
 const {
-  findWorkspaceBusinessId, todayLogName, ensureMemberLog, appendMemberLifecycleLog, archiveName,
+  findWorkspaceBusinessId, ensureMemberLog, appendMemberLifecycleLog, archiveName,
   uniqueArchiveDir, parseDaysFlag, parseConfirmFlag, readRepeatedFlag, stripKnownFlags,
   stampIso, fileSafeStamp, slugHash, makeGoalId, uniqueGoalId, makeExperimentId,
   MEMBER_RUNTIME_ALIASES, memberRuntimeKind, resolveMemberRuntime, memberPaths,
-  missionFileMarkdown, ensureMissionFile, listExistingMemberSlugs, editDistance, nearestMemberSlug,
-  memberRefusalFor, requireRunnableMember, requireMemberDir, emptyMemberGoals, loadMemberGoals,
-  activeGoal, allExperiments, findExperiment, latestByTime, recentLogLines, readOptionalText,
+  missionFileMarkdown, ensureMissionFile, listExistingMemberSlugs, nearestMemberSlug,
+  memberRefusalFor, requireRunnableMember, requireMemberDir, loadMemberGoals,
+  activeGoal, allExperiments, findExperiment, latestByTime, recentLogLines,
   extractMarkdownSection, firstUsefulLine, compactSentence, activeRuntimeMissionFromNow, missionPurpose,
   MEMBER_RUN_RUNNABLE_STATUSES, MISSION_TERMINAL_STATUSES, memberRunMissionMap,
   memberRunRunnableMissionId, memberRunOwnedActiveMissionId, MEMBER_LIVE_MISSION_STATUSES,

@@ -902,11 +902,6 @@ function verifyActivationGallery(cards) {
   if (issues.length) throw new Error(issues.map(card => `${card.member}: ${card.reason}`).join(', '));
 }
 
-function printVerifyFailure(error) {
-  console.error(error && error.message ? error.message : String(error));
-  process.exit(1);
-}
-
 function recordFeedback(options) {
   const root = options.root;
   const rating = String(options.rating || '').toLowerCase();

@@ -9,6 +9,7 @@ const { spawnSync } = require('node:child_process');
 
 const { scanFile } = require('../commands/slop');
 const {
+  AUDIENCE_RULE,
   CLAUDE_VOICE_HOOK_COMMAND,
   VOICE_CARD,
   buildVoiceCardHookJson,
@@ -63,6 +64,16 @@ test('voice card composes under the word cap with two examples and zero slop hit
     assert.deepEqual(scanFile(file), []);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('voice card carries the audience rule, and the doctrine and persona say the same words', () => {
+  assert.ok(VOICE_CARD.includes(AUDIENCE_RULE), 'card is missing the audience rule');
+  assert.match(AUDIENCE_RULE, /unless the reader asks to dig deep/);
+  assert.match(AUDIENCE_RULE, /80 to 90 percent of the technical headache/);
+  for (const file of ['atris.md', 'atris/atris.md', 'PERSONA.md', 'atris/PERSONA.md']) {
+    const text = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    assert.ok(text.includes(AUDIENCE_RULE), `${file} is missing the audience rule`);
   }
 });
 
