@@ -5962,9 +5962,9 @@ function missionProtectedLaneHold(mission, root = process.cwd()) {
   return hold ? { pause_reason: hold.pause_reason } : null;
 }
 
-// The seal a tick runs under: the job's own sealed owner steps, else, when an
-// agent changed the member's standing mission and the owner has not confirmed
-// it, the fixed unconfirmed seal (lib/standing-text.js).
+// The seal a tick runs under: the job's own sealed owner steps, else, when the
+// member's standing mission has words the owner has not confirmed, the fixed
+// unconfirmed seal (lib/standing-text.js).
 function missionTickSeal(mission, cwd) {
   const steps = (mission.yes_locks && mission.yes_locks.steps) || [];
   if (steps.length) return steps;
@@ -8054,7 +8054,7 @@ function buildPreloadedMemberContextLines(mission, root = process.cwd()) {
     }
     if (missionMd) {
       const unconfirmed = !require('../lib/standing-text').standingConfirmed(owner, baseRoot).confirmed
-        ? ', changed by an agent and not confirmed by the owner, so it gives you no say over landing, publishing, sending or spending' : '';
+        ? ', with words the owner has not confirmed, so it gives you no say over landing, publishing, sending or spending' : '';
       sections.push(`### Member Standing Mission (atris/team/${owner}/MISSION.md${unconfirmed})`, missionMd);
     }
     try {
