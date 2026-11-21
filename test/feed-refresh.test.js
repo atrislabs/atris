@@ -12,6 +12,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { setTimeout: delay } = require('node:timers/promises');
 const feed = require('../lib/feed-core');
 const room = require('../lib/feed-room');
 const { project } = require('./helpers/feed-project');
@@ -78,11 +79,19 @@ test('refresh in a new project with no goal: each awake member is asked once, re
 
 test('refresh twice at once (a double press, or two windows): the team is asked once, the second says it is still thinking', async (t) => {
   const ctx = project(t, ['scout', 'writer']);
-  const sim = stand(ctx, [{ match: 'You are', text: '', delay_ms: 1500 }]);
+  const release = path.join(ctx.dir, 'release-turns');
+  const sim = stand(ctx, [{ match: 'You are', text: '', wait_for_file: release }]);
   const first = runCli(ctx.root, ['feed', 'ping', '--reason', 'refresh', '--stream', '--json'], sim.env);
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  const second = await runCli(ctx.root, ['feed', 'ping', '--reason', 'refresh', '--stream', '--json'], sim.env);
-  const a = await first;
+  let a, second;
+  try {
+    const deadline = performance.now() + 15_000;
+    while (sim.turns().length < 2 && performance.now() < deadline) await delay(20);
+    assert.equal(sim.turns().length, 2, 'the first refresh reached both turns');
+    second = await runCli(ctx.root, ['feed', 'ping', '--reason', 'refresh', '--stream', '--json'], sim.env);
+  } finally {
+    fs.writeFileSync(release, '');
+    a = await first;
+  }
   assert.equal(a.code, 0);
   assert.equal(second.code, 0);
   const end = second.events[second.events.length - 1];
