@@ -123,7 +123,8 @@ test('a failed thought says why: "Could not think", a failed event, an error to 
   const ctx = cloudProject(t, GOOD);
   const deps = { ...ctx.deps, turn: async ({ engine }) => { ctx.turns.push({ engine: engine.id }); return { ok: false, error: 'the server said 401: Agent token revoked or expired' }; } };
   const events = [];
-  const out = await team.pingStream(ctx.root, { reason: 'scroll', env: ctx.env, deps, onEvent: (event) => events.push(event) });
+  // A tap for more: the person asked, so a teammate on an Atris model is woken (the feed asking by itself never would).
+  const out = await team.pingStream(ctx.root, { reason: 'more', env: ctx.env, deps, onEvent: (event) => events.push(event) });
   assert.equal(ctx.turns.length, 1, 'a failed turn is not tried again for different ideas');
   const row = out.members.find((m) => m.name === 'scout');
   assert.equal(row.error, SIGNED_OUT);

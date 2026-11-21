@@ -6,6 +6,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+// Local date, the way the log files are named.
+const TODAY = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; })();
 
 const { checkZen } = require('../lib/zen');
 
@@ -429,12 +431,14 @@ test('a clashing note names where your copy went from the repo root, short enoug
 
 test('a new note only staged does not stop zen when the same note arrives upstream', () => {
   const { base, seed, checkout } = createRepo();
+  // Today's log: a dated log goes to the archive after 30 days, so a fixed date ages the test out.
+  const todayLog = `atris/logs/${TODAY.slice(0, 4)}/${TODAY}.md`;
   try {
-    commit(seed, 'atris/logs/2026/2026-10-22.md', '# today\n- from the team\n', 'team log');
+    commit(seed, todayLog, '# today\n- from the team\n', 'team log');
     commit(seed, 'atris/plan.md', 'their plan\n', 'their plan');
     git(seed, 'push', '-q');
     // An agent stages its own copy of the same day's log and the same plan.
-    write(checkout, 'atris/logs/2026/2026-10-22.md', '# today\n- from me\n');
+    write(checkout, todayLog, '# today\n- from me\n');
     write(checkout, 'atris/plan.md', 'my plan\n');
     git(checkout, 'add', 'atris');
 
@@ -442,7 +446,7 @@ test('a new note only staged does not stop zen when the same note arrives upstre
     assert.equal(cli.status, 0, cli.stdout + cli.stderr);
     assert.doesNotMatch(cli.stdout, /could not catch up/);
     assert.equal(git(checkout, 'rev-parse', 'HEAD'), git(checkout, 'rev-parse', 'origin/master'));
-    const log = fs.readFileSync(path.join(checkout, 'atris/logs/2026/2026-10-22.md'), 'utf8');
+    const log = fs.readFileSync(path.join(checkout, todayLog), 'utf8');
     assert.match(log, /from the team/);
     assert.match(log, /from me/);
     assert.equal(fs.readFileSync(path.join(checkout, 'atris/plan.md'), 'utf8'), 'their plan\n');
@@ -1200,18 +1204,18 @@ test('an idle side copy holding only team notes is saved and put away', () => {
 test('two versions of one day\'s log are joined, not shelved', () => {
   const { base, seed, checkout } = createRepo();
   try {
-    const day = 'atris/team/guard/logs/2026-10-22.md';
-    const todo = 'atris/logs/2026/2026-10-22.md';
-    commit(seed, todo, '# 2026-10-22\n- 01:00 first\n', 'shared journal');
+    const day = `atris/team/guard/logs/${TODAY}.md`;
+    const todo = `atris/logs/${TODAY.slice(0, 4)}/${TODAY}.md`;
+    commit(seed, todo, `# ${TODAY}\n- 01:00 first\n`, 'shared journal');
     git(seed, 'push', '-q');
     git(checkout, 'pull', '-q');
     // origin: a new member log and a journal entry
     commit(seed, day, '## review\n- fixed the gate\n', 'guard log');
-    commit(seed, todo, '# 2026-10-22\n- 01:00 first\n- 02:00 from origin\n', 'origin entry');
+    commit(seed, todo, `# ${TODAY}\n- 01:00 first\n- 02:00 from origin\n`, 'origin entry');
     git(seed, 'push', '-q');
     // here: the same member log written locally, and a local journal entry
     write(checkout, day, '# guard\n- 00:05 operate stopped\n- 00:20 operate stopped\n');
-    write(checkout, todo, '# 2026-10-22\n- 01:00 first\n- 01:30 mine\n');
+    write(checkout, todo, `# ${TODAY}\n- 01:00 first\n- 01:30 mine\n`);
 
     const cli = zen(checkout, 0);
     assert.equal(cli.status, 0, cli.stdout + cli.stderr);
