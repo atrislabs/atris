@@ -42,6 +42,29 @@ test('combines canonical current folders with absolute command argument paths', 
   });
 });
 
+test('resolves a repeated open path once per scan and follows a changed symlink next time', (t) => {
+  withCommands(({ root, command }) => {
+    const first = path.join(root, 'first');
+    const second = path.join(root, 'second');
+    const alias = path.join(root, 'alias');
+    fs.mkdirSync(first);
+    fs.mkdirSync(second);
+    fs.symlinkSync(first, alias, 'dir');
+    command('lsof', `p123\nn${alias}\np456\nn${alias}\n`);
+    command('ps', 'node relative.js\n');
+
+    const resolve = t.mock.method(fs, 'realpathSync');
+    const aliasCalls = () => resolve.mock.calls.filter(({ arguments: args }) => args[0] === alias).length;
+    assert.deepStrictEqual(listActiveProcessPaths(), [first, first]);
+    assert.strictEqual(aliasCalls(), 1);
+
+    fs.unlinkSync(alias);
+    fs.symlinkSync(second, alias, 'dir');
+    assert.deepStrictEqual(listActiveProcessPaths(), [second, second]);
+    assert.strictEqual(aliasCalls(), 2);
+  });
+});
+
 test('keeps both the first token and remainder for an unquoted path with spaces', () => {
   withCommands(({ root, command }) => {
     command('lsof', `n${root}\n`);
