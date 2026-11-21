@@ -6021,7 +6021,7 @@ test('detached always-on full-budget driver continues past a healthy max-ticks b
       runner: 'claude',
       verifier: 'node -e "process.exit(0)"',
       always_on: true,
-      cadence: '5s',
+      cadence: '1s',
       max_ticks: 1,
       max_wall_seconds: 30,
       created_at: now,

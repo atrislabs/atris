@@ -154,14 +154,12 @@ test('page: nothing on the screen shows until the page\'s script has run, and th
   assert.ok(script.indexOf("document.body.classList.add('on');") < script.indexOf('function el('), 'before any of its work');
 });
 
-test('browser: a look the Mac lost to its sleep is called off: the new card shows within seconds, and at once when the wifi is back or the phone is unlocked', browser, async () => {
-  const waited = await health.lostLookTrace({ chromePath: CHROME, how: 'wait' });
-  assert.ok(waited.shown_ms != null && waited.shown_ms < 10000, JSON.stringify(waited));
-  for (const how of ['online', 'visible']) {
+test('browser: a look the Mac lost to its sleep is called off: the new card shows within seconds, and at once when the wifi is back or the phone is unlocked', { ...browser, concurrency: 2 }, async (t) => {
+  await Promise.all(['wait', 'online', 'visible'].map(how => t.test(how, async () => {
     const out = await health.lostLookTrace({ chromePath: CHROME, how });
-    assert.ok(out.shown_ms != null && out.shown_ms < 2500, JSON.stringify(out));
-    assert.deepEqual(out.console, [], JSON.stringify(out));
-  }
+    assert.ok(out.shown_ms != null && out.shown_ms < (how === 'wait' ? 10000 : 2500), JSON.stringify(out));
+    if (how !== 'wait') assert.deepEqual(out.console, [], JSON.stringify(out));
+  })));
 });
 
 // ---- the home screen ------------------------------------------------------------------
@@ -230,6 +228,8 @@ test('browser: the live page has the home screen tags and both icons decode, and
 
 // a refusal is a 409 by design; chrome notes any 4xx answer in the console
 const refusedAct = line => line.kind === 'error' && /status of 409/.test(line.text) && /\/act$/.test(line.url || '');
+let readerCapture;
+const readCards = () => readerCapture ??= health.readerTrace({ chromePath: CHROME });
 
 test('page: one hidden polite region reads each new card as it lands, its title and its why', () => {
   const html = phonePage('NONCE');
@@ -241,7 +241,7 @@ test('page: one hidden polite region reads each new card as it lands, its title 
 });
 
 test('browser: a screen reader hears every card as it lands: the question, the idea, the choice, the picked idea', browser, async () => {
-  const out = await health.readerTrace({ chromePath: CHROME });
+  const out = await readCards();
   const show = JSON.stringify(out);
   assert.equal(out.heard.length, 4, show);
   for (const h of out.heard) {
@@ -253,7 +253,7 @@ test('browser: a screen reader hears every card as it lands: the question, the i
 });
 
 test('browser: when a tap does not go through, its one line why is a status, so a screen reader hears it as it appears', browser, async () => {
-  const out = await health.readerTrace({ chromePath: CHROME });
+  const out = await readCards();
   assert.equal(out.refused.text, 'that did not go through. try again.', JSON.stringify(out.refused));
   assert.equal(out.refused.role, 'status', JSON.stringify(out.refused));
 });
@@ -280,8 +280,11 @@ test('browser: on the team table each button tells a screen reader what it does:
 
 // ---- the focus ring -------------------------------------------------------------------
 
+let focusCapture;
+const readFocusRings = () => focusCapture ??= health.focusTrace({ chromePath: CHROME });
+
 test('browser: the small orb on a card shows a focus ring of 2px on screen, though it is the big orb drawn at a fifth', browser, async () => {
-  const out = await health.focusTrace({ chromePath: CHROME });
+  const out = await readFocusRings();
   const lava = out.card.find(s => s.what === 'lava');
   assert.ok(lava, JSON.stringify(out.card));
   assert.ok(lava.ring_px >= 1.95 && lava.ring_px <= 2.05, JSON.stringify(lava));
@@ -289,7 +292,7 @@ test('browser: the small orb on a card shows a focus ring of 2px on screen, thou
 });
 
 test('browser: every Tab stop on a card and on the big orb shows a 2px amber ring that never touches the control beside it', browser, async () => {
-  const out = await health.focusTrace({ chromePath: CHROME });
+  const out = await readFocusRings();
   const stops = [...out.card, ...out.orb];
   assert.ok(out.card.length >= 5 && out.orb.length >= 2, JSON.stringify(out));
   for (const s of stops) {

@@ -221,11 +221,71 @@ const LAST_LINES = `Array.prototype.map.call(document.querySelectorAll('#bet h1,
   return { what: n.tagName.toLowerCase() + '.' + n.className, lines: tops.length, words: words.length, last: last.join(' '), broken: lastWords.some(function (x) { return x.broken; }), pair_px: pair, room_px: room };
 })`;
 
+const FOOTER_BOX = `(function () {
+  // the footer's own box, so the check holds on the team card too, where its team link steps out
+  var foot = document.getElementById('foot'), f = foot.getBoundingClientRect(), b = document.getElementById('bet');
+  var c = b.hidden ? null : b.getBoundingClientRect();
+  return { foot_bottom: Math.round((f.bottom + scrollY) * 10) / 10, foot_top: f.top + scrollY + parseFloat(getComputedStyle(foot).paddingTop), card_bottom: c ? c.bottom + scrollY : null, waiting: document.body.classList.contains('waiting') };
+})()`;
+
+const FIELD_EDGES = `Array.prototype.map.call(document.querySelectorAll('#bet .field'), function (f) {
+  function lum(c) { var v = String(c).match(/[\\d.]+/g).slice(0, 3).map(function (x) { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; }
+  var a = lum(getComputedStyle(f).borderTopColor), b = lum(getComputedStyle(document.body).backgroundColor);
+  return Math.round((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) * 100) / 100;
+})`;
+
+const TYPE_SIZES = `(function () {
+  var sizes = {};
+  var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (var t = walker.nextNode(); t; t = walker.nextNode()) {
+    var p = t.parentElement;
+    if (!String(t.textContent).trim() || !p || p.closest('.grid') || p.closest('[aria-hidden="true"]') || !p.closest('#bet, #foot, #line')) continue;
+    var s = getComputedStyle(p);
+    if (s.display === 'none' || s.visibility === 'hidden' || !p.getBoundingClientRect().width) continue;
+    var h = p.closest('#bet h1');
+    var px = parseFloat(s.fontSize);
+    sizes[h && !h.classList.contains('said') ? 'title' : String(px)] = true;
+  }
+  var i = document.querySelector('#bet .field input');
+  if (i) sizes[String(parseFloat(getComputedStyle(i).fontSize))] = true;
+  return Object.keys(sizes).sort();
+})()`;
+
+const WORD_VIEWPORTS = ['phone', 'small', 'side', 'laptop'];
+const FOOTER_VIEWPORTS = ['phone', 'big', 'small', 'laptop'];
+let phoneRows;
+function measurePhoneCards() {
+  phoneRows ??= layout({
+    chromePath: CHROME,
+    viewports: ['phone'],
+    probe: `({
+      footer: ${FOOTER_BOX},
+      edges: ${FIELD_EDGES},
+      sizes: ${TYPE_SIZES},
+      teamLink: getComputedStyle(document.getElementById('working')).display !== 'none',
+      lastLines: ${LAST_LINES},
+    })`,
+  });
+  return phoneRows;
+}
+
+let otherCardRows;
+async function measureAllCards() {
+  const phone = await measurePhoneCards();
+  otherCardRows ??= layout({
+    chromePath: CHROME,
+    viewports: [...new Set([...WORD_VIEWPORTS, ...FOOTER_VIEWPORTS])].filter(v => v !== 'phone'),
+    probe: `({ footer: ${FOOTER_BOX}, lastLines: ${LAST_LINES} })`,
+  });
+  return [...phone, ...await otherCardRows];
+}
+
 test('layout: no title, body, or label leaves one word alone on its last line, on any card at any size', { skip, timeout: 180000 }, async () => {
-  const rows = await layout({ chromePath: CHROME, viewports: ['phone', 'small', 'side', 'laptop'], probe: LAST_LINES });
+  const rows = (await measureAllCards()).filter(r => WORD_VIEWPORTS.includes(r.viewport));
+  assert.equal(rows.length, CASES.length * WORD_VIEWPORTS.length);
   const alone = [];
   let wrapped = 0;
-  for (const r of rows) for (const p of r.probe) {
+  for (const r of rows) for (const p of r.probe.lastLines) {
     if (p.lines < 2 || p.broken) continue;
     wrapped += 1;
     // a last word that, with the word before it, is wider than the line can never share its line
@@ -274,16 +334,11 @@ test('layout: the calm line\'s open box shows its whole hint on every phone, cen
 });
 
 test('layout: an open box\'s edge is at least 3:1 against the page and every line of words at least 4.5:1, on every card', { skip, timeout: 120000 }, async () => {
-  const probe = `Array.prototype.map.call(document.querySelectorAll('#bet .field'), function (f) {
-    function lum(c) { var v = String(c).match(/[\\d.]+/g).slice(0, 3).map(function (x) { x /= 255; return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }); return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2]; }
-    var a = lum(getComputedStyle(f).borderTopColor), b = lum(getComputedStyle(document.body).backgroundColor);
-    return Math.round((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) * 100) / 100;
-  })`;
-  const rows = await layout({ chromePath: CHROME, viewports: ['phone'], probe });
-  const boxes = rows.filter(r => r.probe.length);
-  const show = JSON.stringify(rows.map(r => ({ at: r.case, edges: r.probe, low: r.words_low })), null, 1);
+  const rows = await measurePhoneCards();
+  const boxes = rows.filter(r => r.probe.edges.length);
+  const show = JSON.stringify(rows.map(r => ({ at: r.case, edges: r.probe.edges, low: r.words_low })), null, 1);
   assert.ok(boxes.length >= 1, show);
-  for (const r of boxes) for (const edge of r.probe) assert.ok(edge >= 3, show);
+  for (const r of boxes) for (const edge of r.probe.edges) assert.ok(edge >= 3, show);
   for (const r of rows) assert.deepEqual(r.words_low, [], show);
 });
 
@@ -326,28 +381,12 @@ test('layout: the words inside every box start the same distance in: answers, id
 });
 
 test('layout: outside the team table the cards use three type sizes: 17 for quiet lines, 20 for what you read or answer, and the title', { skip, timeout: 120000 }, async () => {
-  const probe = `(function () {
-    var sizes = {};
-    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    for (var t = walker.nextNode(); t; t = walker.nextNode()) {
-      var p = t.parentElement;
-      if (!String(t.textContent).trim() || !p || p.closest('.grid') || p.closest('[aria-hidden="true"]') || !p.closest('#bet, #foot, #line')) continue;
-      var s = getComputedStyle(p);
-      if (s.display === 'none' || s.visibility === 'hidden' || !p.getBoundingClientRect().width) continue;
-      var h = p.closest('#bet h1');
-      var px = parseFloat(s.fontSize);
-      sizes[h && !h.classList.contains('said') ? 'title' : String(px)] = true;
-    }
-    var i = document.querySelector('#bet .field input');
-    if (i) sizes[String(parseFloat(getComputedStyle(i).fontSize))] = true;
-    return Object.keys(sizes).sort();
-  })()`;
-  const rows = await layout({ chromePath: CHROME, viewports: ['phone'], probe });
-  const show = JSON.stringify(rows.map(r => ({ at: r.case, sizes: r.probe })), null, 1);
-  for (const r of rows) for (const size of r.probe) assert.ok(['17', '20', 'title'].includes(size), show);
+  const rows = await measurePhoneCards();
+  const show = JSON.stringify(rows.map(r => ({ at: r.case, sizes: r.probe.sizes })), null, 1);
+  for (const r of rows) for (const size of r.probe.sizes) assert.ok(['17', '20', 'title'].includes(size), show);
   // the reply with its conversation really shows turns, answers, links, and its words
   const reply = rows.find(r => r.case === 'reply-thread');
-  assert.deepEqual(reply.probe, ['17', '20'], show);
+  assert.deepEqual(reply.probe.sizes, ['17', '20'], show);
 });
 
 
@@ -423,20 +462,16 @@ test('layout: a word longer than the screen, like an email address, breaks insid
 });
 
 test('layout: the footer sits at the bottom of the screen on every card that fits, where it sits on the big orb, and 28px under a taller card', { skip, timeout: 180000 }, async () => {
-  const probe = `(function () {
-    // the footer's own box, so the check holds on the team card too, where its team link steps out
-    var foot = document.getElementById('foot'), f = foot.getBoundingClientRect(), b = document.getElementById('bet');
-    var c = b.hidden ? null : b.getBoundingClientRect();
-    return { foot_bottom: Math.round((f.bottom + scrollY) * 10) / 10, foot_top: f.top + scrollY + parseFloat(getComputedStyle(foot).paddingTop), card_bottom: c ? c.bottom + scrollY : null, waiting: document.body.classList.contains('waiting') };
-  })()`;
-  const rows = await layout({ chromePath: CHROME, viewports: ['phone', 'big', 'small', 'laptop'], probe });
-  const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, ...r.probe })), null, 1);
-  for (const v of ['phone', 'big', 'small', 'laptop']) {
-    const at = rows.filter(r => r.viewport === v && !r.probe.waiting);
-    const home = at.find(r => r.case === 'home');
+  const rows = (await measureAllCards()).filter(r => FOOTER_VIEWPORTS.includes(r.viewport));
+  assert.equal(rows.length, CASES.length * FOOTER_VIEWPORTS.length);
+  const show = JSON.stringify(rows.map(r => ({ at: `${r.case} ${r.size}`, ...r.probe.footer })), null, 1);
+  for (const v of FOOTER_VIEWPORTS) {
+    const at = rows.filter(r => r.viewport === v && !r.probe.footer.waiting);
+    const homeBottom = at.find(r => r.case === 'home').probe.footer.foot_bottom;
     let fit = 0;
     for (const r of at.filter(x => x.case !== 'home')) {
-      if (r.probe.card_bottom + 28 + 44 <= home.probe.foot_bottom) { fit += 1; assert.equal(r.probe.foot_bottom, home.probe.foot_bottom, show); } else assert.ok(r.probe.foot_top >= r.probe.card_bottom + 28 - 0.5, show);
+      const footer = r.probe.footer;
+      if (footer.card_bottom + 28 + 44 <= homeBottom) { fit += 1; assert.equal(footer.foot_bottom, homeBottom, show); } else assert.ok(footer.foot_top >= footer.card_bottom + 28 - 0.5, show);
     }
     assert.ok(fit >= 8, show);
   }
@@ -514,7 +549,7 @@ test('layout: a phone turned upright with the team open still keeps every status
 });
 
 test('layout: on the team card the footer does not offer the team again; on every other card it does', { skip, timeout: 90000 }, async () => {
-  const probe = `getComputedStyle(document.getElementById('working')).display !== 'none'`;
-  const rows = await layout({ chromePath: CHROME, cases: only('home', 'idea', 'team', 'member', 'deck', 'swap', 'wait'), viewports: ['phone'], probe });
-  assert.deepEqual(rows.map(r => [r.case, r.probe]), [['home', true], ['idea', true], ['team', false], ['member', true], ['deck', true], ['swap', true], ['wait', true]]);
+  const cases = only('home', 'idea', 'team', 'member', 'deck', 'swap', 'wait').map(c => c.name);
+  const rows = (await measurePhoneCards()).filter(r => cases.includes(r.case));
+  assert.deepEqual(rows.map(r => [r.case, r.probe.teamLink]), [['home', true], ['idea', true], ['team', false], ['member', true], ['deck', true], ['swap', true], ['wait', true]]);
 });
