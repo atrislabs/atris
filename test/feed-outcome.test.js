@@ -305,6 +305,33 @@ test('by itself the feed asks once, then stays quiet until the person acts or th
   assert.equal(team.ping(ctx.root, { member: 'scout', reason: 'scroll', env, deps: ctx.deps }).pinged, 1);
 });
 
+test('by itself the feed never wakes a teammate that spends credits; asking does', (t) => {
+  const ctx = project(t, ['scout', 'writer']);
+  // writer runs on an Atris model (credits); scout on this computer's own model (no credits).
+  const options = { env: { ...ctx.env, ATRIS_FEED_INSTALLED: 'codex', ATRIS_FEED_TURNS: 'caller' } };
+  team.setMemberEngine(ctx.root, 'writer', 'atris-fast', options);
+  const env = { ...options.env, ATRIS_FEED_MEMBER_GAP_SECONDS: '0' };
+  const named = (answer) => answer.members.filter((m) => m.status === 'started').map((m) => m.name);
+  for (const reason of ['heartbeat', 'scroll']) {
+    require('./helpers/feed-project').changed(ctx);
+    const auto = team.ping(ctx.root, { reason, env, deps: ctx.deps });
+    assert.deepEqual(named(auto), ['scout'], `${reason} wakes only the free teammate`);
+    const held = auto.members.find((m) => m.name === 'writer');
+    assert.equal(held.costs_credits, true);
+    assert.match(held.reason, /costs credits, so it thinks only when you ask/);
+  }
+  // Only paid teammates on: the automatic round says why nobody came, in words.
+  team.setMemberEngine(ctx.root, 'scout', 'atris-fast', options);
+  require('./helpers/feed-project').changed(ctx);
+  const none = team.ping(ctx.root, { reason: 'heartbeat', env, deps: ctx.deps });
+  assert.equal(none.pinged, 0);
+  assert.match(none.reason, /costs credits/);
+  // A person asking is heard: refresh, a tap for more, or a teammate by name.
+  assert.equal(team.ping(ctx.root, { reason: 'refresh', env, deps: ctx.deps }).pinged, 2);
+  assert.equal(team.ping(ctx.root, { reason: 'more', env, deps: ctx.deps }).pinged, 2);
+  assert.equal(team.ping(ctx.root, { member: 'writer', reason: 'scroll', env, deps: ctx.deps }).pinged, 1);
+});
+
 test('a teammate still writing when the feed is cleared writes nothing onto the cleared feed', async (t) => {
   const ctx = project(t, ['asker', 'scout']);
   const card = ask(ctx);
