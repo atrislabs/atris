@@ -247,8 +247,7 @@ test('a real clash goes back to a builder as a job naming the files, once per br
     assert.ok(a.hand_back && a.hand_back.task_id, JSON.stringify(a));
     assert.equal(a.hand_back.new, true);
     assert.equal(a.hand_back.member, 'builder');
-    assert.equal(b.hand_back.task_id, a.hand_back.task_id, 'the second tick finds the same job');
-    assert.equal(b.hand_back.new, false);
+    assert.deepEqual([b.reason, b.was, b.hand_back], ['waiting_for_change', 'merge_conflict', undefined], 'nothing moved: not checked, no second job');
     assert.deepEqual(first.handed_back, ['codex/claude-heavy-job-gate']);
 
     const taskDb = require('../lib/task-db');

@@ -759,8 +759,8 @@ function showHelpAll() {
   console.log('  business deploy <slug> - Push local business to cloud');
   console.log('');
   console.log('Code Review:');
-  console.log('  code-review <file>     - Run 6-specialist code review (alias: cr)');
-  console.log('  cr --all               - Audit all backend services');
+  console.log('  code-review            - Check this change against the project wall of shame (alias: cr)');
+  console.log('  code-review init       - Write a starter atris/SPEC.md');
   console.log('');
   console.log('Cloud & agents:');
   console.log('  computer   - Open a scoped AI computer (cloud/local, personal/business)');
@@ -832,7 +832,7 @@ function showHelpAll() {
   console.log('Team:');
   console.log('  member create <name> - Scaffold a new team member (MEMBER.md)');
   console.log('  member list          - Show all team members');
-  console.log('  member install <n>   - Add a ready-made member: host, designer-1');
+  console.log('  member install <n>   - Add a ready-made member: host, designer-1, writer-1');
   console.log('  member activate <n>  - Activate a member (link skills, show context)');
   console.log('  member upgrade <n>   - Convert flat file to directory format');
   console.log('  member result <n>    - Newest run of a member: run record, receipt, artifacts, result number');
@@ -3378,7 +3378,9 @@ if (command === 'guide') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'code-review' || command === 'cr') {
   const args = process.argv.slice(3);
-  require('../commands/review').reviewCommand(...args)
+  require('../commands/review').reviewCommand(args)
+    .then((code) => exitAfterStdoutDrain(code))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'wiki') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);

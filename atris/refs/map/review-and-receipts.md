@@ -54,21 +54,21 @@ rg "planChecks|validateMap|lintMap|whereFromMarkers|codeIdentity|matchReceipt|fi
 
 **Search:** `rg "verifyAtris|verifyRubric|showVerifyHelp|verify --help" bin/atris.js commands/verify.js test/commands-1.test.js`
 
-## Feature: Specialist Code Review (`atris code-review`, `atris cr`)
+## Feature: Wall of shame code review (`atris code-review`, `atris cr`)
 
-**Purpose:** Run the optional six-specialist review engine without confusing it with the core `atris review` workflow validator.
+**Purpose:** Check one change against the recurring mistakes in the project's atris/SPEC.md (qm-compatible `## Wall of shame` with `### Lens (always reviewed, reviewed on <model>, checked by CI, N examples)` headings). Distinct from the `atris review` workflow validator.
 
-- **Routing:** `bin/atris.js:1318-1321` routes `code-review` and `cr` to `commands/review.js`
-- **Engine discovery:** `commands/review.js:14-30` searches for `review_engine.py`
-- **Missing-engine JSON:** `commands/review.js:32-46` returns `{ ok:false, error:"not installed" }` under `--json` and prints `not installed; atris skill install code-review` on stderr for humans, both exit 2 (no stack trace)
-- **JSON error helper:** `commands/review.js:48-55` keeps wrapper-owned setup failures parseable
-- **Handler:** `commands/review.js:57-182` parses file/diff/all/json args and delegates to the Python engine when present
-- **All-mode setup:** `commands/review.js:93-101` returns `{ ok:false }` for missing `backend/services/` under `--all --json`, before auditing services
-- **All-mode JSON success:** `commands/review.js:127-140` returns one parseable `{ ok:true, action:"code_review_all" }` summary instead of human `AUDIT:` prose
-- **All-mode human success:** `commands/review.js:142-151` keeps the existing audit banner and table for non-JSON callers
-- **Regression:** `test/code-review.test.js` and `test/dogfood-t6-t10.test.js` cover not-installed exit 2, JSON missing-services, and JSON success summaries
+- **Routing:** `bin/atris.js` routes `code-review` and `cr` to `commands/review.js` (`reviewCommand`), which returns the exit code
+- **Spec parsing:** `lib/wall-of-shame.js` (`parseSpec`) reads lenses and flags; (`addExample`) appends one dated bullet and bumps the heading count for `atris code-review add`
+- **Diff target:** `commands/review.js` (`collectChange`): default is the merge base with origin's default branch (`defaultBranch` in `lib/zen.js`) plus uncommitted and untracked files (`untrackedDiff`); `--diff <range>` and `--pr <n>` (gh)
+- **Triage and reviewers:** `commands/review.js` (`reviewLenses`) starts always-reviewed lenses alongside one haiku triage call, then one read-only `runEngineAskJobs` job per relevant lens; reviewers read the diff from a temp file under `.atris/reviews/`
+- **Verdicts:** `lib/wall-of-shame.js` (`parseVerdict`, `parseTriage`, both on `extractJson` from `lib/security-audit.js`); a failed or garbled answer is `no verdict`, never accept; a failed triage reviews every lens
+- **Over-testing:** `lib/wall-of-shame.js` (`overTesting`) over `git apply --numstat`, no model call
+- **Report:** `lib/wall-of-shame.js` (`reportBlock`, `upsertBlock`); receipt at `.atris/reviews/<head-sha>.md`; `--pr <n> --comment` updates the block in the PR description (`writeComment`)
+- **Starter spec:** `templates/code-review/SPEC.md`, written by `atris code-review init` (`initSpec`)
+- **Regression:** `test/code-review.test.js` (temp git repo, fake `executeAskJob`)
 
-**Search:** `rg "reviewCommand|printMissingReviewEngine|exitReviewError|code_review_all|code-review --json|not installed" commands/review.js test/code-review.test.js test/dogfood-t6-t10.test.js bin/atris.js`
+**Search:** `rg "reviewCommand|collectChange|reviewLenses|parseSpec|parseVerdict|overTesting|upsertBlock|addExample" commands/review.js lib/wall-of-shame.js test/code-review.test.js`
 
 ## Concern: Endgame Scorecards
 

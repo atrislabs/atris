@@ -51,6 +51,8 @@ test('yes lock: a held publish exits 77 and files the yes card; the yes lets exa
   yesLock.writeYesLocks(stateDir, 'mission-x', { betId: 'bet-1', seal });
   const guard = prepareMissionGitGuard({ root, missionId: 'mission-x', yesLockSeal: seal, stateDir, pathValue });
   const run = runner(root, guard);
+  // the owner answers the newest card on step 2, which names its command's hash
+  const approve = () => yesLock.approveYesLock(stateDir, 'mission-x', 2, seal, undefined, { hash: yesLock.askedYesLocks(stateDir, 'mission-x').filter(c => c.step === 2).pop().hash });
   try {
     // ordinary work runs as usual
     assert.equal(run('npm test').stdout.trim(), 'ran npm test');
@@ -65,19 +67,19 @@ test('yes lock: a held publish exits 77 and files the yes card; the yes lets exa
     assert.equal(run('git push -q origin master').status, 0);
     assert.deepEqual(yesLock.askedYesLocks(stateDir, 'mission-x').map(l => [l.step, l.held_command]), [[2, 'npm publish --access public'], [3, 'atris twitter post we shipped']], 'each card shows the command it would let through');
     // yes on step 2 lets that one command through once, and only step 2
-    yesLock.approveYesLock(stateDir, 'mission-x', 2, seal);
+    approve();
     assert.equal(run('npm publish --access public').stdout.trim(), 'ran npm publish --access public');
     assert.equal(run('npm publish --access public').status, 77, 'the yes was used; a second publish needs its own');
     assert.equal(run('atris twitter post "we shipped"').status, 77, 'the post still waits for its own yes');
     // a release and a tag push each need a yes for that exact command
     assert.equal(run('gh release create v1.0.0').status, 77);
-    yesLock.approveYesLock(stateDir, 'mission-x', 2, seal);
+    approve();
     assert.equal(run('gh release create v1.0.0').stdout.trim(), 'ran gh release create v1.0.0');
     assert.equal(run('git push origin v1.0.0').status, 77, 'a tag pushed by name is a tag push');
-    yesLock.approveYesLock(stateDir, 'mission-x', 2, seal);
+    approve();
     assert.equal(run('git push origin --tags').status, 77, '--tags is closed outright, even with a yes');
     assert.equal(run('git push -q origin v1.0.0').status, 77, 'asking for --tags replaced the yes for the named tag');
-    yesLock.approveYesLock(stateDir, 'mission-x', 2, seal);
+    approve();
     assert.equal(run('git push -q origin v1.0.0').status, 0, 'one named tag, with its own yes');
   } finally {
     guard.cleanup();
@@ -166,4 +168,20 @@ test('yes lock: mission start seals the owner steps into the mission record, and
   const bad = start(['--yes-lock', JSON.stringify([{ step: 1, categories: ['launch-rockets'] }])]);
   assert.notEqual(bad.status, 0);
   assert.match(bad.stdout + bad.stderr, /--yes-lock takes a JSON list/);
+});
+
+test('yes lock: a held npm command is said from its own subcommand, and a form not known here is not guessed', () => {
+  const said = (...args) => yesLock.plainWhat(JSON.stringify({ tool: 'npm', args, cwd: os.tmpdir() }));
+  assert.deepEqual([['dist-tag', 'ls', 'shop'], ['dist-tag', 'rm', 'shop', 'beta'], ['dist-tag', 'add', '@a/shop@2.0.0', 'beta'], ['dist-tag', 'add', 'shop@2.0.0'], ['dist-tag', 'set', 'shop@1.0.0'], ['unpublish', 'shop']].map(a => said(...a)), ['list the npm tags of shop', 'remove the npm tag beta from shop', 'point the npm tag beta of @a/shop at version 2.0.0', 'point the configured default npm tag of shop at version 2.0.0', 'run this command', 'run this command']);
+});
+
+test('yes lock: holding a command again writes its unreadable record back from that command, so its card can be answered', () => {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yes-lock-')), seal = [{ step: 1, text: 'publish', categories: ['publish'] }];
+  const hold = () => yesLock.check({ stateDir, missionId: 'm', seal, tool: 'npm', args: ['publish'], cwd: stateDir }).hold;
+  const file = path.join(stateDir, 'yes-locks', 'm.json');
+  fs.writeFileSync(file, hold() && fs.readFileSync(file, 'utf8').replace(/"key": "[^\n]*",/, '"key": "{}",'));
+  const card = () => yesLock.askedYesLocks(stateDir, 'm')[0];
+  assert.deepEqual([card().exact, hold(), card().exact], [null, true, 'npm publish']);
+  assert.ok(yesLock.approveYesLock(stateDir, 'm', 1, seal, undefined, { hash: card().hash }));
+  fs.rmSync(stateDir, { recursive: true, force: true });
 });

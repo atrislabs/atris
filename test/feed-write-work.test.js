@@ -76,7 +76,7 @@ test('write-only model: no answer says so plainly', async (t) => {
   const deps = { ...ctx.deps, spawnSync: noRun, turn: async () => ({ ok: false, text: '', error: 'out of credits' }) };
   await feed.runEntry(ctx.root, entry.id, deps);
   const back = feed.listCards(ctx.root, { filter: 'all', limit: 100, env: ctx.env }).cards.find((c) => c.id === card.id);
-  assert.match(back.last_failure.reason, /^scout's model Atris fast did not answer: out of credits\.$/);
+  assert.match(back.last_failure.reason, /^scout's model Atris 2 Fast did not answer: out of credits\.$/);
 });
 
 test('failed work: a summary that is only a model name is not shown as the member\'s words', async (t) => {
@@ -93,5 +93,5 @@ test('failed work: a summary that is only a model name is not shown as the membe
   await feed.runEntry(ctx.root, entry.id, deps);
   const back = feed.listCards(ctx.root, { filter: 'all', limit: 100, env: ctx.env }).cards.find((c) => c.id === card.id);
   assert.doesNotMatch(back.last_failure.reason, /Atris 2 Fast/);
-  assert.match(back.last_failure.reason, /ended without a result \(the check did not pass\)/);
+  assert.match(back.last_failure.reason, /ended without a result: the check did not pass\./);
 });

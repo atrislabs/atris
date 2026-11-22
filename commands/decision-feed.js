@@ -22,9 +22,9 @@ const VALUE_FLAGS = new Set([
   '--filter', '--limit', '--cursor', '--since', '--as', '--title', '--why', '--body', '--detail',
   '--visual', '--kind', '--lane', '--note', '--story', '--reason', '--card', '--proof', '--text', '--engine', '--choose', '--member', '--wait', '--cards', '--goal',
   '--reply',
-  '--session', '--ask',
+  '--session', '--ask', '--append-b64', '--failed',
 ]);
-const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask', '--retry', '--run', '--independent', '--confirm', '--dry-run', '--undo']);
+const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask', '--retry', '--run', '--tagged', '--independent', '--confirm', '--dry-run', '--undo', '--done', '--needs-sign-in']);
 
 function parse(args) {
   const positional = [];
@@ -95,8 +95,8 @@ const HELP = [
   '       atris feed more                     (wakes up to 3 ON members to look for ideas: a ping with reason scroll)',
   '       atris feed settings [set default-engine <id>]   the one default model for members with none of their own',
   '       atris feed settings set member-engine <member> <id|none>   the model one member uses in the feed. With no choice the feed',
-  '                          runs on Codex on this computer when it is signed in, else Atris fast; Fable and Claude Code run only when you pick them here.',
-  '       atris feed engines                  the models usable on this computer right now',
+  '                          runs on Codex on this computer when it is signed in, else Atris 2 Fast; Fable and Claude Code run only when you pick them here.',
+  '       atris feed engines                  the models usable on this computer right now (the Atris models: atris-fast, atris-pro, atris-max)',
   '       atris feed members                  the team: on or off, model in effect, last active, what it is doing; [cloud on|off] when the cloud wake switch disagrees',
   '       atris feed member on|off <name>          also sets waking on notes in the cloud, in a business folder',
   '       atris feed ping [<member>] [--reason scroll|heartbeat|event|refresh|more] [--stream]',
@@ -115,6 +115,8 @@ const HELP = [
   '                          or key; without --dry-run replaces each with a short marker (never prints the text)',
   '       atris feed react <card> 👍|❤️|😂|🔥|👀 [--as <member>]   (taps that reaction on or off, as you unless --as)',
   '       atris feed reply <card> "<text>" [--as <member>]          (a comment on any card, at most 1000 characters)',
+  '                          (yours naming @<member> asks each named, awake member to answer it once, right away, in the',
+  '                          comments; --json says who in "tagged". A tag asks for an answer, never starts the work)',
   '       atris feed discuss <card> [--retry] [--stream]',
   '                          (Atris reads your post, or your newest comment on it, with the project and the team, picks up to',
   '                          two awake members whose roles fit, and asks each for its own view as a comment. Once for each thing',
@@ -133,6 +135,11 @@ const HELP = [
   '       atris feed setup skip [<card>]      skip the setup question waiting for you; nothing is saved',
   '       atris feed doctor [--no-call]       before a demo: what is ready, what is not, and the one thing to do (exits 1 when not ready)',
   '       atris feed repair                   put right runs, replies and approvals left half done; says what it fixed',
+  '       atris feed turns [--json]           with ATRIS_FEED_TURNS=caller, the questions for an Atris model waiting for someone else',
+  '                          to ask them, oldest first, and whether a teammate is still thinking. The feed never asks the model itself then.',
+  '       atris feed turns show <id> --json   one waiting question, in full',
+  '       atris feed turns answer <id> --append-b64 <text in base64>   add to its answer (as many times as needed)',
+  '       atris feed turns answer <id> --done | --failed "<one plain sentence>" [--needs-sign-in]   finish it',
   '       atris feed notes [--member <name>]  what the owner taught the team in card conversations; notes forget <id> removes one',
   '',
   'Ideas wait for a person. Approve hands the idea to its team member and starts it',
@@ -221,6 +228,7 @@ function printText(command, out, { streamed = false } = {}) {
     else if (outcome.started) console.log('approved. the team member started on it.');
     else if (outcome.reason === 'queued') console.log(`approved. it starts when a slot frees up (number ${outcome.position} in line).`);
     else if (outcome.reason === 'accepted') console.log('accepted.');
+    else if (outcome.reason === 'standing_mission_confirmed') console.log('confirmed. these words carry your yes again.');
     else console.log(`approved. not started: ${outcome.reason || 'unknown'}`);
     return;
   }
@@ -255,7 +263,7 @@ function printText(command, out, { streamed = false } = {}) {
     return;
   }
   if (command === 'settings') {
-    console.log(`default model: ${out.engine_in_effect}${out.default_engine ? '' : ' (picked for you: Codex on this computer when it is signed in, else Atris fast)'}${out.engine_available ? '' : `, cannot run here: ${out.engine_reason}`}`);
+    console.log(`default model: ${out.engine_in_effect}${out.default_engine ? '' : ' (picked for you: Codex on this computer when it is signed in, else Atris 2 Fast)'}${out.engine_available ? '' : `, cannot run here: ${out.engine_reason}`}`);
     const standing = out.standing_yes;
     if (standing) {
       const today = standing.count_readable ? `${standing.started_today} of ${standing.per_day} started today` : 'today\'s count cannot be read, so nothing starts';
@@ -324,6 +332,8 @@ function printText(command, out, { streamed = false } = {}) {
     // Why a setup answer was not kept, in the words the desktop shows under the card.
     const note = (out.setup && out.setup.lesson_error) || out.setup_error;
     if (command === 'reply' && note) console.log(note);
+    if (command === 'reply' && Array.isArray(out.tagged) && out.tagged.length) console.log(`asked ${out.tagged.join(' and ')} to answer.`);
+    if (command === 'reply' && out.tag_note) console.log(out.tag_note);
     return;
   }
   if (out.message) console.log(`sent. ${out.reply_pending ? 'the team member answers on its next run.' : ''}`.trim());
@@ -538,7 +548,8 @@ async function run(args = [], context = {}) {
       if (flags.run) {
         // Internal: the background half that discuss starts.
         if (!positional[1] || !positional[2]) throw new feed.FeedError(400, 'usage: atris feed discuss --run <card> <round>');
-        await host.runRound(root, positional[1], positional[2], { env, deps });
+        if (flags.tagged) await host.runTagged(root, positional[1], positional[2], { env, deps });
+        else await host.runRound(root, positional[1], positional[2], { env, deps });
         return 0;
       }
       if (!positional[1]) throw new feed.FeedError(400, 'usage: atris feed discuss <card> [--retry]');
@@ -564,6 +575,11 @@ async function run(args = [], context = {}) {
       }
     } else if (sub === 'repair') {
       out = team().repair(root, { env, deps });
+    } else if (sub === 'turns') {
+      // The caller makes the model call; this computer keeps the files (lib/feed-turns.js). Always JSON.
+      const result = require('../lib/feed-turns').command(root, positional.slice(1), flags);
+      console.log(JSON.stringify(result.out));
+      return result.code;
     } else if (sub === 'run') {
       // Internal: the detached runner that decide, ping and more start.
       if (!positional[1]) throw new feed.FeedError(400, 'usage: atris feed run <run id>');
@@ -590,7 +606,7 @@ async function run(args = [], context = {}) {
 const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'dismiss', 'talk', 'messages', 'revise', 'more', 'run', 'help',
   'waiting',
   'settings', 'engines', 'members', 'member', 'ping', 'think', 'emit', 'events', 'start', 'doctor', 'repair', 'notes',
-  'say', 'react', 'reply', 'replies', 'discuss', 'work', 'clear', 'setup', 'scrub-keys']);
+  'say', 'react', 'reply', 'replies', 'discuss', 'work', 'clear', 'setup', 'scrub-keys', 'turns']);
 
 const LEGACY_BARE_NOTICE = 'note: bare `atris feed` now opens the decision feed. Output is not a terminal, so this run showed the '
   + 'business group feed as before; that ends next release. Use `atris feed list` for the group feed, `atris feed cards --json` for the new one.';

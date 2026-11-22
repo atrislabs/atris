@@ -307,6 +307,37 @@ function ageNote(ctx, cardId, hours) {
   fs.writeFileSync(file, `${lines.join('\n')}\n`);
 }
 
+test('fresh: teammates answering each other do not hold an old note on the main list; in your own conversation they do', (t) => {
+  const ctx = project(t);
+  const room = require('../lib/feed-room');
+  const team = require('../lib/feed-team');
+  const theirs = room.say(ctx.root, { as: 'writer', text: 'The spring list is ready.', fromAsk: true, env: ctx.env, deps: ctx.deps }).card.id;
+  const joined = room.say(ctx.root, { as: 'writer', text: 'The autumn list is ready.', fromAsk: true, env: ctx.env, deps: ctx.deps }).card.id;
+  const mine = room.say(ctx.root, { text: 'Lets plan the week.', env: ctx.env, deps: ctx.deps }).card.id;
+  room.reply(ctx.root, joined, 'Send it on Friday.', { env: ctx.env });
+  for (const id of [theirs, joined, mine]) ageNote(ctx, id, 30);
+  const social = room.socialFile(ctx.root);
+  const old = new Date(Date.now() - 30 * 3600000).toISOString();
+  const stored = JSON.parse(fs.readFileSync(social, 'utf8'));
+  for (const entry of Object.values(stored)) { entry.updated_at = old; for (const reply of entry.replies || []) reply.at = old; }
+  fs.writeFileSync(social, JSON.stringify(stored));
+  const ids = () => cards(ctx).map((card) => card.id);
+  assert.deepEqual(ids(), [], 'all three have been quiet for over a day');
+
+  for (const id of [theirs, joined, mine]) room.reply(ctx.root, id, 'It went out to forty people.', { as: 'writer', direct: true, env: ctx.env, deps: ctx.deps });
+  assert.ok(!ids().includes(theirs), 'a teammate alone on its own old note does not bring it back');
+  assert.ok(ids().includes(joined), 'a note you commented on comes back when a teammate answers');
+  assert.ok(ids().includes(mine), 'your own note comes back when a teammate answers');
+  assert.ok(!feed.listCards(ctx.root, { since: '0', limit: 100, env: ctx.env }).cards.some((card) => card.id === theirs), 'and a delta does not bring it back either');
+  assert.equal(feed.readCard(ctx.root, theirs, { env: ctx.env }).reply_count, 1, 'the note and its comment are still there to read');
+
+  // The team is shown what you still see: the note that left is not brought up for more comments.
+  const brief = team.roomBrief(ctx.root, 'writer', { env: ctx.env });
+  const text = typeof brief === 'string' ? brief : JSON.stringify(brief);
+  assert.doesNotMatch(text, /spring list/, 'a note off the main list is not put in front of the team again');
+  assert.match(text, /autumn list/, 'a note still on it is');
+});
+
 test('fresh: a result and a team note quiet for a day leave the main list; an idea waiting for you stays; a comment brings a note back', (t) => {
   const ctx = project(t);
   const room = require('../lib/feed-room');
@@ -817,4 +848,151 @@ test('routing: feed list and feed post stay the business group feed', () => {
   assert.equal(route(['--json'], { isTTY: false }).decision, true);
   assert.equal(route(['--limit', '5'], { isTTY: false }).decision, false);
   assert.equal(route(['cards'], { isTTY: false }).decision, true);
+});
+
+// ------------------------------------------- what a card you can approve says
+
+test('held work you can approve says what you get: the member who does it, why, and what done looks like; never the question line', (t) => {
+  const ctx = project(t);
+  const id = add(ctx, {
+    title: 'Fix BCK-1234 in backend/services/feed.py',
+    metadata: {
+      tags: ['needs-human'], assigned_to: 'closer',
+      why_it_matters: 'An unset cap now holds the team all day.',
+      done_looks_like: 'An unset cap means no cap. Teammates that are always on keep working.',
+    },
+  });
+  const [card] = cardsOf(ctx, id);
+  assert.equal(card.kind, 'question');
+  assert.equal(card.can_decide, true);
+  assert.equal(card.title, 'An unset cap means no cap.');
+  assert.notEqual(card.title, 'A team member has a question for you');
+  assert.equal(card.author.id, 'agent:closer');
+  assert.equal(card.why, 'An unset cap now holds the team all day.');
+  assert.deepEqual(card.story, ['Teammates that are always on keep working.'], 'the title is not said twice');
+  // A plain job title stays, with its plan, and no assignee but a team author still names who does it.
+  const own = add(ctx, { title: 'Stop an unset spend cap from holding the team', metadata: { tags: ['decision'], feed: { author: 'agent:writer' }, done_looks_like: 'The team keeps working with no cap set.' } });
+  const [plain] = cardsOf(ctx, own);
+  assert.equal(plain.title, 'Stop an unset spend cap from holding the team');
+  assert.equal(plain.author.id, 'agent:writer');
+  assert.deepEqual(plain.story, ['The team keeps working with no cap set.']);
+  // Approve still hands it to that member and starts it, as before.
+  const out = feed.decide(ctx.root, plain.id, 'approve', { env: ctx.env, deps: ctx.deps });
+  assert.equal(out.outcome.started, true);
+  assert.equal(ctx.spawned[0].member, 'writer');
+});
+
+test('held work with no plain words and nothing explaining it stays off the main list, reachable under needs_decision, never titled as a question', (t) => {
+  const ctx = project(t);
+  const id = add(ctx, { title: 'Fix BCK-1234 in backend/services/feed.py', metadata: { tags: ['needs-human'], assigned_to: 'closer' } });
+  assert.deepEqual(cardsOf(ctx, id), [], 'off the main list');
+  const [card] = cardsOf(ctx, id, 'needs_decision');
+  assert.equal(card.title, 'Work waiting for your yes, not yet written in plain words');
+  assert.equal(card.needs_decision, true);
+  assert.match(card.detail, /BCK-1234/, 'the raw words kept behind the detail');
+});
+
+test('a teammate\'s question is answered in the comments, never approved; it can still be talked over and dismissed', async (t) => {
+  const ctx = project(t);
+  const asked = feed.proposeCard(ctx.root, { as: 'scout', kind: 'question', title: 'Which city should we start in?', why: 'The first city sets the plan', env: ctx.env }).card;
+  assert.equal(asked.kind, 'question');
+  assert.equal(asked.needs_decision, true);
+  assert.equal(asked.can_decide, false);
+  assert.equal(asked.cannot_decide_reason, 'This asks you something. Answer it in the comments.');
+  assert.throws(() => feed.decide(ctx.root, asked.id, 'approve', { env: ctx.env, deps: ctx.deps }), (e) => e.status === 409 && /Answer it in the comments/.test(e.message));
+  assert.equal(ctx.spawned.length, 0, 'nothing started');
+  const talked = await feed.talk(ctx.root, asked.id, 'Start in Austin.', { env: ctx.env, deps: ctx.deps });
+  assert.ok(talked.message, 'talking on it still works');
+  // A proposal is untouched: still approvable.
+  assert.equal(propose(ctx).card.can_decide, true);
+  const out = feed.dismissCards(ctx.root, [asked.id], { env: ctx.env, deps: ctx.deps });
+  assert.deepEqual(out.skipped || [], []);
+  assert.equal(cardsOf(ctx, asked.source.id).length, 0);
+});
+
+test('a teammate\'s question you answered in the comments stops asking for you: a reaction or a teammate\'s comment does not settle it, and it is never approvable', (t) => {
+  const ctx = project(t);
+  const room = require('../lib/feed-room');
+  const asked = feed.proposeCard(ctx.root, { as: 'scout', kind: 'question', title: 'Which city should we start in?', why: 'The first city sets the plan', env: ctx.env }).card;
+  const page = () => feed.listCards(ctx.root, { limit: 100, env: ctx.env });
+  const mine = () => page().cards.find((card) => card.id === asked.id);
+  const waiting = () => cards(ctx, 'needs_decision').some((card) => card.id === asked.id);
+  assert.equal(mine().needs_decision, true, 'an asked question needs you');
+  assert.ok(waiting());
+  const before = page().counts.needs_decision;
+
+  // A reaction and a teammate's comment are not your answer.
+  room.react(ctx.root, asked.id, room.EMOJI[0], { env: ctx.env });
+  room.reply(ctx.root, asked.id, 'Austin has the most leads.', { as: 'writer', direct: true, env: ctx.env, deps: ctx.deps });
+  assert.equal(mine().needs_decision, true, 'a reaction or a teammate comment does not settle it');
+  assert.equal(page().counts.needs_decision, before);
+  assert.equal(mine().can_decide, false);
+
+  // Your comment answers it: it leaves the needs_decision list and count, stays on the main list while fresh.
+  const said = room.reply(ctx.root, asked.id, 'Start in Austin.', { env: ctx.env, deps: ctx.deps });
+  assert.equal(said.card.needs_decision, false, 'the card handed back after your comment no longer needs you');
+  const card = mine();
+  assert.ok(card, 'still on the main list while the talk is fresh');
+  assert.equal(card.needs_decision, false);
+  assert.equal(card.can_decide, false);
+  assert.ok(!waiting(), 'off the needs_decision list');
+  assert.equal(page().counts.needs_decision, before - 1, 'the count drops');
+  assert.equal(feed.readCard(ctx.root, asked.id, { env: ctx.env }).needs_decision, false);
+  assert.throws(() => feed.decide(ctx.root, asked.id, 'approve', { env: ctx.env, deps: ctx.deps }), (e) => e.status === 409);
+  assert.equal(ctx.spawned.length, 0, 'nothing started');
+
+  // The one who asked asks again: one answer settles the card, it does not come back.
+  room.reply(ctx.root, asked.id, 'Austin it is. Should we also try Dallas next?', { as: 'scout', direct: true, env: ctx.env, deps: ctx.deps });
+  assert.equal(mine().needs_decision, false, 'a follow-up question does not bring it back');
+  assert.equal(page().counts.needs_decision, before - 1);
+
+  // Quiet for a day, like any other card: it leaves the main list.
+  ageTask(ctx, asked.source.id, 30);
+  const social = room.socialFile(ctx.root);
+  const old = new Date(Date.now() - 26 * 3600000).toISOString();
+  const stored = JSON.parse(fs.readFileSync(social, 'utf8'));
+  for (const entry of Object.values(stored)) { entry.updated_at = old; for (const reply of entry.replies || []) reply.at = old; }
+  fs.writeFileSync(social, JSON.stringify(stored));
+  assert.equal(mine(), undefined, 'an answered question quiet for a day leaves the main list');
+});
+
+test('work that ended with nothing says why in words: a status code like tick-ok is said plainly, an unknown one and an exit number say nothing', (t) => {
+  const ctx = project(t);
+  const why = feed._internal.endedWhy;
+  const log = (text) => { const file = path.join(ctx.dir, `run-${Math.random().toString(16).slice(2)}.log`); fs.writeFileSync(file, text); return file; };
+  assert.equal(why(log('{"status":"ran","reason":"tick-ok","ran":true}\n')), ': the teammate took a step but wrote no result');
+  assert.equal(why(log('{"reason":"wall_exceeded_during_tick"}\n')), ': it ran out of time');
+  assert.equal(why(log('{"reason":"some-new-code"}\n')), '', 'an unknown code says nothing');
+  assert.equal(why(log('The model said the page was already right.\n')), ': The model said the page was already right');
+  assert.equal(why(log('Error: ENOENT at lib/x.js:12\n')), '', 'machine words stay in the log');
+  assert.equal(why(path.join(ctx.dir, 'missing.log')), '');
+  for (const code of ['tick-ok', 'rate-limited', 'quiet-hours', 'no-ready-engine', 'session-lock-busy', 'verify-did-not-run', 'verifier-not-passed', 'commit-failed', 'push-rejected', 'workspace-dirty-in-member-scope', 'member-archived', 'mission-not-found', 'dry-run', 'skipped-llm-not-configured']) {
+    const said = why(log(`{"reason":"${code}"}`));
+    assert.ok(said && feed._internal.isPlainWords(said.slice(2)), `${code} reads plainly: ${said}`);
+    assert.doesNotMatch(`The work ended without a result${said}.`, /\(|tick|exit/);
+  }
+});
+
+test('a running card says how many minutes it may take: run.limit_minutes, from the same limit that stops it', (t) => {
+  const ctx = project(t);
+  const view = feed._internal.runView;
+  const saved = { work: process.env.ATRIS_FEED_WORK_LIMIT_MINUTES, ping: process.env.ATRIS_FEED_PING_LIMIT_MINUTES };
+  t.after(() => {
+    for (const [key, name] of [['work', 'ATRIS_FEED_WORK_LIMIT_MINUTES'], ['ping', 'ATRIS_FEED_PING_LIMIT_MINUTES']]) {
+      if (saved[key] === undefined) delete process.env[name]; else process.env[name] = saved[key];
+    }
+  });
+  delete process.env.ATRIS_FEED_WORK_LIMIT_MINUTES;
+  delete process.env.ATRIS_FEED_PING_LIMIT_MINUTES;
+  assert.equal(view({ status: 'running', kind: 'task' }, []).limit_minutes, 45);
+  assert.equal(view({ status: 'running', kind: 'ping' }, []).limit_minutes, 6);
+  process.env.ATRIS_FEED_WORK_LIMIT_MINUTES = '20';
+  assert.equal(view({ status: 'running', kind: 'task' }, []).limit_minutes, 20);
+  assert.equal('limit_minutes' in view({ status: 'queued', kind: 'task' }, [{ status: 'queued', kind: 'task' }]), false, 'only while running');
+  // On the real card of approved work that started.
+  const idea = propose(ctx).card;
+  feed.decide(ctx.root, idea.id, 'approve', { env: ctx.env, deps: ctx.deps });
+  const running = cards(ctx, 'working').find((card) => card.id === idea.id);
+  assert.equal(running.run.status, 'running');
+  assert.equal(running.run.limit_minutes, 20);
 });

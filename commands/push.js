@@ -4,6 +4,7 @@ const readline = require('readline');
 const { ensureFreshCredentials, abortOnAuthFailure } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const { loadBusinesses, saveBusinesses, businessMatchesSlug } = require('./business');
+const { writeBaseContents, removeBaseContents } = require('../lib/company-brain-sync');
 const { loadManifest, saveManifest, buildManifest, computeLocalHashes, isIgnoredSyncPath, filterSyncFiles } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
@@ -414,6 +415,7 @@ async function pushAtris() {
     console.log('  atris push --changed         Push only files that differ from the last-synced manifest');
     console.log('  atris push example-co --only team/nate   Only push files in team/nate/');
     console.log('  atris push --force           Bypass freshness check (force-push, may overwrite cloud changes)');
+    console.log('  atris push --conditional     Check each revision atomically on a compatible cloud computer');
     console.log('  atris push --delete          Allow small cloud deletes shown by --dry-run');
     console.log('  atris push --delete-all      Extra confirmation for mass-delete recovery');
     console.log('  --allow-broad-workspace      Publish a large unscoped workspace plan after review');
@@ -461,6 +463,10 @@ async function pushAtris() {
   const yes = process.argv.includes('--yes');
   const allowDelete = process.argv.includes('--delete');
   const allowMassDelete = process.argv.includes('--delete-all');
+  let conditional = process.argv.includes('--conditional');
+  if (conditional && (force || allowDelete || allowMassDelete)) {
+    throw new Error('Conditional sync supports file writes only. Remove --force and delete flags.');
+  }
   const allowBroadWorkspace = process.argv.includes('--allow-broad-workspace');
   const allowNestedWorkspace = process.argv.includes('--allow-nested-workspace');
   const allowSyncArtifacts = process.argv.includes('--allow-sync-artifacts');
@@ -615,6 +621,7 @@ async function pushAtris() {
       { method: 'GET', token: creds.token, timeoutMs: 60000 }
     );
     if (snapshotResult.ok && snapshotResult.data && Array.isArray(snapshotResult.data.files)) {
+      conditional ||= snapshotResult.data.supports_conditional_sync === true;
       const cloudHashes = filterSyncFiles(buildCloudHashMap(snapshotResult.data.files));
       const manifestFiles = filterSyncFiles((manifest && manifest.files) || {});
       const driftFiles = [];
@@ -794,9 +801,14 @@ async function pushAtris() {
     const s = String(p || '');
     return s.startsWith('/') ? s : `/${s}`;
   };
-  const wireFiles = (files) => files.map((f) => ({ path: toWirePath(f.path), content: f.content }));
+  const wireFiles = (files) => files.map((f) => ({
+    path: toWirePath(f.path),
+    content: f.content,
+    ...(conditional ? { expected_hash: baseFiles[f.path]?.hash ?? null } : {}),
+  }));
+  const syncRoute = conditional ? 'sync/conditional' : 'sync';
   const syncFiles = (files) => apiRequestJson(
-    `/business/${businessId}/workspaces/${workspaceId}/sync?timeout=${timeoutSec}`,
+    `/business/${businessId}/workspaces/${workspaceId}/${syncRoute}?timeout=${timeoutSec}`,
     {
       method: 'POST',
       token: creds.token,
@@ -827,7 +839,7 @@ async function pushAtris() {
           seen.add(canonical);
         }
       }
-    } else {
+    } else if (!conditional) {
       // No results array in response, old server. Best-effort: assume
       // everything sent landed. This preserves existing behavior when
       // talking to a server that doesn't return per-file status.
@@ -851,6 +863,9 @@ async function pushAtris() {
       result = await syncFiles(batch);
 
       if (!result.ok) {
+        if (conditional && [404, 405, 501].includes(result.status)) {
+          throw new Error('This cloud computer does not support conditional sync yet.');
+        }
         if (result.status === 403) {
           const detail = result.errorMessage || result.error || (result.data && result.data.detail) || '';
           if (detail && /plan required|business, max, or enterprise/i.test(detail)) {
@@ -1021,14 +1036,18 @@ async function pushAtris() {
   // skip it, the file would never land. Keeping it OUT of the manifest means
   // the next push sees it as new/changed and retries automatically.
   const updatedFiles = { ...baseFiles };
+  const landedContents = {};
   for (const f of filesToPush) {
     if (skipped.includes(f)) continue;
     if (!landedPaths.has(f.path)) continue;
     updatedFiles[f.path] = localFiles[f.path];
+    landedContents[f.path] = f.content;
   }
   for (const filePath of deletedConfirmed) {
     delete updatedFiles[filePath];
   }
+  writeBaseContents(sourceDir, landedContents);
+  removeBaseContents(sourceDir, deletedConfirmed);
   saveManifest(resolvedSlug || slug, buildManifest(updatedFiles, null, { workspaceRoot: sourceDir }));
 
   // Telemetry, outcome reflects actual run quality, not just exit-code-zero.
@@ -1062,6 +1081,9 @@ async function pushAtris() {
     bytes_transferred: bytesChanged,
     error_detail: finalDetail,
   });
+  if (conditional && failedToLand.length) {
+    throw new Error('Cloud did not accept every revision. Sync again to reconcile the pending files.');
+  }
 }
 
 module.exports = {
