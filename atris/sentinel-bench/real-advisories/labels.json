@@ -1,0 +1,92 @@
+{
+  "GHSA-2xhg-73j7-rrgx": {
+    "others": {
+      "packages/mcp-server/scripts/inspect.mjs:launcher/credential-in-process-arguments": "wrong"
+    },
+    "note": "The token-in-arguments finding is in a developer-only inspector launcher run on the developer's own machine; not a hole in the shipped tool."
+  },
+  "GHSA-45gf-fjxp-cjpq": {
+    "others": {
+      "sha256:a6eac93bf5dfbd25": "real"
+    },
+    "note": "One confirmed finding elsewhere is a real new hole; details kept private."
+  },
+  "GHSA-4g5x-hcwm-82jw": {
+    "others": {
+      "sha256:04b016d48d4012bf": "real",
+      "sha256:bf7b09bbb6be283f": "real"
+    },
+    "note": "Both confirmed findings elsewhere are real new holes; details kept private."
+  },
+  "GHSA-5g9x-qwh5-33x4": {
+    "others": {
+      "sha256:d715a3f7b5b39b26": "real"
+    },
+    "note": "One confirmed finding elsewhere is a real new hole; details kept private."
+  },
+  "GHSA-9x83-rrg6-9pr9": {
+    "others": {
+      "cli/src/utils.ts:getLocalConfig/project-config-selects-credential-recipient": "wrong"
+    },
+    "note": "Wrong: the localApi/localApiFiles settings (cli/src/utils.ts:702-705) are the documented self-host switch, and the attacker it needs already commits to the operator's own app project, whose capacitor.config.ts is code the CLI loads anyway."
+  },
+  "GHSA-8cfq-jgf7-8m27": {
+    "match": {
+      "router/oauth2/authorization_endpoint.go:AuthorizationEndpointHandler/silent-consent-checks-raw-scopes": "same"
+    },
+    "others": {
+      "router/middlewares/access_logging.go:AccessLogging/unredacted-oauth-callback-query": "wrong"
+    },
+    "note": "Exact match: prompt=none with no scope checks consent against the empty raw set and grants every client scope. The logging finding is wrong: the sign-in callback code in the URL is single-use and already spent by the time the line is written; log readers are operators."
+  },
+  "GHSA-f46q-3v67-fmm4": {
+    "others": {
+      "sha256:2ff9b6c6047c7a53": "real"
+    },
+    "note": "The advisory spot was spotted as a lead but the run ran out of budget to check it. One confirmed finding elsewhere is a real new hole; details kept private."
+  },
+  "GHSA-pfvc-3p5h-x7h6": {
+    "others": {
+      "config/config.go:EnsurePterodactylUser/username-interpreted-as-process-options": "wrong",
+      "sha256:adf4ccfd77ad07bc": "real",
+      "sha256:bc51fe5cdc682b11": "real"
+    },
+    "note": "The account-name finding is wrong: only the panel holding the node token can set that name, and it already controls the node. The other two confirmed findings are real new holes (both low); details kept private."
+  },
+  "GHSA-q4gh-4ffp-5cg8": {
+    "match": {
+      "js/node_helper.js:setSocketIO/client-controlled-secret-resolution": "same"
+    },
+    "note": "Same flaw: any socket client's payload has SECRET_ placeholders filled from the server's environment (node_helper.js:93). Sentinel traced the leak out through the weather module's request host rather than an echo, but the root cause and line are the advisory's."
+  },
+  "GHSA-rrvg-cxh4-qhrv": {
+    "others": {
+      "oauthenticator/globus.py:pre_spawn_start/unfiltered-token-response-export": "wrong"
+    },
+    "note": "Wrong as a security hole: the exclude_tokens filter is bypassed through token_response (globus.py:268), but the only receiver is the same user's own notebook getting that user's own tokens. Nobody gains access they did not already have."
+  },
+  "GHSA-w89x-c962-c44g": {
+    "others": {
+      "middleware/common.go:Logging/reset-secret-in-request-query": "wrong",
+      "middleware/common.go:Logging/unredacted-incoming-credential-urls": "wrong"
+    },
+    "note": "Both are tokens written to the server's own request log (middleware/common.go:147-153). The only reader is the operator, who already holds the database and every account, so nobody gains access. Logged-secret findings are scored wrong unless a less trusted party can read the log."
+  },
+  "GHSA-wchh-mrv2-5h4q": {
+    "others": {
+      "pkg/api/oauth2_authentications.go:OAuth2AuthenticationApi/secret-bearing-state-diagnostics": "wrong",
+      "pkg/middlewares/request_log.go:RequestLog/unredacted-query-credentials": "wrong"
+    },
+    "note": "Same pattern as cloudreve: sign-in state and query tokens written to the operator's own logs (request_log.go:45, oauth2_authentications.go:58-186). No less trusted reader, so no one gains access."
+  },
+  "GHSA-jq3q-62jc-fqq9": {
+    "match": {
+      "src/utils/getGitHandler.ts:git-launch/shell-from-repository-data": "same",
+      "src/utils/githubProvider/cliProvider.ts:pull-request-diff/shell-from-pull-request-filename": "same"
+    },
+    "others": {
+      "src/utils/getGitHandler.ts:getCurrentBranch/provider-credentials-in-child-environment": "wrong"
+    },
+    "note": "Found the same unescaped execSync command strings the fix replaced, but named a different input (file names) than the advisory (folder path and branch names). The env finding is wrong: git and gh inheriting the server's environment is normal and not a hole by itself."
+  }
+}
