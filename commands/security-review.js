@@ -466,6 +466,12 @@ function renderAuditLanding({ dir, meta, records }) {
       L.push(`    ${r.severity.overall.padEnd(8)} ${r.title} (${sink.file}:${sink.line})`);
     }
     for (const w of waiting.slice(0, 6)) L.push(`    ${w.severity.padEnd(8)} ${w.title} (last seen at ${w.location}, still open: ${w.why})`);
+    const unchecked = Array.isArray(meta.unchecked) ? meta.unchecked : [];
+    if (unchecked.length) {
+      L.push(`  ${unchecked.length} lead${unchecked.length === 1 ? '' : 's'} not checked yet. ${unchecked.length === 1 ? 'it is' : 'they are'} not disproved; the next run checks ${unchecked.length === 1 ? 'it' : 'them'} first`);
+      for (const u of unchecked.slice(0, 6)) L.push(`    unchecked ${u.title}${u.location ? ` (${u.location})` : ''}`);
+      if (unchecked.length > 6) L.push(`    and ${unchecked.length - 6} more in the report`);
+    }
     if (meta.run_status === 'incomplete') L.push(`  incomplete: ${String(meta.incomplete_reason).replace(/_/g, ' ')}`);
   }
   L.push(`  report: ${tildePath(path.join(dir, 'REPORT.md'))}`, '');

@@ -1001,3 +1001,15 @@ test('guard round 3: the written guarantee names both allow-lists', async () => 
   assert.match(r.out, /read-only program/);
   assertVoice(r.out);
 });
+
+test('the upload line counts in plain words and says nothing when nothing was sent', () => {
+  const line = powers.uploadLine;
+  assert.strictEqual(line({ ok: true, sent: 0, resolved: 0 }, 'finding'), '', 'zero sent says nothing');
+  assert.strictEqual(line({ ok: true, sent: 0 }, 'threat'), '');
+  assert.strictEqual(line({ ok: true, sent: 1 }, 'finding'), '  sent 1 finding to your atris dashboard. no file contents or secret values were sent');
+  assert.strictEqual(line({ ok: true, sent: 3 }, 'threat'), '  sent 3 threats to your atris dashboard. no file contents or secret values were sent');
+  assert.strictEqual(line({ ok: true, sent: 5, resolved: 2 }, 'finding'), '  sent 3 findings to your atris dashboard and marked 2 as fixed. no file contents or secret values were sent');
+  assert.strictEqual(line({ ok: true, sent: 2, resolved: 2 }, 'finding'), '  marked 2 as fixed on your atris dashboard. no file contents or secret values were sent');
+  assert.strictEqual(line({ ok: false, reason: 'offline' }, 'finding'), '  warning: could not send the findings to your atris dashboard: offline. the check itself is done');
+  for (const n of [0, 1, 2, 7]) assert.doesNotMatch(line({ ok: true, sent: n }, 'finding'), /sent \d+ the /);
+});

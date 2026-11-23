@@ -384,3 +384,43 @@ test('an area a hunter could not settle is named in the report', () => withHome(
     assert.match(fs.readFileSync(path.join(res.dir, 'REPORT.md'), 'utf8'), /Could not settle\n\n- path-traversal in lib\/files\.js: who writes this folder/);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }));
+
+test('when the checks run out, the report and the landing list each unchecked lead as unchecked', () => withHome(async () => {
+  const root = makeRepo();
+  const out = [];
+  const origLog = console.log;
+  try {
+    const engines = fakeEngines([]);
+    // Hunters answer; every verifier call gets no answer, like a spent budget.
+    const runJobs = async (jobs) => (await engines(jobs)).map((a, i) => (jobs[i].prompt.includes('independent security verifier') ? { ok: false, reason: 'budget', stdout: '' } : a));
+    const res = await audit.runAudit({ root, profile: 'standard', runJobs });
+    assert.strictEqual(res.meta.incomplete_reason, 'validation_budget_exhausted');
+    assert.deepStrictEqual(res.meta.unchecked.map((u) => [u.title, u.location]), [[CANDIDATE.title, 'lib/run.js:4']]);
+    const report = fs.readFileSync(path.join(res.dir, 'REPORT.md'), 'utf8');
+    assert.match(report, /1 lead not checked yet\./);
+    assert.match(report, /## Not checked yet\n\nThe check budget ran out before these leads were checked\. They are not findings and not disproved\. The next run checks them first\.\n\n- unchecked: Task title runs as shell code \(lib\/run\.js:4\)/);
+    const saved = JSON.parse(fs.readFileSync(path.join(res.dir, 'run-metadata.json'), 'utf8'));
+    assert.strictEqual(saved.unchecked.length, 1);
+
+    const { auditCommand } = require('../commands/security-review');
+    console.log = (...a) => out.push(a.join(' '));
+    assert.strictEqual(await auditCommand(['status'], { root }), 0);
+    console.log = origLog;
+    const text = out.join('\n');
+    assert.match(text, /1 lead not checked yet\. it is not disproved; the next run checks it first/);
+    assert.match(text, /unchecked Task title runs as shell code \(lib\/run\.js:4\)/);
+  } finally {
+    console.log = origLog;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}));
+
+test('a complete run lists nothing as unchecked', () => withHome(async () => {
+  const root = makeRepo();
+  try {
+    const res = await audit.runAudit({ root, profile: 'standard', runJobs: fakeEngines([]) });
+    assert.strictEqual(res.meta.run_status, 'complete');
+    assert.deepStrictEqual(res.meta.unchecked, []);
+    assert.doesNotMatch(fs.readFileSync(path.join(res.dir, 'REPORT.md'), 'utf8'), /Not checked yet|not checked yet/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}));
