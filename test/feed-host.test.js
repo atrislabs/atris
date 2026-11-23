@@ -464,6 +464,25 @@ test('naming a teammate with @ on any card: that teammate answers that comment o
   await assert.rejects(require('../lib/feed-team').askMember(ctx.root, { member: 'closer', cardId: idea.id, text: '', answering: { id: saved[0].id, text: saved[0].text }, env: ctx.env, deps: ctx.deps }), /already answered that comment/);
 });
 
+test('asking a member by name with words that name it: it answers there once and is not lined up again; another name is', async (t) => {
+  const ctx = project(t, ['scout', 'writer', 'closer']);
+  const runs = tagRig(ctx);
+  answers(ctx, { member: (me) => `${me} would start with the oldest five leads.` });
+  const idea = feed.proposeCard(ctx.root, { as: 'scout', title: 'Call the ten oldest leads', why: 'Old leads answer more often', env: ctx.env }).card;
+  const team = require('../lib/feed-team');
+  await team.askMember(ctx.root, { member: 'closer', cardId: idea.id, text: '@closer where should we start?', env: ctx.env, deps: ctx.deps });
+  assert.equal(runs.length, 0, 'the member asked by name is not asked a second time in the background');
+  assert.equal(memberTurns(ctx).length, 1);
+  const saved = room.replies(ctx.root, idea.id, { env: ctx.env }).replies;
+  assert.deepEqual(saved.map((r) => r.author.type === 'user' ? 'you' : r.author.id), ['you', 'agent:closer']);
+  // Another member the same words name is still brought in, once.
+  answers(ctx, { member: (me) => `${me} would pick the five who opened last month's note.` });
+  await team.askMember(ctx.root, { member: 'closer', cardId: idea.id, text: '@closer @writer and which five first?', env: ctx.env, deps: ctx.deps });
+  assert.equal(runs.length, 1);
+  const d = feed.readCard(ctx.root, idea.id, { env: ctx.env }).discussion;
+  assert.deepEqual(d.picks.map((p) => p.member), ['writer']);
+});
+
 test('several names: each named member answers once, in turn; an unknown name stays plain text; a sleeping one is said plainly', async (t) => {
   const ctx = project(t, ['scout', 'writer', 'closer']);
   const runs = tagRig(ctx);
