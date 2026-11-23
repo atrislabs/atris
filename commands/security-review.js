@@ -703,6 +703,11 @@ function renderRecheckLanding(result) {
   return L.join('\n');
 }
 
+// Said when this folder's newest review read several places together.
+function systemReviewNote(last, what) {
+  return `  this folder was the ${last.system.part} part of a review of ${last.system.parts.length} places. ${what}`;
+}
+
 // atris sentinel recheck [path]: only the auditor, on the last review's open
 // findings. Same engine rules, same price question and cap on atris models,
 // same plain-sentence upload.
@@ -713,6 +718,17 @@ async function auditRecheckCommand(argv, deps = {}) {
   try { opts = parseRecheckArgs(argv); } catch (e) { console.error(`sentinel recheck: ${e.message}`); return 2; }
   const root = path.resolve(opts.target || deps.root || process.cwd());
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) { console.error(`sentinel recheck: ${root} is not a folder`); return 2; }
+  // A newer review of several places is found and named, never skipped for
+  // an older review of this folder alone.
+  const newest = audit.latestReview(root);
+  if (newest && newest.system) {
+    const names = newest.system.parts.map((p) => p.name);
+    const again = require('../lib/sentinel-places').rerunLine(newest.system.parts, newest.system.part, root);
+    const nothing = `the last review of this folder read ${names.length} places together (${names.join(', ')}). recheck works on a review of one folder for now. to check those findings again, run that review again: ${again}`;
+    if (opts.json) console.log(JSON.stringify({ ok: true, nothing, dir: newest.dir, system: newest.system }, null, 2));
+    else console.log(`\n  ${nothing}\n`);
+    return 0;
+  }
   const token = deps.token !== undefined ? deps.token : cloud.authToken();
   let engines;
   try { engines = cloud.resolveEngines({ engine: opts.engine, verifier: opts.verifier, token, env: deps.env || process.env }); } catch (e) { console.error(`sentinel recheck: ${e.message}`); return 2; }
@@ -787,10 +803,12 @@ async function auditCommand(argv, deps = {}) {
   const audit = require('../lib/security-audit');
   const root = deps.root || process.cwd();
   if (argv[0] === 'status' || argv[0] === 'last') {
-    const last = audit.latestRun(root);
+    // The newest review of this folder, alone or as one of several places.
+    const last = audit.latestReview(root);
     if (!last || !last.meta) { console.log('\n  no sentinel audit has run for this repo yet\n'); return 0; }
-    if (argv.includes('--json')) { console.log(JSON.stringify({ dir: last.dir, meta: last.meta, findings: last.records }, null, 2)); return 0; }
+    if (argv.includes('--json')) { console.log(JSON.stringify({ dir: last.dir, meta: last.meta, findings: last.records, system: last.system || null }, null, 2)); return 0; }
     console.log(renderAuditLanding({ dir: last.dir, meta: last.meta, records: last.records }));
+    if (last.system) console.log(`${systemReviewNote(last, 'status shows it here. recheck and fix work on a review of one folder for now')}\n`);
     return 0;
   }
   if (['agents', 'guard', 'watch', 'flush'].includes(argv[0])) {

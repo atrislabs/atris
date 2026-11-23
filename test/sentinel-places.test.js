@@ -423,3 +423,72 @@ test('a local bare repo clones by path only when a test allows it on purpose', (
     fs.rmSync(got.tmp, { recursive: true, force: true });
   } finally { fs.rmSync(base, { recursive: true, force: true }); fs.rmSync(c.parent, { recursive: true, force: true }); }
 });
+
+// ---------------------------------------------------------------- after the review
+
+test('status, recheck and fix find a review of several places from any of its folders and say what they support', async () => {
+  const c = makeCompany();
+  const { fixCommand } = require('../commands/sentinel-fix');
+  try {
+    await withHome(async (home, out) => {
+      assert.strictEqual(await auditCommand(['../web', '../mobile', '--plan', ...LOCAL], { root: c.api, token: null }), 0, out.join('\n'));
+
+      out.length = 0;
+      assert.strictEqual(await auditCommand(['status'], { root: c.web }), 0);
+      let text = out.join('\n');
+      assert.doesNotMatch(text, /no sentinel audit has run/);
+      assert.match(text, /one system in 3 parts/);
+      assert.match(text, /this folder was the web part of a review of 3 places\. status shows it here\. recheck and fix work on a review of one folder for now/);
+
+      out.length = 0;
+      assert.strictEqual(await auditCommand(['status', '--json'], { root: c.api }), 0);
+      const json = JSON.parse(out.join('\n'));
+      assert.strictEqual(json.system.part, 'api');
+      assert.ok(json.dir.startsWith(path.join(home, 'api+mobile+web')));
+
+      out.length = 0;
+      assert.strictEqual(await auditCommand(['recheck'], { root: c.web, token: null }), 0);
+      text = out.join('\n');
+      assert.match(text, /the last review of this folder read 3 places together \(api, web, mobile\)\. recheck works on a review of one folder for now/);
+      assert.match(text, /run that review again: atris sentinel --with \.\.\/api --with \.\.\/mobile/);
+
+      out.length = 0;
+      assert.strictEqual(await fixCommand([], { root: c.api }), 0);
+      text = out.join('\n');
+      assert.match(text, /read 3 places together \(api, web, mobile\), with this one as the api part\. it has 0 confirmed findings/);
+      assert.match(text, /fix works on a review of one folder for now, so nothing was changed/);
+      assert.match(text, /review this folder alone first: atris sentinel/);
+      assert.strictEqual(await fixCommand(['abc123'], { root: c.api }), 2, 'asking to fix one names the limit and fails');
+
+      // A newer review of the folder alone is the one status and fix use.
+      assert.strictEqual(await auditCommand(['--plan', ...LOCAL], { root: c.web, token: null }), 0);
+      out.length = 0;
+      assert.strictEqual(await auditCommand(['status'], { root: c.web }), 0);
+      text = out.join('\n');
+      assert.doesNotMatch(text, /one system in/);
+      assert.doesNotMatch(text, /part of a review of/);
+      // The other folders still find the system review.
+      out.length = 0;
+      assert.strictEqual(await auditCommand(['status'], { root: c.api }), 0);
+      assert.match(out.join('\n'), /this folder was the api part/);
+    });
+  } finally { fs.rmSync(c.parent, { recursive: true, force: true }); }
+});
+
+test('a folder matches a git URL part by its origin in https or ssh form', async () => {
+  const dir = tmp('sentinel-origin-');
+  try {
+    const repo = makeRepo(path.join(dir, 'web'), { 'src/index.js': SHELL });
+    git(repo, ['remote', 'add', 'origin', 'git@github.com:org/web.git']);
+    await withHome(async (home) => {
+      const runDir = path.join(home, 'api+web', 'run-1');
+      fs.mkdirSync(runDir, { recursive: true });
+      fs.writeFileSync(path.join(runDir, 'run-metadata.json'), JSON.stringify({ finished_at: '2026-11-23T00:00:00.000Z', parts: [{ name: 'api', source: 'folder', path: path.join(dir, 'elsewhere') }, { name: 'web', source: 'git', url: 'https://github.com/Org/Web.git', commit: 'a'.repeat(40) }] }));
+      fs.writeFileSync(path.join(runDir, 'findings.json'), '[]');
+      const found = audit.latestReview(repo);
+      assert.ok(found && found.system, 'found by origin URL');
+      assert.strictEqual(found.system.part, 'web');
+      assert.strictEqual(audit.latestReview(dir), null, 'a folder that was no part finds nothing');
+    });
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
