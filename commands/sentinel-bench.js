@@ -2,8 +2,8 @@
 
 // atris sentinel bench and atris sentinel improve.
 //
-//   atris sentinel bench [--summary] [--json] [--review] [--sets guard,agents]
-//   atris sentinel bench --split <file> --set guard|agents|review
+//   atris sentinel bench [--summary] [--json] [--review] [--sets guard,agents,areas]
+//   atris sentinel bench --split <file> --set guard|agents|areas|review
 //   atris sentinel improve [--engine claude] [--focus exfil|destroy|disarm|agents] [--offline] [--json]
 //   atris sentinel improve --rounds N --parallel K --review codex [--max-minutes 120] [--max-calls N] [--push]
 //   atris sentinel improve --schedule [--every 24] [--engine claude] | --unschedule
@@ -31,11 +31,12 @@ function benchHelp() {
   console.log(`
   atris sentinel bench, a fixed exam for the sentinel
 
-    atris sentinel bench                 score the guard and the agent check
+    atris sentinel bench                 score the guard, the agent check and the
+                                         settings areas a quick review reads first
     atris sentinel bench --summary       totals only, no item lines
     atris sentinel bench --review        also run the review set on engines (costs engine time)
     atris sentinel bench --json          raw numbers for scripts
-    atris sentinel bench --split <file> --set guard|agents|review
+    atris sentinel bench --split <file> --set guard|agents|areas|review
                                          split new items into the seen half (in the repo)
                                          and the sealed held-out half (on this machine).
                                          the plaintext input is replaced with an encrypted copy
@@ -70,7 +71,7 @@ async function benchCommand(argv, deps = {}) {
   const split = readFlag(argv, '--split');
   if (split) {
     const set = readFlag(argv, '--set');
-    if (!set) { console.error('  --split needs --set guard, agents or review'); return 2; }
+    if (!set) { console.error('  --split needs --set guard, agents, areas or review'); return 2; }
     let res;
     try { res = bench.splitCorpus(path.resolve(split), set, { seenDir, holdoutDir, env }); } catch (e) { console.error(`  could not split: ${e.message}`); return 1; }
     if (argv.includes('--json')) { console.log(JSON.stringify({ ok: true, ...res }, null, 2)); return 0; }
@@ -83,9 +84,9 @@ async function benchCommand(argv, deps = {}) {
   }
   const review = argv.includes('--review');
   const setsRaw = readFlag(argv, '--sets');
-  const sets = setsRaw ? setsRaw.split(',').map((s) => s.trim()).filter(Boolean) : ['guard', 'agents', ...(review ? ['review'] : [])];
+  const sets = setsRaw ? setsRaw.split(',').map((s) => s.trim()).filter(Boolean) : ['guard', 'agents', 'areas', ...(review ? ['review'] : [])];
   const bad = sets.filter((s) => !bench.SETS.includes(s));
-  if (bad.length) { console.error(`  unknown set: ${bad.join(', ')}. use guard, agents or review`); return 2; }
+  if (bad.length) { console.error(`  unknown set: ${bad.join(', ')}. use guard, agents, areas or review`); return 2; }
   const budget = readFlag(argv, '--budget');
   const reviewOpts = review ? {
     hunter: readFlag(argv, '--hunter') || 'codex',

@@ -7,15 +7,19 @@
 
 const feed = require('../lib/feed-core');
 const ops = require('../lib/element-ops');
+const cmds = require('../lib/element-commands');
+const sched = require('../lib/element-schedules');
+const inspect = require('../lib/element-inspect');
 const decisionFeed = require('./decision-feed');
 
 const ELEMENT_ACTIONS = new Set([
-  'next', 'yes', 'no', 'pass', 'talk', 'post', 'wait', 'tail', 'claim', 'complete', 'curve', 'help',
+  'next', 'yes', 'no', 'pass', 'talk', 'post', 'wait', 'tail', 'claim', 'complete', 'curve', 'cmd', 'run', 'schedule', 'inspect', 'help',
 ]);
 
 const VALUE_FLAGS = new Set([
   '--filter', '--note', '--limit', '--cursor', '--since', '--as', '--member', '--engine',
   '--id', '--after', '--timeout', '--interval', '--lease', '--wait', '--proof', '--file', '--window',
+  '--description', '--every', '--to', '--now', '--port',
 ]);
 
 const HELP = [
@@ -37,6 +41,12 @@ const HELP = [
   '                                                                   record a verified result and release the lease',
   '       atris element curve [--file <path>] [--limit 100] [--window 10] [--json]',
   '                                                                   loss curve, spend, p95 speed and slowest bottleneck',
+  '       atris element cmd add <name> "<shell>" [--description "..."] | list | remove <name>',
+  '                                                                   register deterministic /workflows (built-ins: /curve, /doctor)',
+  '       atris element run /<name> [<card>] [--as <member>] [--json] run a registered workflow and post its receipt into the thread',
+  '       atris element schedule add --every 1h --to <member> "<msg>" | list | remove <id> | tick',
+  '                                                                   repeating board messages (cron as a message to an agent)',
+  '       atris element inspect [--port 4100] [--no-open]             open the local Element web viewer on 127.0.0.1',
   '       atris element say | more | members | doctor | setup | theme all decision-feed commands work here too',
   '',
   'Element runs headlessly in any terminal, pipe or agent chat. One card at a time.',
@@ -73,11 +83,15 @@ function splitArgs(args = []) {
   return { positional, flags, json, help };
 }
 
+// A chat that stopped and waits on the person is answered in its own window: yes, no and pass cannot act on it,
+// so it never takes the one-card focus (it would hold it forever). It shows as its own line instead.
+const isChat = (card) => Boolean(card && card.source && card.source.type === 'session');
+
 function pickFocusCard(cards = [], { preferDecision = true } = {}) {
-  if (!Array.isArray(cards) || !cards.length) return null;
+  if (!Array.isArray(cards)) return null;
+  cards = cards.filter((c) => c && !isChat(c));
+  if (!cards.length) return null;
   if (preferDecision) {
-    const waiting = cards.find((c) => c && c.source && c.source.type === 'session');
-    if (waiting) return waiting;
     const decide = cards.find((c) => c && c.needs_decision);
     if (decide) return decide;
   }
@@ -86,8 +100,10 @@ function pickFocusCard(cards = [], { preferDecision = true } = {}) {
 
 function focusPayload(root, { filter = 'all', env = process.env, preferDecision = true } = {}) {
   const listed = feed.listCards(root, { filter, limit: 25, env });
-  const focus = pickFocusCard(listed.cards, { preferDecision });
-  const remaining = Math.max(0, listed.cards.length - (focus ? 1 : 0));
+  const chats = listed.cards.filter(isChat).map((c) => ({ id: c.id, title: c.title, ask: c.body }));
+  const cards = listed.cards.filter((c) => !isChat(c));
+  const focus = pickFocusCard(cards, { preferDecision });
+  const remaining = Math.max(0, cards.length - (focus ? 1 : 0));
   const actions = !focus
     ? ['atris element more', 'atris element post "<note>"']
     : focus.needs_decision
@@ -97,6 +113,7 @@ function focusPayload(root, { filter = 'all', env = process.env, preferDecision 
     version: feed.FEED_VERSION,
     goal: listed.theme ? listed.theme.text : '',
     counts: listed.counts,
+    chats,
     focus,
     remaining,
     actions,
@@ -108,8 +125,13 @@ function printFocus(out) {
   console.log(goal);
   const c = out.counts || {};
   console.log(`${c.needs_decision || 0} waiting, ${c.working || 0} working, ${c.new_results || 0} new results, ${c.done_today || 0} done today`);
+  const chats = out.chats || [];
+  if (chats.length) {
+    console.log(`\n${chats.length === 1 ? 'A chat is' : `${chats.length} chats are`} waiting on you in ${chats.length === 1 ? 'its own window' : 'their own windows'}:`);
+    for (const chat of chats.slice(0, 3)) console.log(`  ${chat.title}`);
+  }
   if (!out.focus) {
-    console.log('\nclear. nothing waiting for you right now.');
+    console.log(chats.length ? '\nnothing else waiting for you right now.' : '\nclear. nothing waiting for you right now.');
     console.log('next: atris element more  |  atris element post "<note>"');
     return;
   }
@@ -252,6 +274,96 @@ async function run(args = [], { cwd = process.cwd(), env = process.env, deps = {
       const out = ops.loadCurve(root, { file: flags.file || null, limit: flags.limit, window: flags.window });
       if (json) console.log(JSON.stringify(out, null, 2));
       else printCurve(out);
+      return 0;
+    }
+
+    if (sub === 'cmd') {
+      const action = positional[1] || 'list';
+      if (action === 'list') {
+        const out = cmds.listCommands(root);
+        if (json) console.log(JSON.stringify(out, null, 2));
+        else for (const c of out.commands) console.log(`/${c.name.padEnd(14)} ${c.builtin ? '[builtin]' : '[custom] '} ${c.description || c.command || ''}`.trimEnd());
+        return 0;
+      }
+      if (action === 'add') {
+        const name = positional[2];
+        const shell = positional.slice(3).join(' ').trim();
+        const timeoutMs = ops.parseDuration(flags.timeout, 60000);
+        const out = cmds.addCommand(root, { name, command: shell, description: flags.description || '', timeoutMs });
+        if (json) console.log(JSON.stringify(out, null, 2));
+        else console.log(`registered /${out.command.name}`);
+        return 0;
+      }
+      if (action === 'remove' || action === 'rm') {
+        const out = cmds.removeCommand(root, positional[2]);
+        if (json) console.log(JSON.stringify(out, null, 2));
+        else console.log(out.removed ? `removed /${out.name}` : `not found: /${out.name}`);
+        return 0;
+      }
+      throw new feed.FeedError(400, 'usage: atris element cmd add <name> "<shell>" | list | remove <name>');
+    }
+
+    if (sub === 'run') {
+      const name = positional[1];
+      if (!name) throw new feed.FeedError(400, 'usage: atris element run /<name> [<card>] [--as <member>] [--json]');
+      const cardId = positional[2] || null;
+      const out = await cmds.runSlashCommand(root, name, { cardId, as: flags.as || null, env, deps });
+      if (json) console.log(JSON.stringify(out, null, 2));
+      else console.log(`${out.receipt} (${out.card_id})`);
+      return out.passed ? 0 : 1;
+    }
+
+    if (sub === 'schedule') {
+      const action = positional[1] || 'list';
+      const nowMs = flags.now ? Date.parse(flags.now) : Date.now();
+      if (Number.isNaN(nowMs)) throw new feed.FeedError(400, `invalid --now timestamp: ${flags.now}`);
+      if (action === 'list') {
+        const out = sched.listSchedules(root);
+        if (json) console.log(JSON.stringify(out, null, 2));
+        else if (!out.schedules.length) console.log('no schedules set.');
+        else for (const s of out.schedules) console.log(`${s.id.padEnd(20)} every ${s.every.padEnd(6)} @${s.to}  next ${s.next_run_at}  "${s.message}"`);
+        return 0;
+      }
+      if (action === 'add') {
+        const message = positional.slice(2).join(' ').trim();
+        const out = sched.addSchedule(root, { id: flags.id || null, every: flags.every, to: flags.to, message, nowMs });
+        if (json) console.log(JSON.stringify(out, null, 2));
+        else console.log(`scheduled ${out.schedule.id} every ${out.schedule.every} -> @${out.schedule.to} (next ${out.schedule.next_run_at})`);
+        return 0;
+      }
+      if (action === 'remove' || action === 'rm') {
+        const out = sched.removeSchedule(root, positional[2]);
+        if (json) console.log(JSON.stringify(out, null, 2));
+        else console.log(out.removed ? `removed schedule ${out.id}` : `not found: ${out.id}`);
+        return 0;
+      }
+      if (action === 'tick') {
+        const out = sched.tickSchedules(root, { nowMs, env, deps });
+        if (json) console.log(JSON.stringify(out, null, 2));
+        else if (!out.count) console.log('no schedules due.');
+        else for (const f of out.fired) console.log(`fired ${f.id} -> @${f.to} (${f.card_id})`);
+        return 0;
+      }
+      throw new feed.FeedError(400, 'usage: atris element schedule add --every 1h --to <member> "<msg>" | list | remove <id> | tick');
+    }
+
+    if (sub === 'inspect') {
+      const port = flags.port !== undefined ? Number.parseInt(flags.port, 10) : 4100;
+      if (!Number.isInteger(port) || port < 0 || port > 65535) {
+        throw new feed.FeedError(400, `invalid port: ${flags.port}`);
+      }
+      const instance = await inspect.startInspector(root, { port, host: '127.0.0.1', env, deps });
+      if (json) console.log(JSON.stringify({ version: feed.FEED_VERSION, url: instance.url, port: instance.port }));
+      else console.log(`element inspector running at ${instance.url} (ctrl+c to stop)`);
+      if (flags['no-open'] !== true && process.platform === 'darwin' && !deps.skipOpen) {
+        try { require('child_process').spawn('open', [instance.url], { detached: true, stdio: 'ignore' }).unref(); } catch { /* ignore */ }
+      }
+      if (deps.returnAfterStart) return 0;
+      await new Promise((resolve) => {
+        const stop = () => instance.close().then(resolve);
+        process.once('SIGINT', stop);
+        process.once('SIGTERM', stop);
+      });
       return 0;
     }
 
