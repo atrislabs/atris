@@ -73,11 +73,15 @@ function splitArgs(args = []) {
   return { positional, flags, json, help };
 }
 
+// A chat that stopped and waits on the person is answered in its own window: yes, no and pass cannot act on it,
+// so it never takes the one-card focus (it would hold it forever). It shows as its own line instead.
+const isChat = (card) => Boolean(card && card.source && card.source.type === 'session');
+
 function pickFocusCard(cards = [], { preferDecision = true } = {}) {
-  if (!Array.isArray(cards) || !cards.length) return null;
+  if (!Array.isArray(cards)) return null;
+  cards = cards.filter((c) => c && !isChat(c));
+  if (!cards.length) return null;
   if (preferDecision) {
-    const waiting = cards.find((c) => c && c.source && c.source.type === 'session');
-    if (waiting) return waiting;
     const decide = cards.find((c) => c && c.needs_decision);
     if (decide) return decide;
   }
@@ -86,8 +90,10 @@ function pickFocusCard(cards = [], { preferDecision = true } = {}) {
 
 function focusPayload(root, { filter = 'all', env = process.env, preferDecision = true } = {}) {
   const listed = feed.listCards(root, { filter, limit: 25, env });
-  const focus = pickFocusCard(listed.cards, { preferDecision });
-  const remaining = Math.max(0, listed.cards.length - (focus ? 1 : 0));
+  const chats = listed.cards.filter(isChat).map((c) => ({ id: c.id, title: c.title, ask: c.body }));
+  const cards = listed.cards.filter((c) => !isChat(c));
+  const focus = pickFocusCard(cards, { preferDecision });
+  const remaining = Math.max(0, cards.length - (focus ? 1 : 0));
   const actions = !focus
     ? ['atris element more', 'atris element post "<note>"']
     : focus.needs_decision
@@ -97,6 +103,7 @@ function focusPayload(root, { filter = 'all', env = process.env, preferDecision 
     version: feed.FEED_VERSION,
     goal: listed.theme ? listed.theme.text : '',
     counts: listed.counts,
+    chats,
     focus,
     remaining,
     actions,
@@ -108,8 +115,13 @@ function printFocus(out) {
   console.log(goal);
   const c = out.counts || {};
   console.log(`${c.needs_decision || 0} waiting, ${c.working || 0} working, ${c.new_results || 0} new results, ${c.done_today || 0} done today`);
+  const chats = out.chats || [];
+  if (chats.length) {
+    console.log(`\n${chats.length === 1 ? 'A chat is' : `${chats.length} chats are`} waiting on you in ${chats.length === 1 ? 'its own window' : 'their own windows'}:`);
+    for (const chat of chats.slice(0, 3)) console.log(`  ${chat.title}`);
+  }
   if (!out.focus) {
-    console.log('\nclear. nothing waiting for you right now.');
+    console.log(chats.length ? '\nnothing else waiting for you right now.' : '\nclear. nothing waiting for you right now.');
     console.log('next: atris element more  |  atris element post "<note>"');
     return;
   }
