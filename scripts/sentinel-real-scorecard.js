@@ -18,7 +18,9 @@
 //   node scripts/sentinel-real-scorecard.js score [--json]   print the table
 //
 // Options: --root <dir> (default /tmp/sentinel-scorecard), --fresh (run: replace
-// an existing run folder), --atris <bin/atris.js> (default: this checkout).
+// an existing run folder), --atris <bin/atris.js> (default: this checkout),
+// --show-real (score: show new real holes by name; local use only, never paste
+// that output anywhere public).
 //
 // The clones are untrusted code. This script never runs, installs, builds or
 // tests anything from them: it only uses git to fetch and check out, and runs
@@ -28,6 +30,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFileSync, spawnSync } = require('child_process');
 
 const BENCH = path.join(__dirname, '..', 'atris', 'sentinel-bench', 'real-advisories');
@@ -36,6 +39,20 @@ const LINE_WINDOW = 30;
 // Settings a clone could use to run commands when the audit's engines (codex,
 // claude) start in it. Present means the item is refused, not run.
 const EXEC_FILES = ['.mcp.json', '.claude/hooks', '.codex/config.toml', '.codex/hooks.json'];
+
+// Which of Sentinel's kinds of flaw (the attack_class in its coverage ledger)
+// should catch each class on our list. Used only to explain misses.
+const CLASS_KINDS = {
+  access: ['access-control', 'access-rules'],
+  signin: ['sign-in-matching', 'access-control'],
+  rls: ['access-rules', 'access-control'],
+  'webhook-header': ['access-control', 'sign-in-matching', 'access-rules'],
+  secrets: ['secrets-handling'],
+  injection: ['command-injection', 'code-injection', 'sql-injection'],
+  ssrf: ['outbound-request'],
+  traversal: ['path-traversal'],
+  'agent-tool': ['agent-blast-radius', 'agent-and-llm', 'path-traversal'],
+};
 // Claude settings keys that run a command.
 const CLAUDE_EXEC_KEYS = ['hooks', 'mcpServers', 'enableAllProjectMcpServers', 'enabledMcpjsonServers', 'statusLine', 'apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'otelHeadersHelper', 'fileSuggestion', 'plugins', 'enabledPlugins', 'extraKnownMarketplaces'];
 
@@ -60,6 +77,7 @@ function parseArgs(argv) {
     else if (a === '--atris') o.atris = argv[++i];
     else if (a === '--fresh') o.fresh = true;
     else if (a === '--json') o.json = true;
+    else if (a === '--show-real') o.showReal = true;
     else if (a.startsWith('-')) throw new Error(`unknown flag ${a}`);
     else o.ids.push(a);
   }
@@ -74,6 +92,12 @@ function load() {
   try { labels = JSON.parse(fs.readFileSync(path.join(BENCH, 'labels.json'), 'utf8')); } catch {}
   return { list, labels };
 }
+
+// A confirmed finding that turns out to be a new, unpublished hole is never
+// written into this public repo by name. labels.json keys it by this hash of
+// its fingerprint, and the score shows only the hash unless --show-real is set.
+const fpKey = (fp) => `sha256:${crypto.createHash('sha256').update(String(fp)).digest('hex').slice(0, 16)}`;
+const otherLabel = (lab, fp) => ((lab.others || {})[fp] || (lab.others || {})[fpKey(fp)] || 'unchecked');
 
 const repoDir = (o, id) => path.join(o.root, 'repos', id);
 const runDir = (o, id) => path.join(o.root, 'runs', id);
@@ -128,7 +152,10 @@ function runOne(o, a) {
     cwd: repoDir(o, a.id), encoding: 'utf8', maxBuffer: 64 << 20, env: { ...process.env, ATRIS_SENTINEL_SCORECARD: '1' },
   });
   fs.writeFileSync(`${out}.log`, `${r.stdout || ''}\n${r.stderr || ''}`);
-  return { id: a.id, status: r.status === 0 ? 'ran' : `exit ${r.status}`, seconds: Math.round((Date.now() - t0) / 1000) };
+  // The audit exits 1 when it confirms findings, so a run counts as done when
+  // its metadata says it finished, whatever the exit code.
+  const done = Boolean(readJson(path.join(out, 'run-metadata.json'), {}).finished_at);
+  return { id: a.id, status: done ? 'ran' : `failed (exit ${r.status}, see ${out}.log)`, seconds: Math.round((Date.now() - t0) / 1000) };
 }
 
 function readJson(p, fallback) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return fallback; } }
@@ -152,7 +179,11 @@ function scoreOne(o, a, labels) {
   const dir = runDir(o, a.id);
   const meta = readJson(path.join(dir, 'run-metadata.json'), null);
   if (!meta) return { id: a.id, verdict: 'NO RUN', others: [] };
-  const findings = readJson(path.join(dir, 'findings.json'), []);
+  if (!meta.finished_at) return { id: a.id, verdict: 'NOT DONE', others: [] };
+  // Leads the run ran out of budget to check sit in carried-pending.json; they
+  // count as unchecked leads, never as confirmed.
+  const pending = readJson(path.join(dir, 'carried-pending.json'), []).map((f) => ({ ...f, verdict: 'unchecked' }));
+  const findings = [...readJson(path.join(dir, 'findings.json'), []), ...pending];
   const ledger = readJson(path.join(dir, 'coverage-ledger.json'), []);
   const lab = labels[a.id] || {};
   const spots = holeSpots(a);
@@ -169,20 +200,35 @@ function scoreOne(o, a, labels) {
   else if (hits.some((f) => f.verdict !== 'confirmed' || (lab.match || {})[f.fingerprint] === 'near')) verdict = 'NEAR';
   else if (ledger.some((u) => (u.hardening || []).some((h) => [...files].some((fl) => String(h).includes(path.basename(fl)))))) verdict = 'NEAR';
 
-  // Why a miss: did the audit read the file, and did anything touch the spot.
+  // Why a miss. The audit works in units of (area, kind of flaw). A unit is
+  // "read" when a hunter ran it; "queued" when it held the file but ran out
+  // of budget. A file read only while hunting other kinds of flaw is not the
+  // same as a file read for this kind.
   let why = '';
   if (verdict === 'MISSED' || verdict === 'NEAR') {
-    const read = ledger.filter((u) => ['covered', 'candidate', 'blocked'].includes(u.status) && [...(u.reviewed_paths || []), ...(u.starting_paths || [])].some((p) => files.has(p)));
-    const queued = ledger.filter((u) => [...(u.starting_paths || []), ...(u.hot_lines || []).map((h) => h.file)].some((p) => files.has(p)));
+    const kinds = new Set(CLASS_KINDS[a.class] || []);
+    const holds = (u) => [...(u.reviewed_paths || []), ...(u.starting_paths || []), ...(u.hot_lines || []).map((h) => h.file)].some((p) => files.has(p));
+    const ran = (u) => ['covered', 'candidate', 'blocked'].includes(u.status);
+    const rightKind = (u) => kinds.has(u.attack_class);
     const dismissed = hits.filter((f) => f.verdict === 'rejected');
-    if (dismissed.length) why = 'saw it and dismissed it';
-    else if (read.length) why = 'read the file but did not see it';
-    else if (queued.length) why = 'queued the file but never read it (budget)';
+    if (hits.some((f) => f.verdict === 'unchecked')) why = 'spotted it, then ran out of budget before checking it';
+    else if (hits.some((f) => f.verdict === 'needs_validation')) why = 'spotted it, left it as a lead that needs a fact';
+    else if (dismissed.length) why = 'saw it and dismissed it';
+    else if (ledger.some((u) => ran(u) && rightKind(u) && holds(u))) why = 'read the file for this kind of flaw but did not see it';
+    else if (ledger.some((u) => !ran(u) && rightKind(u) && holds(u))) {
+      why = ledger.some((u) => ran(u) && holds(u))
+        ? 'read the file only for other kinds of flaw; the check for this kind was queued, not run (budget)'
+        : 'queued the file for this kind of flaw, never read it (budget)';
+    } else if (ledger.some((u) => ran(u) && holds(u))) why = 'read the file only for other kinds of flaw; never queued it for this kind';
     else why = 'never read the file';
   }
 
   const others = findings.filter((f) => f.verdict === 'confirmed' && f !== matched && !(confirmedHits.includes(f) && (lab.match || {})[f.fingerprint] === 'same'))
-    .map((f) => ({ fingerprint: f.fingerprint, title: f.title, label: (lab.others || {})[f.fingerprint] || 'unchecked' }));
+    .map((f) => {
+      const label = otherLabel(lab, f.fingerprint);
+      if (label === 'real' && !o.showReal) return { fingerprint: fpKey(f.fingerprint), title: '(new hole, kept private)', label };
+      return { fingerprint: f.fingerprint, title: f.title, label };
+    });
   return {
     id: a.id, verdict, why, matched: matched && matched.fingerprint,
     others, wrong: others.filter((x) => x.label === 'wrong').length, real: others.filter((x) => x.label === 'real').length,
@@ -198,14 +244,14 @@ function printTable(rows, list) {
   for (const half of ['seen', 'held-out']) {
     const rs = rows.filter((r) => byId.get(r.id).split === half);
     console.log(`\n  ${half} (${rs.length})`);
-    console.log(`  ${pad('advisory', 21)}${pad('class', 16)}${pad('result', 8)}${pad('wrong', 7)}${pad('new', 5)}${pad('unchk', 7)}${pad('areas', 8)}why`);
+    console.log(`  ${pad('advisory', 21)}${pad('class', 16)}${pad('result', 9)}${pad('wrong', 7)}${pad('new', 5)}${pad('unchk', 7)}${pad('areas', 8)}why`);
     for (const r of rs) {
       const a = byId.get(r.id);
-      console.log(`  ${pad(r.id, 21)}${pad(a.class, 16)}${pad(r.verdict, 8)}${pad(r.wrong ?? '-', 7)}${pad(r.real ?? '-', 5)}${pad(r.unchecked ?? '-', 7)}${pad(r.areas || '-', 8)}${r.why || ''}`);
+      console.log(`  ${pad(r.id, 21)}${pad(a.class, 16)}${pad(r.verdict, 9)}${pad(r.wrong ?? '-', 7)}${pad(r.real ?? '-', 5)}${pad(r.unchecked ?? '-', 7)}${pad(r.areas || '-', 8)}${r.why || ''}`);
     }
     const n = (v) => rs.filter((r) => r.verdict === v).length;
     const sum = (k) => rs.reduce((t, r) => t + (r[k] || 0), 0);
-    console.log(`  total: found ${n('FOUND')}${n('FOUND?') ? ` (+${n('FOUND?')} unlabeled)` : ''}, near ${n('NEAR')}, missed ${n('MISSED')}, not run ${n('NO RUN')} · wrong alarms ${sum('wrong')}, new real holes ${sum('real')}, unchecked ${sum('unchecked')}`);
+    console.log(`  total: found ${n('FOUND')}${n('FOUND?') ? ` (+${n('FOUND?')} unlabeled)` : ''}, near ${n('NEAR')}, missed ${n('MISSED')}, not run ${n('NO RUN') + n('NOT DONE')} · wrong alarms ${sum('wrong')}, new real holes ${sum('real')}, unchecked ${sum('unchecked')}`);
   }
 }
 

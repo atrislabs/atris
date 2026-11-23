@@ -61,19 +61,33 @@ held-out half is held out by discipline only: anyone can read them.
 
 Every other confirmed finding is a candidate wrong alarm. Each one is checked
 by reading the code at the vulnerable commit and labelled `real` (a new hole,
-never reported anywhere) or `wrong`.
+never reported anywhere) or `wrong`. The bar for `real`: someone gains access
+or power they should not have, under the project's own trust model. So a
+secret written to the operator's own log is `wrong` (the operator already
+holds everything), and so is a setting only a fully trusted party can change.
+
+New real holes stay private. This repo is public, so `labels.json` keys a
+`real` finding by a hash of its fingerprint, and its note says only that a
+real hole exists. The score prints the hash, not the finding, unless you pass
+`--show-real` (local use only). The full notes live outside the repo.
 
 "Same flaw" and "real or wrong" are human calls. They live in `labels.json`,
 keyed by advisory id and finding fingerprint. The script matches file and line
 by itself and shows `FOUND?` for a confirmed finding on the spot that nobody
 has labelled yet, and `unchk` for confirmed findings elsewhere not yet labelled.
 
-For each miss the script says why, from the run's coverage ledger:
+For each miss the script says why, from the run's findings and coverage
+ledger. The audit works in units of (area, kind of flaw), so reading a file
+while hunting secrets is not the same as reading it while hunting access bugs.
 
-- **never read the file**: no reviewed area included it
-- **queued the file but never read it**: an area held it but ran out of budget
-- **read the file but did not see it**: a hunter read it, nothing came back
+- **spotted it, then ran out of budget before checking it**
+- **spotted it, left it as a lead that needs a fact**
 - **saw it and dismissed it**: a finding on the spot was rejected
+- **read the file for this kind of flaw but did not see it**
+- **read the file only for other kinds of flaw**, and the check for this kind
+  was either queued but not run (budget) or never queued at all
+- **queued the file for this kind of flaw, never read it (budget)**
+- **never read the file**
 
 ## Running it
 
@@ -98,3 +112,75 @@ when an engine starts there (`.mcp.json`, claude hooks or MCP settings, codex
 config). Two clones carry harmless agent files: GHSA-62gx has a claude
 permissions list (no hooks), GHSA-9x83 has a Codex app environment file and a
 Cursor MCP list, neither of which `codex exec` or `claude -p` reads.
+
+## Results, 2026-11-23
+
+Sentinel at version 3.90.7 (master at e1316b4aa), quick audit, local engines:
+codex hunts, claude checks and critiques. 8 engine calls per repo at most, 141
+in all, 0 Atris credits. Each run took 2 to 8 minutes. Six runs ended with
+leads left unchecked because the check budget ran out.
+
+| | seen (10) | held-out (10) | all (20) |
+|---|---|---|---|
+| found | 0 | 3 | 3 |
+| near | 1 | 1 | 2 |
+| missed | 9 | 6 | 15 |
+| wrong alarms | 6 | 4 | 10 |
+| new real holes (private) | 4 | 3 | 7 |
+
+Sentinel confirmed 21 findings in all. 4 point at an advisory's hole (3
+holes; one hole drew two findings), 7 are real holes nobody has published, and
+10 are wrong. So 10 of 21 confirmed findings are wrong (48 percent), one wrong
+alarm every two repos.
+
+| advisory | split | class | result | wrong | new | areas read | why |
+|---|---|---|---|---|---|---|---|
+| GHSA-2xhg-73j7-rrgx | seen | agent tool | MISSED | 1 | 0 | 3/20 | read the file only for other kinds of flaw; the path check was queued, not run |
+| GHSA-45gf-fjxp-cjpq | seen | SSRF | MISSED | 0 | 1 | 3/9 | never read the file |
+| GHSA-588f-fvcv-xhvf | seen | access | MISSED | 0 | 0 | 3/15 | never read the file |
+| GHSA-5p54-whvp-x327 | seen | webhook/header | MISSED | 0 | 0 | 4/53 | read the file for this kind of flaw but did not see it |
+| GHSA-89vx-jh4q-vg3w | seen | access | MISSED | 0 | 0 | 4/35 | never read the file |
+| GHSA-9x83-rrg6-9pr9 | seen | RLS | MISSED | 1 | 0 | 3/87 | read the file for this kind of flaw but did not see it |
+| GHSA-f46q-3v67-fmm4 | seen | injection | NEAR | 0 | 1 | 4/73 | spotted it, then ran out of budget before checking it |
+| GHSA-pfvc-3p5h-x7h6 | seen | secrets | MISSED | 1 | 2 | 4/29 | never read the file |
+| GHSA-rrvg-cxh4-qhrv | seen | sign-in | MISSED | 1 | 0 | 3/14 | read the file for this kind of flaw but did not see it |
+| GHSA-wchh-mrv2-5h4q | seen | webhook/header | MISSED | 2 | 0 | 4/38 | read the file for this kind of flaw but did not see it |
+| GHSA-3fcr-jvgp-7f58 | held-out | webhook/header | MISSED | 0 | 0 | 4/15 | read the file only for secrets; never queued it for access |
+| GHSA-4g5x-hcwm-82jw | held-out | traversal | MISSED | 0 | 2 | 3/25 | read the file only for other kinds of flaw; the path check was queued, not run |
+| GHSA-5g9x-qwh5-33x4 | held-out | access | MISSED | 0 | 1 | 4/9 | read the file only for page injection; never queued it for access |
+| GHSA-62gx-5q78-wrvx | held-out | traversal | MISSED | 0 | 0 | 2/14 | read the file only for other kinds of flaw; the path check was queued, not run |
+| GHSA-8cfq-jgf7-8m27 | held-out | sign-in | FOUND | 1 | 0 | 2/27 | |
+| GHSA-ch3g-4xvr-674q | held-out | SSRF | MISSED | 0 | 0 | 3/19 | read the file only for other kinds of flaw; never queued it for outbound requests |
+| GHSA-jq3q-62jc-fqq9 | held-out | injection | FOUND | 1 | 0 | 4/11 | |
+| GHSA-q4gh-4ffp-5cg8 | held-out | secrets | FOUND | 0 | 0 | 3/26 | |
+| GHSA-w89x-c962-c44g | held-out | access | MISSED | 2 | 0 | 3/30 | read the file for this kind of flaw but did not see it |
+| GHSA-wv4w-6qv2-qqfg | held-out | sign-in | NEAR | 0 | 0 | 2/4 | spotted it, left it as a lead that needs a fact |
+
+What the misses say, most common first:
+
+- **Coverage is the main limit: 10 of the 15 misses.** A quick run reads 2
+  to 4 areas. On 10 misses the right check never ran on the hole's file: 4
+  never read the file at all, and 6 read it only while hunting a different
+  kind of flaw (3 of those had the right check queued but out of budget, 3
+  never queued it). The bigger the repo, the worse it gets (3 of 87 areas on
+  Capgo).
+- **Read it and still missed it: 5.** The webhook and header trust holes
+  (anycable, ezbookkeeping), the RLS policy in a 28,000-line migration
+  (Capgo), the unverified-email sign-in (oauthenticator Auth0), and the
+  missing ownership check (cloudreve) were in files a hunter read for the right
+  kind of flaw.
+- **Spotted but not confirmed: 2.** Homer's raw SQL endpoint was found and
+  then dropped by the check budget. social-app-django's account match was
+  found exactly but left as a lead.
+
+What the wrong alarms say: 5 of the 10 are secrets written to the operator's
+own logs (request URLs, sign-in state). The rest are child processes
+inheriting the server's own environment, a dev-only launcher script, a
+documented self-host setting, a setting only the trusted panel can change, and
+a user's own tokens reaching that user's own notebook. Teaching
+the checker that the operator's log and fully trusted settings are not an
+attacker would remove most of them.
+
+Caveats: one quick run per repo, so luck in which areas get picked matters;
+"same flaw" and "real or wrong" are one reviewer's calls, written down in
+`labels.json`; the GHSA-9x83 fix commit is inferred (see `fix_note`).
