@@ -205,7 +205,7 @@ test('after a yes, hunters run on atris:fast and checks on atris:pro, then the s
         assert.strictEqual(e.body.max_output_tokens, e.body.model === 'atris:fast' ? 8192 : 4096);
       });
       const turns = backend.log.filter((e) => e.path === '/api/atris2/turn');
-      assert.ok(turns.length >= 3);
+      assert.ok(turns.length >= 2); // a hunter and a check; a quick run has no critic call
       for (const t of turns) {
         assert.strictEqual(t.auth, 'Bearer tok');
         const p = t.body.message;
@@ -493,15 +493,16 @@ test('a run stops at its credit cap: no call starts that could pass it', async (
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-cap-'));
   try {
     await withEnv(backend, async ({ out }) => {
-      cloud.writeApproval(root, { engine: 'atris', max_credits: 6 }, homeDir);
+      // 4 fits the hunter (at most 2) but not the check (at most 5).
+      cloud.writeApproval(root, { engine: 'atris', max_credits: 4 }, homeDir);
       const code = await auditCommand(['--quick', '--scheduled', '--no-upload'], { root, token: 'tok', env: NO_LOCAL, homeDir });
       assert.ok(code === 0 || code === 1, out.join('\n'));
       const turns = backend.log.filter((e) => e.path === '/api/atris2/turn');
       const charged = turns.reduce((n, t) => n + (t.body.model === 'atris:fast' ? 1 : 3), 0);
       assert.ok(turns.length >= 1, 'some calls fit');
-      assert.ok(charged <= 6, `charged ${charged}`);
-      // Worst cases (2 per fast call, 5 per pro call) never add past 6.
-      assert.ok(out.join('\n').includes('stopped at the approved limit of 6 credits'), out.join('\n'));
+      assert.ok(charged <= 4, `charged ${charged}`);
+      // Worst cases (2 per fast call, 5 per pro call) never add past 4.
+      assert.ok(out.join('\n').includes('stopped at the approved limit of 4 credits'), out.join('\n'));
     });
   } finally { await backend.close(); fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(homeDir, { recursive: true, force: true }); }
 });
