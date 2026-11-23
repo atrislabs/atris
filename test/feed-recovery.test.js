@@ -233,3 +233,44 @@ test('doctor: ready when everything is, and names the one thing to do when not',
   assert.equal(bare.code, 1, 'not ready exits non-zero');
   assert.equal(JSON.parse(bare.out).checks[0].name, 'project');
 });
+
+test('recover: a card that came back says which try it is, with each earlier miss and its reason', async (t) => {
+  const ctx = project(t);
+  const { card, entry } = approved(ctx);
+  assert.equal(cardOf(ctx, card.id, 'working').attempt, 1, 'the first try');
+  await feed.runEntry(ctx.root, entry.id, { ...ctx.deps, spawnSync: () => ({ status: 1 }), memberStillWorking: () => false });
+  const once = cardOf(ctx, card.id);
+  assert.equal(once.attempt, 2, 'one miss: the next is the second try');
+  assert.equal(once.misses.length, 1);
+  assert.match(once.misses[0].reason, /ended without a result/);
+  feed.decide(ctx.root, card.id, 'approve', { env: ctx.env, deps: ctx.deps });
+  const again = feed.readRuns(ctx.root).filter((e) => e.card_id === card.id).pop();
+  await feed.runEntry(ctx.root, again.id, { ...ctx.deps, spawnSync: () => ({ status: 1 }), memberStillWorking: () => false });
+  const twice = cardOf(ctx, card.id);
+  assert.equal(twice.attempt, 3);
+  assert.equal(twice.misses.length, 2);
+  assert.equal(twice.id, card.id, 'the card keeps its place');
+});
+
+test('trail: an opened card lists what happened, oldest first, with who and when', async (t) => {
+  const ctx = project(t);
+  const { card, entry } = approved(ctx);
+  team.emit(ctx.root, { as: 'scout', type: 'progress', card: card.id, text: 'Found the ten oldest leads.', env: ctx.env });
+  let trail = cardOf(ctx, card.id, 'working').trail;
+  assert.deepEqual(trail.map((s) => [s.by, s.text]), [['you', 'You approved it.'], ['scout', 'Started.'], ['scout', 'Found the ten oldest leads.']]);
+  assert.ok(trail.every((s) => !Number.isNaN(Date.parse(s.at))), 'every line has its time');
+  await feed.runEntry(ctx.root, entry.id, { ...ctx.deps, spawnSync: () => ({ status: 1 }), memberStillWorking: () => false });
+  trail = cardOf(ctx, card.id).trail;
+  assert.equal(trail.at(-1).kind, 'miss');
+  assert.match(trail.at(-1).text, /^Stopped without finishing\. .*ended without a result/);
+  assert.ok(trail.some((s) => s.text === 'Found the ten oldest leads.'), 'what the teammate said before is kept');
+});
+
+test('trail: the start note asks the teammate for one plain line at each step', (t) => {
+  const ctx = project(t);
+  const { card } = approved(ctx);
+  const row = tasks.open(process.env.ATRIS_TASKS_DB).prepare('SELECT metadata FROM tasks WHERE id = ?').get(card.id.split(':')[1]);
+  const objective = JSON.parse(row.metadata).objective;
+  assert.match(objective, /As you work, write one plain line at each step/);
+  assert.match(objective, new RegExp(`atris feed emit --as scout progress --card ${card.id.replace(/[:]/g, '[:]')}`));
+});
