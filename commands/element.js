@@ -7,15 +7,18 @@
 
 const feed = require('../lib/feed-core');
 const ops = require('../lib/element-ops');
+const cmds = require('../lib/element-commands');
+const sched = require('../lib/element-schedules');
 const decisionFeed = require('./decision-feed');
 
 const ELEMENT_ACTIONS = new Set([
-  'next', 'yes', 'no', 'pass', 'talk', 'post', 'wait', 'tail', 'claim', 'complete', 'curve', 'help',
+  'next', 'yes', 'no', 'pass', 'talk', 'post', 'wait', 'tail', 'claim', 'complete', 'curve', 'cmd', 'run', 'schedule', 'help',
 ]);
 
 const VALUE_FLAGS = new Set([
   '--filter', '--note', '--limit', '--cursor', '--since', '--as', '--member', '--engine',
   '--id', '--after', '--timeout', '--interval', '--lease', '--wait', '--proof', '--file', '--window',
+  '--description', '--every', '--to', '--now',
 ]);
 
 const HELP = [
@@ -37,6 +40,11 @@ const HELP = [
   '                                                                   record a verified result and release the lease',
   '       atris element curve [--file <path>] [--limit 100] [--window 10] [--json]',
   '                                                                   loss curve, spend, p95 speed and slowest bottleneck',
+  '       atris element cmd add <name> "<shell>" [--description "..."] | list | remove <name>',
+  '                                                                   register deterministic /workflows (built-ins: /curve, /doctor)',
+  '       atris element run /<name> [<card>] [--as <member>] [--json] run a registered workflow and post its receipt into the thread',
+  '       atris element schedule add --every 1h --to <member> "<msg>" | list | remove <id> | tick',
+  '                                                                   repeating board messages (cron as a message to an agent)',
   '       atris element say | more | members | doctor | setup | theme all decision-feed commands work here too',
   '',
   'Element runs headlessly in any terminal, pipe or agent chat. One card at a time.',
@@ -265,6 +273,76 @@ async function run(args = [], { cwd = process.cwd(), env = process.env, deps = {
       if (json) console.log(JSON.stringify(out, null, 2));
       else printCurve(out);
       return 0;
+    }
+
+    if (sub === 'cmd') {
+      const action = positional[1] || 'list';
+      if (action === 'list') {
+        const out = cmds.listCommands(root);
+        if (json) console.log(JSON.stringify(out, null, 2));
+        else for (const c of out.commands) console.log(`/${c.name.padEnd(14)} ${c.builtin ? '[builtin]' : '[custom] '} ${c.description || c.command || ''}`.trimEnd());
+        return 0;
+      }
+      if (action === 'add') {
+        const name = positional[2];
+        const shell = positional.slice(3).join(' ').trim();
+        const timeoutMs = ops.parseDuration(flags.timeout, 60000);
+        const out = cmds.addCommand(root, { name, command: shell, description: flags.description || '', timeoutMs });
+        if (json) console.log(JSON.stringify(out, null, 2));
+        else console.log(`registered /${out.command.name}`);
+        return 0;
+      }
+      if (action === 'remove' || action === 'rm') {
+        const out = cmds.removeCommand(root, positional[2]);
+        if (json) console.log(JSON.stringify(out, null, 2));
+        else console.log(out.removed ? `removed /${out.name}` : `not found: /${out.name}`);
+        return 0;
+      }
+      throw new feed.FeedError(400, 'usage: atris element cmd add <name> "<shell>" | list | remove <name>');
+    }
+
+    if (sub === 'run') {
+      const name = positional[1];
+      if (!name) throw new feed.FeedError(400, 'usage: atris element run /<name> [<card>] [--as <member>] [--json]');
+      const cardId = positional[2] || null;
+      const out = await cmds.runSlashCommand(root, name, { cardId, as: flags.as || null, env, deps });
+      if (json) console.log(JSON.stringify(out, null, 2));
+      else console.log(`${out.receipt} (${out.card_id})`);
+      return out.passed ? 0 : 1;
+    }
+
+    if (sub === 'schedule') {
+      const action = positional[1] || 'list';
+      const nowMs = flags.now ? Date.parse(flags.now) : Date.now();
+      if (Number.isNaN(nowMs)) throw new feed.FeedError(400, `invalid --now timestamp: ${flags.now}`);
+      if (action === 'list') {
+        const out = sched.listSchedules(root);
+        if (json) console.log(JSON.stringify(out, null, 2));
+        else if (!out.schedules.length) console.log('no schedules set.');
+        else for (const s of out.schedules) console.log(`${s.id.padEnd(20)} every ${s.every.padEnd(6)} @${s.to}  next ${s.next_run_at}  "${s.message}"`);
+        return 0;
+      }
+      if (action === 'add') {
+        const message = positional.slice(2).join(' ').trim();
+        const out = sched.addSchedule(root, { id: flags.id || null, every: flags.every, to: flags.to, message, nowMs });
+        if (json) console.log(JSON.stringify(out, null, 2));
+        else console.log(`scheduled ${out.schedule.id} every ${out.schedule.every} -> @${out.schedule.to} (next ${out.schedule.next_run_at})`);
+        return 0;
+      }
+      if (action === 'remove' || action === 'rm') {
+        const out = sched.removeSchedule(root, positional[2]);
+        if (json) console.log(JSON.stringify(out, null, 2));
+        else console.log(out.removed ? `removed schedule ${out.id}` : `not found: ${out.id}`);
+        return 0;
+      }
+      if (action === 'tick') {
+        const out = sched.tickSchedules(root, { nowMs, env, deps });
+        if (json) console.log(JSON.stringify(out, null, 2));
+        else if (!out.count) console.log('no schedules due.');
+        else for (const f of out.fired) console.log(`fired ${f.id} -> @${f.to} (${f.card_id})`);
+        return 0;
+      }
+      throw new feed.FeedError(400, 'usage: atris element schedule add --every 1h --to <member> "<msg>" | list | remove <id> | tick');
     }
 
     const forwardedFlags = [];
