@@ -42,12 +42,23 @@ function tokenFor(deps) {
   return require('../lib/sentinel-cloud').authToken();
 }
 
-function uploadLine(res, what) {
+// One line on what reached the dashboard, or '' when nothing was sent.
+// `noun` is one item: finding, threat.
+function uploadLine(res, noun) {
   if (res.skipped === 'no-upload') return '  kept on this machine. nothing was sent (--no-upload)';
   if (res.skipped === 'not-logged-in') return '  not logged in. nothing was sent. run atris login to see this on your dashboard';
-  if (!res.ok) return `  warning: could not send ${what} to your atris dashboard: ${res.reason}. the check itself is done`;
-  const resolved = res.resolved ? ` and marked ${res.resolved} as fixed` : '';
-  return `  sent ${res.sent - (res.resolved || 0)} ${what} to your atris dashboard${resolved}. no file contents or secret values were sent`;
+  if (!res.ok) return `  warning: could not send the ${noun}s to your atris dashboard: ${res.reason}. the check itself is done`;
+  const resolved = Number(res.resolved) || 0;
+  const sent = Math.max(0, (Number(res.sent) || 0) - resolved);
+  const marked = resolved ? `marked ${resolved} as fixed` : '';
+  if (!sent && !marked) return '';
+  const what = sent ? `sent ${sent} ${noun}${sent === 1 ? '' : 's'} to your atris dashboard${marked ? ` and ${marked}` : ''}` : `${marked} on your atris dashboard`;
+  return `  ${what}. no file contents or secret values were sent`;
+}
+
+function sayUpload(res, noun) {
+  const line = uploadLine(res, noun);
+  if (line) console.log(line);
 }
 
 // ---------------------------------------------------------------- update
@@ -121,7 +132,7 @@ async function agentsCommand(argv, deps = {}) {
     console.log(JSON.stringify({ ok: result.grade !== 'fail', grade: result.grade, areas: result.areas, files: result.files, findings: result.findings, upload }, null, 2));
   } else {
     console.log(require('../lib/sentinel-agents').renderReport(result));
-    console.log(uploadLine(upload, 'the findings'));
+    sayUpload(upload, 'finding');
     console.log('');
   }
   return result.grade === 'fail' ? 1 : 0;
@@ -215,7 +226,7 @@ async function watchCommand(argv, deps = {}) {
     console.log(JSON.stringify({ ok: !result.affected.some((a) => a.severity === 'critical' || a.severity === 'high'), ...result, upload, branch: branch ? { ...branch, liveFingerprints: undefined } : null, fix }, null, 2));
   } else {
     console.log(watch.renderReport(result));
-    if (upload.skipped !== 'offline') console.log(uploadLine(upload, 'the threats'));
+    if (upload.skipped !== 'offline') sayUpload(upload, 'threat');
     for (const l of heldLines(upload, branch)) console.log(l);
     if (fix) {
       console.log('');
@@ -388,4 +399,4 @@ async function runScheduledFreeChecks(root, deps = {}) {
   return out;
 }
 
-module.exports = { agentsCommand, guardCommand, watchCommand, flushCommand, runScheduledFreeChecks, runAgents, runWatchCheck, startUpdateNotice };
+module.exports = { agentsCommand, guardCommand, watchCommand, flushCommand, runScheduledFreeChecks, runAgents, runWatchCheck, startUpdateNotice, uploadLine };
