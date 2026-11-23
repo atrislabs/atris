@@ -2,11 +2,14 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const feed = require('../lib/feed-core');
+const room = require('../lib/feed-room');
 const decisionFeed = require('../commands/decision-feed');
 const element = require('../commands/element');
+const ops = require('../lib/element-ops');
 const { knownCommands } = require('../lib/known-commands');
 const { project } = require('./helpers/feed-project');
 
@@ -95,4 +98,103 @@ test('atris element runs cleanly as a real non-TTY CLI process', (t) => {
   assert.equal(parsed.focus, null);
   assert.equal(parsed.remaining, 0);
   assert.ok(Array.isArray(parsed.actions));
+});
+
+test('element post supports idempotent --id retries and --id-only output', async (t) => {
+  const ctx = project(t);
+  const first = await captureRun(['post', 'Deploy checked and green', '--id', 'deploy-sha-1', '--id-only'], {
+    cwd: ctx.root,
+    env: ctx.env,
+  });
+  assert.equal(first.code, 0);
+  const cardId = first.stdout.trim();
+  assert.ok(cardId.length > 0);
+
+  const retry = await captureRun(['post', 'Deploy checked and green', '--id', 'deploy-sha-1', '--json'], {
+    cwd: ctx.root,
+    env: ctx.env,
+  });
+  assert.equal(retry.code, 0);
+  const parsed = JSON.parse(retry.stdout);
+  assert.equal(parsed.replayed, true);
+  assert.equal(parsed.card_id, cardId);
+});
+
+test('element wait returns immediately when a reply already landed after --after (race-free)', async (t) => {
+  const ctx = project(t);
+  const posted = ops.postIdempotent(ctx.root, { text: 'Need a quick answer on pricing', env: ctx.env });
+  const r1 = room.reply(ctx.root, posted.card_id, 'First thought', { env: ctx.env });
+  const r2 = room.reply(ctx.root, posted.card_id, 'Second thought wins', { env: ctx.env });
+
+  const waited = await captureRun(['wait', posted.card_id, '--after', r1.reply.id, '--timeout', '500ms', '--json'], {
+    cwd: ctx.root,
+    env: ctx.env,
+  });
+  assert.equal(waited.code, 0);
+  const parsed = JSON.parse(waited.stdout);
+  assert.equal(parsed.waited, true);
+  assert.equal(parsed.reason, 'reply');
+  assert.equal(parsed.reply.id, r2.reply.id);
+  assert.equal(parsed.reply.text, 'Second thought wins');
+});
+
+test('element claim leases a card to one agent so a second agent cannot double-claim it', async (t) => {
+  const ctx = project(t);
+  const prop = feed.proposeCard(ctx.root, {
+    as: 'scout',
+    title: 'Check the billing webhook',
+    why: 'Keep payment receipts accurate',
+    env: ctx.env,
+  });
+
+  const first = await captureRun(['claim', '--as', 'scout', '--lease', '5m', '--json'], {
+    cwd: ctx.root,
+    env: ctx.env,
+  });
+  assert.equal(first.code, 0);
+  const firstOut = JSON.parse(first.stdout);
+  assert.equal(firstOut.claimed, true);
+  assert.equal(firstOut.card.id, prop.card.id);
+  assert.equal(firstOut.lease.holder, 'scout');
+
+  // Second agent sees nothing claimable while the first lease is active.
+  const rival = await captureRun(['claim', '--as', 'builder', '--lease', '5m', '--json'], {
+    cwd: ctx.root,
+    env: ctx.env,
+  });
+  assert.equal(rival.code, 1);
+  assert.equal(JSON.parse(rival.stdout).claimed, false);
+});
+
+test('element tail emits NDJSON events and element curve computes sparkline, loss and bottleneck', async (t) => {
+  const ctx = project(t);
+  ops.postIdempotent(ctx.root, { text: 'Shipped headless Element', env: ctx.env });
+
+  const tailed = await captureRun(['tail', '--limit', '10', '--json'], { cwd: ctx.root, env: ctx.env });
+  assert.equal(tailed.code, 0);
+  const lines = tailed.stdout.trim().split('\n').filter(Boolean);
+  assert.ok(lines.length >= 1);
+  assert.doesNotThrow(() => JSON.parse(lines[0]));
+
+  const epFile = path.join(ctx.root, 'episodes.jsonl');
+  const rows = [0.0, 0.2, 0.6, 0.8, 1.0, 1.0].map((v, i) => ({
+    episode_id: `ep-${i}`,
+    ts: `2026-11-20T00:0${i}:00Z`,
+    action: { dispatched: i % 2 === 0, budget_reserved_usd: i % 2 === 0 ? 2.0 : 0.0 },
+    reward: { value: v },
+    timings_ms: { observe_ms: 80 + i * 5, gates_ms: 2, total_ms: 90 + i * 5 },
+  }));
+  fs.writeFileSync(epFile, `${rows.map((r) => JSON.stringify(r)).join('\n')}\n`);
+
+  const curved = await captureRun(['curve', '--file', 'episodes.jsonl', '--window', '3', '--json'], {
+    cwd: ctx.root,
+    env: ctx.env,
+  });
+  assert.equal(curved.code, 0);
+  const out = JSON.parse(curved.stdout);
+  assert.equal(out.summary.total_episodes, 6);
+  assert.equal(out.summary.trend, 'improving');
+  assert.equal(out.summary.top_bottleneck, 'observe');
+  assert.equal(out.summary.total_spend_usd, 6);
+  assert.ok(out.sparkline.length > 0);
 });

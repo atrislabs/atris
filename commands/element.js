@@ -1,26 +1,43 @@
 'use strict';
 
 // atris element: headless single-focus swarm interface.
-// Shows one card at a time (decisions first, then live work and results) and
-// lets a person or agent act with one word: yes, no, pass, talk, say, more.
+// Combines single-card focus (Superhuman style), composable agent board primitives
+// (post --id/--id-only, wait, tail, leased claim/complete), and performance loss curves.
 // Shares 100% of lib/feed-core.js and commands/decision-feed.js state.
 
 const feed = require('../lib/feed-core');
+const ops = require('../lib/element-ops');
 const decisionFeed = require('./decision-feed');
 
-const SHORT_ACTIONS = new Set(['next', 'yes', 'no', 'pass', 'talk', 'help']);
+const ELEMENT_ACTIONS = new Set([
+  'next', 'yes', 'no', 'pass', 'talk', 'post', 'wait', 'tail', 'claim', 'complete', 'curve', 'help',
+]);
+
+const VALUE_FLAGS = new Set([
+  '--filter', '--note', '--limit', '--cursor', '--since', '--as', '--member', '--engine',
+  '--id', '--after', '--timeout', '--interval', '--lease', '--wait', '--proof', '--file', '--window',
+]);
 
 const HELP = [
   'usage: atris element [--filter all|needs_decision|working|parked|done] [--json]',
-  '       atris element next [--filter ...] [--json]       show the one card needing focus right now',
-  '       atris element yes [<card>] [--note "<text>"]     approve the top decision card (or <card>) and start work',
-  '       atris element no [<card>] [--note "<text>"]      dismiss the top card (or <card>)',
-  '       atris element pass [<card>]                      scroll past the top card (or <card>)',
-  '       atris element talk [<card>] "<words>" [--stream] talk with the top card\'s team member',
-  '       atris element say "<words>" [--ask]              post a short note or question to the swarm',
-  '       atris element more                               wake team members for fresh ideas',
-  '       atris element members | member on|off <name>     see or toggle swarm members',
-  '       atris element cards | doctor | setup | theme     all decision-feed commands work here too',
+  '       atris element next [--filter ...] [--json]                  show the one card needing focus right now',
+  '       atris element yes [<card>] [--note "<text>"]                approve the top decision card (or <card>) and start work',
+  '       atris element no [<card>] [--note "<text>"]                 dismiss the top card (or <card>)',
+  '       atris element pass [<card>]                                 scroll past the top card (or <card>)',
+  '       atris element talk [<card>] "<words>" [--stream]            talk with the top card\'s team member',
+  '       atris element post "<words>" [--as <member>] [--id <key>] [--id-only] [--ask]',
+  '                                                                   idempotent post; --id-only prints only the card id',
+  '       atris element wait [<card>] [--after <reply-id>] [--timeout 5m]',
+  '                                                                   block until a new reply or state change lands (race-free)',
+  '       atris element tail [--limit 20] [--since <iso>] [--follow] [--timeout 30s] [--json]',
+  '                                                                   stream Element events as lines or NDJSON',
+  '       atris element claim --as <member> [--lease 5m] [--wait 30s] [--json]',
+  '                                                                   claim the next ready card with a lease (no double-claim)',
+  '       atris element complete <card> --as <member> --proof "<what passed>" ["<summary>"]',
+  '                                                                   record a verified result and release the lease',
+  '       atris element curve [--file <path>] [--limit 100] [--window 10] [--json]',
+  '                                                                   loss curve, spend, p95 speed and slowest bottleneck',
+  '       atris element say | more | members | doctor | setup | theme all decision-feed commands work here too',
   '',
   'Element runs headlessly in any terminal, pipe or agent chat. One card at a time.',
 ];
@@ -43,7 +60,7 @@ function splitArgs(args = []) {
       const eq = token.indexOf('=');
       if (eq > 0) {
         flags[token.slice(2, eq)] = token.slice(eq + 1);
-      } else if (['--filter', '--note', '--limit', '--cursor', '--since', '--as', '--member', '--engine'].includes(token)) {
+      } else if (VALUE_FLAGS.has(token)) {
         flags[token.slice(2)] = args[i + 1] !== undefined ? String(args[i + 1]) : '';
         i += 1;
       } else {
@@ -72,7 +89,7 @@ function focusPayload(root, { filter = 'all', env = process.env, preferDecision 
   const focus = pickFocusCard(listed.cards, { preferDecision });
   const remaining = Math.max(0, listed.cards.length - (focus ? 1 : 0));
   const actions = !focus
-    ? ['atris element more', 'atris element say "<note>"']
+    ? ['atris element more', 'atris element post "<note>"']
     : focus.needs_decision
       ? ['atris element yes', 'atris element no', 'atris element pass', 'atris element talk "<words>"']
       : ['atris element pass', 'atris element talk "<words>"', 'atris element no'];
@@ -93,12 +110,37 @@ function printFocus(out) {
   console.log(`${c.needs_decision || 0} waiting, ${c.working || 0} working, ${c.new_results || 0} new results, ${c.done_today || 0} done today`);
   if (!out.focus) {
     console.log('\nclear. nothing waiting for you right now.');
-    console.log('next: atris element more  |  atris element say "<note>"');
+    console.log('next: atris element more  |  atris element post "<note>"');
     return;
   }
   console.log(`\n${decisionFeed.textCard(out.focus)}`);
   if (out.remaining > 0) console.log(`\n${out.remaining} more in queue`);
   console.log(`next: ${out.actions.join('  |  ')}`);
+}
+
+function printCurve(out) {
+  const s = out.summary || {};
+  if (!s.total_episodes) {
+    console.log('no episodes recorded yet.');
+    return;
+  }
+  const lossStr = s.latest_rolling_loss !== null ? s.latest_rolling_loss.toFixed(2) : 'n/a';
+  console.log(`loss curve (${s.total_episodes} episodes, window ${out.window}): ${out.sparkline || '(flat)'}`);
+  console.log(`latest rolling loss: ${lossStr}  trend: ${s.trend}  spend: $${Number(s.total_spend_usd || 0).toFixed(2)}`);
+  console.log(`p95 latency: ${s.p95_total_ms}ms  bottleneck: ${s.top_bottleneck || 'none'}  dispatched: ${s.dispatched_count}  failed: ${s.failed_count}`);
+}
+
+function printEventLine(ev) {
+  const stamp = ev.at ? String(ev.at).slice(11, 19) : '--------';
+  console.log(`${stamp}  ${String(ev.type || 'event').padEnd(10)} ${ev.member || '?'}  ${ev.card_id || ''}  ${ev.text || ''}`.trimEnd());
+}
+
+function fail(caught, json) {
+  const error = feed.asFeedError(caught);
+  if (!error) throw caught;
+  if (json) console.log(JSON.stringify({ version: feed.FEED_VERSION, ok: false, error: error.toJSON() }, null, 2));
+  else console.error(`error: ${error.message}`);
+  return 1;
 }
 
 async function run(args = [], { cwd = process.cwd(), env = process.env, deps = {} } = {}) {
@@ -115,7 +157,7 @@ async function run(args = [], { cwd = process.cwd(), env = process.env, deps = {
   }
 
   // Forward every full decision-feed command directly so Element and Feed never diverge.
-  if (!SHORT_ACTIONS.has(sub)) {
+  if (!ELEMENT_ACTIONS.has(sub)) {
     return decisionFeed.run(args, { cwd, env, deps });
   }
 
@@ -123,99 +165,161 @@ async function run(args = [], { cwd = process.cwd(), env = process.env, deps = {
   try {
     root = feed.projectRoot(cwd);
   } catch (caught) {
-    const error = feed.asFeedError(caught);
-    if (!error) throw caught;
-    if (json) console.log(JSON.stringify({ version: feed.FEED_VERSION, ok: false, error: error.toJSON() }, null, 2));
-    else console.error(`error: ${error.message}`);
-    return 1;
+    return fail(caught, json);
   }
 
-  if (sub === 'next') {
-    try {
+  try {
+    if (sub === 'next') {
       const out = focusPayload(root, { filter: flags.filter || 'all', env });
       if (json) console.log(JSON.stringify(out, null, 2));
       else printFocus(out);
       return 0;
-    } catch (caught) {
-      const error = feed.asFeedError(caught);
-      if (!error) throw caught;
-      if (json) console.log(JSON.stringify({ version: feed.FEED_VERSION, ok: false, error: error.toJSON() }, null, 2));
-      else console.error(`error: ${error.message}`);
-      return 1;
     }
-  }
 
-  const forwardedFlags = [];
-  if (json) forwardedFlags.push('--json');
-  if (flags.note) forwardedFlags.push('--note', flags.note);
-  if (flags.stream) forwardedFlags.push('--stream');
-  if (flags.as) forwardedFlags.push('--as', flags.as);
+    if (sub === 'post') {
+      const text = positional.slice(1).join(' ').trim();
+      const out = ops.postIdempotent(root, {
+        text,
+        as: flags.as || null,
+        ask: flags.ask === true,
+        idKey: flags.id || null,
+        env,
+        deps,
+      });
+      if (flags['id-only']) console.log(out.card_id || '');
+      else if (json) console.log(JSON.stringify(out, null, 2));
+      else console.log(`${out.replayed ? 'existing' : 'posted'} ${out.card_id}`);
+      return 0;
+    }
 
-  if (sub === 'yes') {
-    let cardId = positional[1];
-    if (!cardId) {
-      const out = focusPayload(root, { filter: 'needs_decision', env, preferDecision: true });
-      if (!out.focus) {
-        if (json) console.log(JSON.stringify({ version: feed.FEED_VERSION, ok: false, error: { code: 'empty', message: 'no card waiting for a decision.' } }, null, 2));
-        else console.log('nothing waiting for approval right now.');
-        return 0;
+    if (sub === 'wait') {
+      let cardId = positional[1];
+      if (!cardId) {
+        const current = focusPayload(root, { filter: 'all', env, preferDecision: true });
+        if (!current.focus) throw new feed.FeedError(404, 'no active card to wait on.');
+        cardId = current.focus.id;
       }
-      cardId = out.focus.id;
+      const timeoutMs = ops.parseDuration(flags.timeout, 300000);
+      const intervalMs = ops.parseDuration(flags.interval, 200);
+      const out = await ops.waitCard(root, cardId, { after: flags.after || null, timeoutMs, intervalMs, env });
+      if (json) console.log(JSON.stringify(out, null, 2));
+      else if (out.waited && out.reply) console.log(`${out.reply.author ? out.reply.author.name : 'reply'}: ${out.reply.text}`);
+      else if (out.waited) console.log(`updated ${cardId} (${out.card ? out.card.state : out.reason})`);
+      else console.error(`timed out waiting on ${cardId}`);
+      return out.waited ? 0 : 1;
     }
-    return decisionFeed.run(['decide', cardId, 'approve', ...forwardedFlags], { cwd, env, deps });
-  }
 
-  if (sub === 'no') {
-    let cardId = positional[1];
-    if (!cardId) {
-      const out = focusPayload(root, { filter: 'all', env, preferDecision: true });
-      if (!out.focus) {
-        if (json) console.log(JSON.stringify({ version: feed.FEED_VERSION, ok: false, error: { code: 'empty', message: 'no card to dismiss.' } }, null, 2));
-        else console.log('nothing to dismiss right now.');
-        return 0;
+    if (sub === 'tail') {
+      const limit = Number.parseInt(flags.limit, 10) || 20;
+      const follow = flags.follow === true;
+      const timeoutMs = ops.parseDuration(flags.timeout, 30000);
+      const intervalMs = ops.parseDuration(flags.interval, 250);
+      await ops.tailEvents(root, {
+        limit,
+        since: flags.since || null,
+        follow,
+        timeoutMs,
+        intervalMs,
+        onEvent: (ev) => {
+          if (json) console.log(JSON.stringify(ev));
+          else printEventLine(ev);
+        },
+      });
+      return 0;
+    }
+
+    if (sub === 'claim') {
+      const leaseMs = ops.parseDuration(flags.lease, 300000);
+      const waitMs = ops.parseDuration(flags.wait, 0);
+      const intervalMs = ops.parseDuration(flags.interval, 200);
+      const out = await ops.claimCard(root, { as: flags.as, leaseMs, waitMs, intervalMs, env });
+      if (json) console.log(JSON.stringify(out, null, 2));
+      else if (out.claimed) console.log(`${out.card.id}  leased to ${out.lease.holder} until ${out.lease.expires_at}  ${out.card.title}`);
+      else console.log('no claimable card right now.');
+      return out.claimed ? 0 : 1;
+    }
+
+    if (sub === 'complete') {
+      const cardId = positional[1];
+      const text = positional.slice(2).join(' ').trim();
+      const out = ops.completeCard(root, cardId, { as: flags.as, proof: flags.proof, text, env, deps });
+      if (json) console.log(JSON.stringify(out, null, 2));
+      else console.log(`completed ${cardId}`);
+      return 0;
+    }
+
+    if (sub === 'curve') {
+      const out = ops.loadCurve(root, { file: flags.file || null, limit: flags.limit, window: flags.window });
+      if (json) console.log(JSON.stringify(out, null, 2));
+      else printCurve(out);
+      return 0;
+    }
+
+    const forwardedFlags = [];
+    if (json) forwardedFlags.push('--json');
+    if (flags.note) forwardedFlags.push('--note', flags.note);
+    if (flags.stream) forwardedFlags.push('--stream');
+    if (flags.as) forwardedFlags.push('--as', flags.as);
+
+    if (sub === 'yes') {
+      let cardId = positional[1];
+      if (!cardId) {
+        const out = focusPayload(root, { filter: 'needs_decision', env, preferDecision: true });
+        if (!out.focus) {
+          if (json) console.log(JSON.stringify({ version: feed.FEED_VERSION, ok: false, error: { code: 'empty', message: 'no card waiting for a decision.' } }, null, 2));
+          else console.log('nothing waiting for approval right now.');
+          return 0;
+        }
+        cardId = out.focus.id;
       }
-      cardId = out.focus.id;
+      return decisionFeed.run(['decide', cardId, 'approve', ...forwardedFlags], { cwd, env, deps });
     }
-    return decisionFeed.run(['dismiss', cardId, ...forwardedFlags], { cwd, env, deps });
-  }
 
-  if (sub === 'pass') {
-    let cardId = positional[1];
-    if (!cardId) {
-      const out = focusPayload(root, { filter: 'all', env, preferDecision: true });
-      if (!out.focus) {
-        if (json) console.log(JSON.stringify({ version: feed.FEED_VERSION, ok: false, error: { code: 'empty', message: 'no card to pass.' } }, null, 2));
-        else console.log('nothing to pass right now.');
-        return 0;
+    if (sub === 'no') {
+      let cardId = positional[1];
+      if (!cardId) {
+        const out = focusPayload(root, { filter: 'all', env, preferDecision: true });
+        if (!out.focus) {
+          if (json) console.log(JSON.stringify({ version: feed.FEED_VERSION, ok: false, error: { code: 'empty', message: 'no card to dismiss.' } }, null, 2));
+          else console.log('nothing to dismiss right now.');
+          return 0;
+        }
+        cardId = out.focus.id;
       }
-      cardId = out.focus.id;
+      return decisionFeed.run(['dismiss', cardId, ...forwardedFlags], { cwd, env, deps });
     }
-    return decisionFeed.run(['pass', cardId, ...forwardedFlags], { cwd, env, deps });
-  }
 
-  if (sub === 'talk') {
-    let cardId = positional[1];
-    let message = positional.slice(2).join(' ').trim();
-    if (!isCardId(cardId)) {
-      message = positional.slice(1).join(' ').trim();
-      const out = focusPayload(root, { filter: 'all', env, preferDecision: true });
-      if (!out.focus) {
-        if (json) console.log(JSON.stringify({ version: feed.FEED_VERSION, ok: false, error: { code: 'empty', message: 'no active card to talk on.' } }, null, 2));
-        else console.error('error: no active card to talk on.');
-        return 1;
+    if (sub === 'pass') {
+      let cardId = positional[1];
+      if (!cardId) {
+        const out = focusPayload(root, { filter: 'all', env, preferDecision: true });
+        if (!out.focus) {
+          if (json) console.log(JSON.stringify({ version: feed.FEED_VERSION, ok: false, error: { code: 'empty', message: 'no card to pass.' } }, null, 2));
+          else console.log('nothing to pass right now.');
+          return 0;
+        }
+        cardId = out.focus.id;
       }
-      cardId = out.focus.id;
+      return decisionFeed.run(['pass', cardId, ...forwardedFlags], { cwd, env, deps });
     }
-    if (!message) {
-      const err = 'usage: atris element talk [<card>] "<words>"';
-      if (json) console.log(JSON.stringify({ version: feed.FEED_VERSION, ok: false, error: { code: 'bad_request', message: err } }, null, 2));
-      else console.error(`error: ${err}`);
-      return 1;
-    }
-    return decisionFeed.run(['talk', cardId, message, ...forwardedFlags], { cwd, env, deps });
-  }
 
-  return decisionFeed.run(args, { cwd, env, deps });
+    if (sub === 'talk') {
+      let cardId = positional[1];
+      let message = positional.slice(2).join(' ').trim();
+      if (!isCardId(cardId)) {
+        message = positional.slice(1).join(' ').trim();
+        const out = focusPayload(root, { filter: 'all', env, preferDecision: true });
+        if (!out.focus) throw new feed.FeedError(404, 'no active card to talk on.');
+        cardId = out.focus.id;
+      }
+      if (!message) throw new feed.FeedError(400, 'usage: atris element talk [<card>] "<words>"');
+      return decisionFeed.run(['talk', cardId, message, ...forwardedFlags], { cwd, env, deps });
+    }
+
+    return decisionFeed.run(args, { cwd, env, deps });
+  } catch (caught) {
+    return fail(caught, json);
+  }
 }
 
 function runFromCli(args) {
