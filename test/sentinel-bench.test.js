@@ -105,7 +105,7 @@ test('fake key templates expand at load time and the repo corpus holds no token-
 test('the settings areas exam: planted areas lead the quick wave and correct repos stay quiet', () => {
   const items = bench.readItems(path.join(__dirname, '..', 'atris', 'sentinel-bench', 'areas.jsonl')).items;
   const classes = (kind) => new Set(items.filter((i) => (kind === 'planted') === (i.expect.length > 0)).map((i) => (i.expect[0] || i.quiet[0]).class));
-  for (const kind of ['planted', 'quiet']) assert.deepStrictEqual([...classes(kind)].sort(), ['access-rules', 'sign-in-matching'], `${kind} items cover both classes`);
+  for (const kind of ['planted', 'quiet']) assert.deepStrictEqual([...classes(kind)].sort(), ['access-rules', 'header-trust', 'sign-in-matching'], `${kind} items cover every class`);
   const s = bench.scoreAreas(items, require('../lib/security-audit'));
   assert.strictEqual(s.errors, 0);
   assert.strictEqual(s.false_alarms, 0);
