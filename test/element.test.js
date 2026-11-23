@@ -198,3 +198,15 @@ test('element tail emits NDJSON events and element curve computes sparkline, los
   assert.equal(out.summary.total_spend_usd, 6);
   assert.ok(out.sparkline.length > 0);
 });
+
+test('a chat waiting in its own window never holds the one-card focus', async (t) => {
+  const ctx = project(t);
+  feed.proposeCard(ctx.root, { as: 'scout', title: 'Call the ten oldest leads', why: 'It moves the goal', env: ctx.env });
+  feed.setWaiting(ctx.root, { session: 'abc123', ask: 'Which plan should I keep?', title: 'Plan review chat' });
+  const out = element.focusPayload(ctx.root, { env: ctx.env });
+  assert.equal(out.focus.title, 'Call the ten oldest leads', 'the card you can act on here is the focus');
+  assert.deepEqual(out.chats.map((c) => c.title), ['Plan review chat']);
+  const shown = await captureRun([], { cwd: ctx.root, env: ctx.env, deps: ctx.deps });
+  assert.match(shown.stdout, /A chat is waiting on you in its own window:\n  Plan review chat/);
+  assert.match(shown.stdout, /atris element yes/);
+});
