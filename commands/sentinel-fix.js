@@ -117,7 +117,14 @@ async function fixCommand(argv, deps = {}) {
   if (!top) { console.error(`  ${tildePath(start)} is not a git repository. a fix needs a branch to go on`); return 2; }
   const root = top;
 
-  const { records } = fix.confirmedFindings(root);
+  const { records, system, dir } = fix.confirmedFindings(root);
+  if (system) {
+    const names = system.parts.map((p) => p.name);
+    console.log(`\n  the last review of this repository read ${names.length} places together (${names.join(', ')}), with this one as the ${system.part} part. it has ${system.confirmed} confirmed finding${system.confirmed === 1 ? '' : 's'}.`);
+    console.log('  fix works on a review of one folder for now, so nothing was changed.');
+    console.log(`  the findings are in ${tildePath(path.join(dir, 'REPORT.md'))}. to fix one here, review this folder alone first: atris sentinel\n`);
+    return opts.id || opts.allOpen ? 2 : 0;
+  }
   if (!records.length) { console.log('\n  no confirmed findings for this repository. run atris sentinel first\n'); return 0; }
 
   if (!opts.id && !opts.allOpen) {
