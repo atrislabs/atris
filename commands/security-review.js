@@ -447,7 +447,9 @@ function tildePath(p) {
 function renderAuditLanding({ dir, meta, records }) {
   const confirmed = records.filter((r) => r.verdict === 'confirmed');
   const needs = records.filter((r) => r.verdict === 'needs_validation');
-  const rejected = records.filter((r) => r.verdict === 'rejected');
+  const { isNote } = require('../lib/security-audit');
+  const rejected = records.filter((r) => r.verdict === 'rejected' && !isNote(r));
+  const notes = records.filter(isNote);
   const sev = meta.counts.severity;
   const cov = meta.coverage;
   const sevText = ['critical', 'high', 'medium', 'low', 'informational'].filter((s) => sev[s]).map((s) => `${sev[s]} ${s}`).join(', ');
@@ -475,7 +477,7 @@ function renderAuditLanding({ dir, meta, records }) {
     else L.push(needed <= hunters ? '  one run can read every area' : `  about ${Math.ceil(needed / hunters)} runs to read every area`);
   } else {
     const waiting = require('../lib/security-audit').waitingOf(meta);
-    L.push(`  ${confirmed.length + waiting.length} confirmed${sevText ? ` (${sevText})` : ''} · ${needs.length} need a fact from you · ${rejected.length} disproved`);
+    L.push(`  ${confirmed.length + waiting.length} confirmed${sevText ? ` (${sevText})` : ''} · ${needs.length} need a fact from you · ${notes.length ? `${notes.length} kept as notes · ` : ''}${rejected.length} disproved`);
     L.push(`  read ${cov.fresh} areas this run, ${cov.carried} carried unchanged, ${cov.deferred || 0} left for the next run`);
     L.push(`  found by ${meta.engines.hunter}, checked by ${meta.engines.verifier}${meta.engines.hunter === meta.engines.verifier ? ' (same engine)' : ''} · ${meta.invocations.used} engine calls of ${meta.budget}${meta.credits_used ? ` · ${meta.credits_used} credits used` : ''}`);
     for (const r of confirmed.slice(0, 6)) {
