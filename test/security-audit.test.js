@@ -174,6 +174,29 @@ test('map sees Ruby and Go entry points, crypto, and gem manifests', () => {
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('map seeds agent blast radius from deletes, test setup, and prose rules', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-blast-'));
+  try {
+    for (const dir of ['scripts', 'tests', 'lib']) fs.mkdirSync(path.join(root, dir));
+    fs.writeFileSync(path.join(root, 'scripts', 'clean.sh'), '#!/bin/bash\nrm -rf "$BUILD_DIR/"\n');
+    fs.writeFileSync(path.join(root, 'tests', 'conftest.py'), 'import os\ndef pytest_sessionstart(session):\n    Base.metadata.drop_all(engine)\n');
+    fs.writeFileSync(path.join(root, 'tests', 'test_users.py'), 'def test_x():\n    Base.metadata.drop_all(engine)\n');
+    fs.writeFileSync(path.join(root, 'CLAUDE.md'), '# Rules\n\nNever push to production without asking.\n');
+    fs.writeFileSync(path.join(root, 'lib', 'note.js'), '// never delete prod rows here\nmodule.exports = {};\n');
+    const { units } = audit.mapTarget(root, { profile: 'standard' });
+    const pairs = new Set(units.map((u) => `${u.starting_paths[0]} ${u.attack_class}`));
+    for (const want of [
+      'scripts/clean.sh agent-blast-radius',
+      'tests/conftest.py agent-blast-radius',
+      'CLAUDE.md agent-blast-radius',
+    ]) assert.ok(pairs.has(want), `missing ${want}`);
+    assert.ok(!pairs.has('tests/test_users.py agent-blast-radius'), 'ordinary test files stay skipped');
+    assert.ok(!pairs.has('lib/note.js agent-blast-radius'), 'a code comment is not a prose rule');
+    assert.ok(!units.some((u) => u.starting_paths[0] === 'tests/conftest.py' && u.attack_class !== 'agent-blast-radius'), 'test setup is read only for this class');
+    assert.deepStrictEqual(audit.validateLedger(units), []);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('ledger validator enforces the state table', () => {
   const root = makeRepo();
   try {
