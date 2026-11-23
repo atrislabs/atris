@@ -24,7 +24,7 @@ const VALUE_FLAGS = new Set([
   '--reply',
   '--session', '--ask', '--append-b64', '--failed',
 ]);
-const BOOL_FLAGS = new Set(['--stream', '--no-call', '--ask', '--retry', '--run', '--tagged', '--independent', '--confirm', '--dry-run', '--undo', '--done', '--needs-sign-in']);
+const BOOL_FLAGS = new Set(['--first', '--last', '--stream', '--no-call', '--ask', '--retry', '--run', '--tagged', '--independent', '--confirm', '--dry-run', '--undo', '--done', '--needs-sign-in']);
 
 function parse(args) {
   const positional = [];
@@ -80,6 +80,8 @@ const HELP = [
   '       atris feed dismiss <card> [<card> ...] [--undo]',
   '                          (takes cards off your feed: an idea or question waiting for you is dismissed as with decide;',
   '                          any other card is hidden for you only and shows under --filter dismissed. --undo brings it back)',
+  '       atris feed unqueue <card>   take approved work off the waiting line; the card comes back to you, approve again to re-add it',
+  '       atris feed move <card> --first|--last|--to <place>   move approved work within the waiting line (1 is next)',
   '       atris feed waiting set --session <id> --ask "<one or two plain sentences>" [--title "<window name>"] [--engine <name>]',
   '       atris feed waiting clear --session <id>',
   '       atris feed waiting list [--json]',
@@ -438,6 +440,11 @@ async function run(args = [], context = {}) {
       out = feed.passCards(root, items, { env });
     } else if (sub === 'dismiss') {
       out = feed.dismissCards(root, positional.slice(1), { env, deps, undo: flags.undo === true });
+    } else if (sub === 'unqueue') {
+      out = feed.unqueueCard(root, positional[1], { env });
+    } else if (sub === 'move') {
+      const to = flags.first ? 'first' : flags.last ? 'last' : flags.to;
+      out = feed.moveCard(root, positional[1], { to, env });
     } else if (sub === 'talk') {
       const card = positional[1];
       if (!card) throw new feed.FeedError(400, flags.member !== undefined ? 'usage: atris feed talk --member <name> -- <card> ["<words>"]' : 'usage: atris feed talk <card> "<message>"');
@@ -603,7 +610,7 @@ async function run(args = [], context = {}) {
   }
 }
 
-const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'dismiss', 'talk', 'messages', 'revise', 'more', 'run', 'help',
+const DECISION_SUBCOMMANDS = new Set(['cards', 'theme', 'propose', 'decide', 'pass', 'dismiss', 'unqueue', 'move', 'talk', 'messages', 'revise', 'more', 'run', 'help',
   'waiting',
   'settings', 'engines', 'members', 'member', 'ping', 'think', 'emit', 'events', 'start', 'doctor', 'repair', 'notes',
   'say', 'react', 'reply', 'replies', 'discuss', 'work', 'clear', 'setup', 'scrub-keys', 'turns']);
