@@ -619,8 +619,24 @@ const LEGACY_BARE_NOTICE = 'note: bare `atris feed` now opens the decision feed.
 // terminal and neither a subcommand nor --json is given, it behaves as before
 // (the group feed) and says so on stderr, so a script reading the old output
 // does not silently get something else.
+function firstPositional(args = []) {
+  for (let i = 0; i < args.length; i += 1) {
+    const token = String(args[i]);
+    if (token === '--') return args[i + 1] !== undefined ? String(args[i + 1]) : undefined;
+    if (token.startsWith('--')) {
+      const eq = token.indexOf('=');
+      const name = eq > 0 ? token.slice(0, eq) : token;
+      if (VALUE_FLAGS.has(name) && eq < 0) i += 1;
+      continue;
+    }
+    if (token.startsWith('-')) continue;
+    return token;
+  }
+  return undefined;
+}
+
 function route(args = [], { isTTY = false } = {}) {
-  const first = args.find((arg) => !String(arg).startsWith('-'));
+  const first = firstPositional(args);
   if (first) return { decision: DECISION_SUBCOMMANDS.has(first), notice: '' };
   if (args.includes('--help') || args.includes('-h')) return { decision: true, notice: '' };
   if (args.includes('--author') || args.includes('--full')) return { decision: false, notice: '' };
@@ -643,4 +659,4 @@ function runFromCli(args) {
   });
 }
 
-module.exports = { LEGACY_BARE_NOTICE, handles, route, run, runFromCli };
+module.exports = { LEGACY_BARE_NOTICE, handles, route, run, runFromCli, textCard };
