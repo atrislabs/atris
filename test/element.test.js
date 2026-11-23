@@ -198,3 +198,76 @@ test('element tail emits NDJSON events and element curve computes sparkline, los
   assert.equal(out.summary.total_spend_usd, 6);
   assert.ok(out.sparkline.length > 0);
 });
+
+test('element deterministic slash commands run allowlisted workflows, redact tokens, and reply into the card thread', async (t) => {
+  const ctx = project(t);
+  const posted = ops.postIdempotent(ctx.root, { text: 'Check this build', env: ctx.env });
+
+  // Unregistered command is refused cleanly (allowlist-only).
+  const missing = await captureRun(['run', '/not-registered', posted.card_id, '--json'], { cwd: ctx.root, env: ctx.env });
+  assert.equal(missing.code, 1);
+  assert.equal(JSON.parse(missing.stdout).ok, false);
+
+  // Register a deterministic workflow and verify it runs, redacts token-shaped strings, and replies on the card.
+  const added = await captureRun(
+    ['cmd', 'add', 'smoke', 'printf "all green token=sk-secret1234567890"', '--description', 'Quick smoke check', '--json'],
+    { cwd: ctx.root, env: ctx.env },
+  );
+  assert.equal(added.code, 0);
+  assert.equal(JSON.parse(added.stdout).command.name, 'smoke');
+
+  const ran = await captureRun(['run', '/smoke', posted.card_id, '--json'], { cwd: ctx.root, env: ctx.env });
+  assert.equal(ran.code, 0);
+  const ranOut = JSON.parse(ran.stdout);
+  assert.equal(ranOut.passed, true);
+  assert.ok(ranOut.receipt.includes('[redacted]'));
+  assert.ok(!ranOut.receipt.includes('sk-secret1234567890'));
+
+  const replies = room.replies(ctx.root, posted.card_id, { env: ctx.env }).replies;
+  assert.ok(replies.some((r) => r.text.startsWith('/smoke passed:')));
+
+  // Built-in /curve workflow runs with zero setup.
+  const builtin = await captureRun(['run', '/curve', posted.card_id, '--json'], { cwd: ctx.root, env: ctx.env });
+  assert.equal(builtin.code, 0);
+  assert.equal(JSON.parse(builtin.stdout).passed, true);
+});
+
+test('element repeating message schedules fire on due clock ticks and never double-post in the same slot', async (t) => {
+  const ctx = project(t);
+  const t0 = '2026-11-23T12:00:00.000Z';
+  const tEarly = '2026-11-23T12:30:00.000Z';
+  const tDue = '2026-11-23T13:00:00.000Z';
+  const tSecondSlot = '2026-11-23T14:05:00.000Z';
+
+  const added = await captureRun(
+    ['schedule', 'add', '--id', 'hourly-check', '--every', '1h', '--to', 'scout', '--now', t0, 'Check live errors and report', '--json'],
+    { cwd: ctx.root, env: ctx.env },
+  );
+  assert.equal(added.code, 0);
+  assert.equal(JSON.parse(added.stdout).schedule.next_run_at, tDue);
+
+  // Before next_run_at nothing fires.
+  const early = await captureRun(['schedule', 'tick', '--now', tEarly, '--json'], { cwd: ctx.root, env: ctx.env });
+  assert.equal(early.code, 0);
+  assert.equal(JSON.parse(early.stdout).count, 0);
+
+  // At next_run_at the message posts once.
+  const due = await captureRun(['schedule', 'tick', '--now', tDue, '--json'], { cwd: ctx.root, env: ctx.env });
+  assert.equal(due.code, 0);
+  const dueOut = JSON.parse(due.stdout);
+  assert.equal(dueOut.count, 1);
+  assert.equal(dueOut.fired[0].replayed, false);
+
+  // Ticking again at the exact same time fires nothing (next_run_at advanced).
+  const dup = await captureRun(['schedule', 'tick', '--now', tDue, '--json'], { cwd: ctx.root, env: ctx.env });
+  assert.equal(dup.code, 0);
+  assert.equal(JSON.parse(dup.stdout).count, 0);
+
+  // Next hour threads a second run onto the schedule's card and increments run_count.
+  const second = await captureRun(['schedule', 'tick', '--now', tSecondSlot, '--json'], { cwd: ctx.root, env: ctx.env });
+  assert.equal(second.code, 0);
+  const secondOut = JSON.parse(second.stdout);
+  assert.equal(secondOut.count, 1);
+  assert.equal(secondOut.fired[0].card_id, dueOut.fired[0].card_id);
+  assert.equal(secondOut.fired[0].run_count, 2);
+});
