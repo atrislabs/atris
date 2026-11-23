@@ -9,16 +9,17 @@ const feed = require('../lib/feed-core');
 const ops = require('../lib/element-ops');
 const cmds = require('../lib/element-commands');
 const sched = require('../lib/element-schedules');
+const inspect = require('../lib/element-inspect');
 const decisionFeed = require('./decision-feed');
 
 const ELEMENT_ACTIONS = new Set([
-  'next', 'yes', 'no', 'pass', 'talk', 'post', 'wait', 'tail', 'claim', 'complete', 'curve', 'cmd', 'run', 'schedule', 'help',
+  'next', 'yes', 'no', 'pass', 'talk', 'post', 'wait', 'tail', 'claim', 'complete', 'curve', 'cmd', 'run', 'schedule', 'inspect', 'help',
 ]);
 
 const VALUE_FLAGS = new Set([
   '--filter', '--note', '--limit', '--cursor', '--since', '--as', '--member', '--engine',
   '--id', '--after', '--timeout', '--interval', '--lease', '--wait', '--proof', '--file', '--window',
-  '--description', '--every', '--to', '--now',
+  '--description', '--every', '--to', '--now', '--port',
 ]);
 
 const HELP = [
@@ -45,6 +46,7 @@ const HELP = [
   '       atris element run /<name> [<card>] [--as <member>] [--json] run a registered workflow and post its receipt into the thread',
   '       atris element schedule add --every 1h --to <member> "<msg>" | list | remove <id> | tick',
   '                                                                   repeating board messages (cron as a message to an agent)',
+  '       atris element inspect [--port 4100] [--no-open]             open the local Element web viewer on 127.0.0.1',
   '       atris element say | more | members | doctor | setup | theme all decision-feed commands work here too',
   '',
   'Element runs headlessly in any terminal, pipe or agent chat. One card at a time.',
@@ -343,6 +345,26 @@ async function run(args = [], { cwd = process.cwd(), env = process.env, deps = {
         return 0;
       }
       throw new feed.FeedError(400, 'usage: atris element schedule add --every 1h --to <member> "<msg>" | list | remove <id> | tick');
+    }
+
+    if (sub === 'inspect') {
+      const port = flags.port !== undefined ? Number.parseInt(flags.port, 10) : 4100;
+      if (!Number.isInteger(port) || port < 0 || port > 65535) {
+        throw new feed.FeedError(400, `invalid port: ${flags.port}`);
+      }
+      const instance = await inspect.startInspector(root, { port, host: '127.0.0.1', env, deps });
+      if (json) console.log(JSON.stringify({ version: feed.FEED_VERSION, url: instance.url, port: instance.port }));
+      else console.log(`element inspector running at ${instance.url} (ctrl+c to stop)`);
+      if (flags['no-open'] !== true && process.platform === 'darwin' && !deps.skipOpen) {
+        try { require('child_process').spawn('open', [instance.url], { detached: true, stdio: 'ignore' }).unref(); } catch { /* ignore */ }
+      }
+      if (deps.returnAfterStart) return 0;
+      await new Promise((resolve) => {
+        const stop = () => instance.close().then(resolve);
+        process.once('SIGINT', stop);
+        process.once('SIGTERM', stop);
+      });
+      return 0;
     }
 
     const forwardedFlags = [];
