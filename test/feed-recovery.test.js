@@ -233,3 +233,21 @@ test('doctor: ready when everything is, and names the one thing to do when not',
   assert.equal(bare.code, 1, 'not ready exits non-zero');
   assert.equal(JSON.parse(bare.out).checks[0].name, 'project');
 });
+
+test('recover: a card that came back says which try it is, with each earlier miss and its reason', async (t) => {
+  const ctx = project(t);
+  const { card, entry } = approved(ctx);
+  assert.equal(cardOf(ctx, card.id, 'working').attempt, 1, 'the first try');
+  await feed.runEntry(ctx.root, entry.id, { ...ctx.deps, spawnSync: () => ({ status: 1 }), memberStillWorking: () => false });
+  const once = cardOf(ctx, card.id);
+  assert.equal(once.attempt, 2, 'one miss: the next is the second try');
+  assert.equal(once.misses.length, 1);
+  assert.match(once.misses[0].reason, /ended without a result/);
+  feed.decide(ctx.root, card.id, 'approve', { env: ctx.env, deps: ctx.deps });
+  const again = feed.readRuns(ctx.root).filter((e) => e.card_id === card.id).pop();
+  await feed.runEntry(ctx.root, again.id, { ...ctx.deps, spawnSync: () => ({ status: 1 }), memberStillWorking: () => false });
+  const twice = cardOf(ctx, card.id);
+  assert.equal(twice.attempt, 3);
+  assert.equal(twice.misses.length, 2);
+  assert.equal(twice.id, card.id, 'the card keeps its place');
+});
