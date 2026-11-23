@@ -55,10 +55,13 @@ const by = { engine: 'claude', agent_id: 'v-01' };
 const PASS = Object.fromEntries(CONFIRM_CHECKS.map((c) => [c.key, c.pass]));
 const answer = (o) => ({ ok: true, stdout: JSON.stringify({ reason: 'read it', ...o }) });
 
-test('hunters are told the four shapes go in hardening', () => {
+// Hunters still propose these shapes. Telling hunters to drop them made a
+// hunter skip a real access hole on the bench, and a lead the hunter drops
+// leaves no trail. Only the verifier, with the checks, turns one into a note.
+test('the four checks belong to the verifier, not the hunters', () => {
   const { CANDIDATE_GATE } = require('../lib/security-audit-classes');
   assert.deepStrictEqual(CONFIRM_CHECKS.map((c) => c.key), ['attacker_gain', 'shipped_code', 'deliberate_setting', 'insider_only']);
-  assert.ok(CANDIDATE_GATE.some((l) => /gains nothing/.test(l) && /does not ship/.test(l) && /deliberate setting/.test(l) && /insider access/.test(l)));
+  assert.ok(!CANDIDATE_GATE.some((l) => /insider access/.test(l) || /deliberate setting/.test(l)));
 });
 
 test('a confirmed lead whose checks all pass stays confirmed', () => {
