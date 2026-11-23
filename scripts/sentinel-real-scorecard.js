@@ -46,12 +46,12 @@ const CLASS_KINDS = {
   access: ['access-control', 'access-rules'],
   signin: ['sign-in-matching', 'access-control'],
   rls: ['access-rules', 'access-control'],
-  'webhook-header': ['access-control', 'sign-in-matching', 'access-rules'],
+  'webhook-header': ['access-control', 'sign-in-matching', 'access-rules', 'header-trust', 'inbound-signature'],
   secrets: ['secrets-handling'],
   injection: ['command-injection', 'code-injection', 'sql-injection'],
   ssrf: ['outbound-request'],
   traversal: ['path-traversal'],
-  'agent-tool': ['agent-blast-radius', 'agent-and-llm', 'path-traversal'],
+  'agent-tool': ['agent-blast-radius', 'agent-and-llm', 'path-traversal', 'outbound-request'],
 };
 // Claude settings keys that run a command.
 const CLAUDE_EXEC_KEYS = ['hooks', 'mcpServers', 'enableAllProjectMcpServers', 'enabledMcpjsonServers', 'statusLine', 'apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'otelHeadersHelper', 'fileSuggestion', 'plugins', 'enabledPlugins', 'extraKnownMarketplaces'];
@@ -98,6 +98,9 @@ function load() {
 // its fingerprint, and the score shows only the hash unless --show-real is set.
 const fpKey = (fp) => `sha256:${crypto.createHash('sha256').update(String(fp)).digest('hex').slice(0, 16)}`;
 const otherLabel = (lab, fp) => ((lab.others || {})[fp] || (lab.others || {})[fpKey(fp)] || 'unchecked');
+// A match label can be keyed by the hash too, so a new hole that happens to sit
+// on the advisory's spot is never named in this public repo.
+const matchLabel = (lab, fp) => ((lab.match || {})[fp] || (lab.match || {})[fpKey(fp)]);
 
 const repoDir = (o, id) => path.join(o.root, 'repos', id);
 const runDir = (o, id) => path.join(o.root, 'runs', id);
@@ -193,11 +196,11 @@ function scoreOne(o, a, labels) {
   let verdict = 'MISSED';
   let matched = null;
   const confirmedHits = hits.filter((f) => f.verdict === 'confirmed');
-  const same = confirmedHits.find((f) => (lab.match || {})[f.fingerprint] === 'same');
-  const unlabeled = confirmedHits.find((f) => !(lab.match || {})[f.fingerprint]);
+  const same = confirmedHits.find((f) => matchLabel(lab, f.fingerprint) === 'same');
+  const unlabeled = confirmedHits.find((f) => !matchLabel(lab, f.fingerprint));
   if (same) { verdict = 'FOUND'; matched = same; }
   else if (unlabeled) { verdict = 'FOUND?'; matched = unlabeled; }
-  else if (hits.some((f) => f.verdict !== 'confirmed' || (lab.match || {})[f.fingerprint] === 'near')) verdict = 'NEAR';
+  else if (hits.some((f) => f.verdict !== 'confirmed' || matchLabel(lab, f.fingerprint) === 'near')) verdict = 'NEAR';
   else if (ledger.some((u) => (u.hardening || []).some((h) => [...files].some((fl) => String(h).includes(path.basename(fl)))))) verdict = 'NEAR';
 
   // Why a miss. The audit works in units of (area, kind of flaw). A unit is
@@ -223,7 +226,7 @@ function scoreOne(o, a, labels) {
     else why = 'never read the file';
   }
 
-  const others = findings.filter((f) => f.verdict === 'confirmed' && f !== matched && !(confirmedHits.includes(f) && (lab.match || {})[f.fingerprint] === 'same'))
+  const others = findings.filter((f) => f.verdict === 'confirmed' && f !== matched && !(confirmedHits.includes(f) && matchLabel(lab, f.fingerprint) === 'same'))
     .map((f) => {
       const label = otherLabel(lab, f.fingerprint);
       if (label === 'real' && !o.showReal) return { fingerprint: fpKey(f.fingerprint), title: '(new hole, kept private)', label };

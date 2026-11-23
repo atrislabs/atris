@@ -103,7 +103,7 @@ runs. Clones go to `/tmp/sentinel-scorecard/repos/<id>`, runs to
 
 Each run is `atris security-review audit --quick --no-upload --engine local`
 from this checkout, with the clone as the working folder: codex hunts, claude
-verifies and critiques, 8 engine calls, no Atris credits.
+verifies, 8 engine calls, no Atris credits.
 
 The clones are untrusted. The script only uses git to fetch and check out
 (hooks off, LFS off) and never runs, installs, builds or tests anything from
@@ -113,7 +113,53 @@ config). Two clones carry harmless agent files: GHSA-62gx has a claude
 permissions list (no hooks), GHSA-9x83 has a Codex app environment file and a
 Cursor MCP list, neither of which `codex exec` or `claude -p` reads.
 
-## Results, 2026-11-23
+## Results after the coverage and checker changes, 2026-11-23
+
+Same 20 repos, same quick budget (8 engine calls per repo at most), local
+engines, 0 Atris credits. The seen half was used to tune; the held-out half
+ran once, at the end, with the final code.
+
+What changed in Sentinel:
+
+- A quick review ranks areas by the kinds of code where published holes
+  cluster (routes taking an id, webhooks, sign-in, permission rules, files,
+  admin settings, tools a model calls, code that fetches a url), and puts the
+  file with the strongest clue first in each area.
+- One hunter checks a shared file for every kind of flaw that seeded it, so
+  a quick run reads about twice as many areas for the same calls.
+- The quick critic call is gone (its proposals were always deferred); that
+  call checks one more lead. Leads are checked worst first.
+- Hunters get vulnerable and safe examples for webhook signatures, forwarded
+  client addresses, database permission rules, unverified email sign-in,
+  ownership checks, model-chosen hosts and whole-config template lookups.
+- The checker treats the operator, the owner, an admin control service and a
+  project the tool already runs as trusted, and looks up facts the repo can
+  answer instead of leaving them as leads.
+
+| | seen before | seen after | held-out before | held-out after |
+|---|---|---|---|---|
+| found | 0 | 6 | 3 | 4 |
+| near | 2 | 4 | 1 | 2 |
+| missed | 8 | 0 | 6 | 4 |
+| wrong alarms | 0 | 2 | 4 | 4 |
+| new real holes (private) | 1 | 12 | 3 | 8 |
+| engine calls | 69 | 77 | 70 | 68 |
+
+"Seen before" is master with the owner-and-test-code checker change already
+in (one fresh run per repo); the older table below predates that change.
+"Held-out before" is the older run. Confirmed findings after the change: 38
+in all (20 seen, 18 held-out). 12 point at an advisory's hole (10 holes), 20
+are real holes nobody has published, and 6 are wrong: 16 percent wrong, down
+from 48. On the held-out half wrong alarms stayed at 4 while real findings
+went from 3 found and 3 new to 4 found and 8 new.
+
+Label calls for this run: a finding on the hole's file that names a
+different flaw gets `match: other` and is scored like any other finding.
+Match labels may be keyed by hash so a new hole on the spot is never named.
+Two wrong labels are strict judgment calls (a documented Globus username
+mapping, and a review tool posting where a steered model asks).
+
+## Results, 2026-11-23 (before)
 
 Sentinel at version 3.90.7 (master at e1316b4aa), quick audit, local engines:
 codex hunts, claude checks and critiques. 8 engine calls per repo at most, 141

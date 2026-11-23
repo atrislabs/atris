@@ -1,27 +1,8 @@
 [
   {
     "id": "GHSA-2xhg-73j7-rrgx",
-    "verdict": "MISSED",
-    "why": "read the file only for other kinds of flaw; the check for this kind was queued, not run (budget)",
-    "matched": null,
-    "others": [
-      {
-        "fingerprint": "packages/mcp-server/scripts/inspect.mjs:launcher/credential-in-process-arguments",
-        "title": "The inspector launcher puts the management token into command arguments and prints it when the inspector fails to start.",
-        "label": "wrong"
-      }
-    ],
-    "wrong": 1,
-    "real": 0,
-    "unchecked": 0,
-    "engine_calls": 6,
-    "credits": 0,
-    "areas": "3/20"
-  },
-  {
-    "id": "GHSA-3fcr-jvgp-7f58",
-    "verdict": "MISSED",
-    "why": "read the file only for other kinds of flaw; never queued it for this kind",
+    "verdict": "NEAR",
+    "why": "spotted it, left it as a lead that needs a fact",
     "matched": null,
     "others": [],
     "wrong": 0,
@@ -29,40 +10,34 @@
     "unchecked": 0,
     "engine_calls": 7,
     "credits": 0,
-    "areas": "4/15"
+    "areas": "5/18"
+  },
+  {
+    "id": "GHSA-3fcr-jvgp-7f58",
+    "verdict": "MISSED",
+    "why": "read the file for this kind of flaw but did not see it",
+    "matched": null,
+    "others": [],
+    "wrong": 0,
+    "real": 0,
+    "unchecked": 0,
+    "engine_calls": 4,
+    "credits": 0,
+    "areas": "7/15"
   },
   {
     "id": "GHSA-45gf-fjxp-cjpq",
-    "verdict": "MISSED",
-    "why": "never read the file",
-    "matched": null,
+    "verdict": "FOUND",
+    "why": "",
+    "matched": "meta_ads_mcp/core/utils.py:download_image/unrestricted-image-destination",
     "others": [
       {
-        "fingerprint": "sha256:a6eac93bf5dfbd25",
-        "title": "(new hole, kept private)",
-        "label": "real"
-      }
-    ],
-    "wrong": 0,
-    "real": 1,
-    "unchecked": 0,
-    "engine_calls": 8,
-    "credits": 0,
-    "areas": "3/9"
-  },
-  {
-    "id": "GHSA-4g5x-hcwm-82jw",
-    "verdict": "MISSED",
-    "why": "read the file only for other kinds of flaw; the check for this kind was queued, not run (budget)",
-    "matched": null,
-    "others": [
-      {
-        "fingerprint": "sha256:bf7b09bbb6be283f",
+        "fingerprint": "sha256:fbaca4a00c66b878",
         "title": "(new hole, kept private)",
         "label": "real"
       },
       {
-        "fingerprint": "sha256:04b016d48d4012bf",
+        "fingerprint": "sha256:a13a784260a3626e",
         "title": "(new hole, kept private)",
         "label": "real"
       }
@@ -72,20 +47,55 @@
     "unchecked": 0,
     "engine_calls": 8,
     "credits": 0,
-    "areas": "3/25"
+    "areas": "6/11"
   },
   {
-    "id": "GHSA-588f-fvcv-xhvf",
-    "verdict": "MISSED",
-    "why": "never read the file",
-    "matched": null,
-    "others": [],
+    "id": "GHSA-4g5x-hcwm-82jw",
+    "verdict": "FOUND",
+    "why": "",
+    "matched": "cmd/server/api/deploy/handler.go:file-comparison/unconfined-local-and-remote-path",
+    "others": [
+      {
+        "fingerprint": "sha256:d035309ce2b11c1d",
+        "title": "(new hole, kept private)",
+        "label": "real"
+      },
+      {
+        "fingerprint": "sha256:408e1f9aba5f7000",
+        "title": "(new hole, kept private)",
+        "label": "real"
+      },
+      {
+        "fingerprint": "sha256:9022eedd0dce6ef5",
+        "title": "(new hole, kept private)",
+        "label": "real"
+      }
+    ],
     "wrong": 0,
-    "real": 0,
+    "real": 3,
     "unchecked": 0,
     "engine_calls": 8,
     "credits": 0,
-    "areas": "3/15"
+    "areas": "8/26"
+  },
+  {
+    "id": "GHSA-588f-fvcv-xhvf",
+    "verdict": "FOUND",
+    "why": "",
+    "matched": "backend/services/notes.go:GetNotesByBookID/public-visibility-in-deleted-mode",
+    "others": [
+      {
+        "fingerprint": "sha256:57464d4454f06a12",
+        "title": "(new hole, kept private)",
+        "label": "real"
+      }
+    ],
+    "wrong": 0,
+    "real": 1,
+    "unchecked": 0,
+    "engine_calls": 8,
+    "credits": 0,
+    "areas": "6/11"
   },
   {
     "id": "GHSA-5g9x-qwh5-33x4",
@@ -102,58 +112,128 @@
     "wrong": 0,
     "real": 1,
     "unchecked": 0,
-    "engine_calls": 7,
+    "engine_calls": 6,
     "credits": 0,
-    "areas": "4/9"
+    "areas": "6/10"
   },
   {
     "id": "GHSA-5p54-whvp-x327",
-    "verdict": "MISSED",
-    "why": "read the file for this kind of flaw but did not see it",
-    "matched": null,
-    "others": [],
+    "verdict": "FOUND",
+    "why": "",
+    "matched": "pusher/http.go:Handler/missing-freshness-and-replay-check",
+    "others": [
+      {
+        "fingerprint": "sha256:19322fc91a6d4e4e",
+        "title": "(new hole, kept private)",
+        "label": "real"
+      }
+    ],
     "wrong": 0,
-    "real": 0,
+    "real": 1,
     "unchecked": 0,
-    "engine_calls": 5,
+    "engine_calls": 7,
     "credits": 0,
-    "areas": "4/53"
+    "areas": "6/48"
   },
   {
     "id": "GHSA-62gx-5q78-wrvx",
-    "verdict": "MISSED",
-    "why": "read the file only for other kinds of flaw; the check for this kind was queued, not run (budget)",
+    "verdict": "NEAR",
+    "why": "saw it and dismissed it",
     "matched": null,
     "others": [],
     "wrong": 0,
     "real": 0,
     "unchecked": 0,
-    "engine_calls": 6,
+    "engine_calls": 7,
     "credits": 0,
-    "areas": "2/14"
+    "areas": "5/12"
   },
   {
     "id": "GHSA-89vx-jh4q-vg3w",
-    "verdict": "MISSED",
-    "why": "never read the file",
-    "matched": null,
-    "others": [],
+    "verdict": "FOUND",
+    "why": "",
+    "matched": "src/services/permission/valve/rules-map.ts:getRulesForMessage/unmapped-batch-record-write",
+    "others": [
+      {
+        "fingerprint": "sha256:90bed8f3845c3232",
+        "title": "(new hole, kept private)",
+        "label": "real"
+      },
+      {
+        "fingerprint": "sha256:e7d3e72238589d0e",
+        "title": "(new hole, kept private)",
+        "label": "real"
+      },
+      {
+        "fingerprint": "sha256:ed8eabd850ba2166",
+        "title": "(new hole, kept private)",
+        "label": "real"
+      }
+    ],
     "wrong": 0,
-    "real": 0,
+    "real": 3,
     "unchecked": 0,
-    "engine_calls": 5,
+    "engine_calls": 8,
     "credits": 0,
-    "areas": "4/35"
+    "areas": "7/32"
   },
   {
     "id": "GHSA-8cfq-jgf7-8m27",
     "verdict": "FOUND",
     "why": "",
-    "matched": "router/oauth2/authorization_endpoint.go:AuthorizationEndpointHandler/silent-consent-checks-raw-scopes",
+    "matched": "router/oauth2/authorization_endpoint.go:AuthorizationEndpointHandler/silent-consent-checks-requested-scopes",
     "others": [
       {
-        "fingerprint": "router/middlewares/access_logging.go:AccessLogging/unredacted-oauth-callback-query",
-        "title": "Access logs record the sign-in callback's authorization code and state values.",
+        "fingerprint": "sha256:efd5eafe31a4fc88",
+        "title": "(new hole, kept private)",
+        "label": "real"
+      },
+      {
+        "fingerprint": "sha256:81d1d7e951ac39ec",
+        "title": "(new hole, kept private)",
+        "label": "real"
+      }
+    ],
+    "wrong": 0,
+    "real": 2,
+    "unchecked": 0,
+    "engine_calls": 8,
+    "credits": 0,
+    "areas": "6/32"
+  },
+  {
+    "id": "GHSA-9x83-rrg6-9pr9",
+    "verdict": "NEAR",
+    "why": "spotted it, then ran out of budget before checking it",
+    "matched": null,
+    "others": [
+      {
+        "fingerprint": "cli/src/utils.ts:getRemoteConfig/project-config-controls-credential-origin",
+        "title": "Project configuration can send a saved account credential to another service.",
+        "label": "wrong"
+      },
+      {
+        "fingerprint": "sha256:2d532401f9f69b0c",
+        "title": "(new hole, kept private)",
+        "label": "real"
+      }
+    ],
+    "wrong": 1,
+    "real": 1,
+    "unchecked": 0,
+    "engine_calls": 8,
+    "credits": 0,
+    "areas": "10/87"
+  },
+  {
+    "id": "GHSA-ch3g-4xvr-674q",
+    "verdict": "NEAR",
+    "why": "saw it and dismissed it",
+    "matched": null,
+    "others": [
+      {
+        "fingerprint": "web/users/views.py:SettingsDeleteAccountView/ownership-check-only-on-confirmation",
+        "title": "A sole organization owner can delete their account and leave the organization with no owner.",
         "label": "wrong"
       }
     ],
@@ -162,48 +242,59 @@
     "unchecked": 0,
     "engine_calls": 8,
     "credits": 0,
-    "areas": "2/27"
+    "areas": "5/19"
   },
   {
-    "id": "GHSA-9x83-rrg6-9pr9",
-    "verdict": "MISSED",
-    "why": "read the file for this kind of flaw but did not see it",
-    "matched": null,
+    "id": "GHSA-f46q-3v67-fmm4",
+    "verdict": "FOUND",
+    "why": "",
+    "matched": "src/coordinator/handlers/statistics_v4.go:V4StatisticsQuery/unrestricted-statistics-sql",
     "others": [
       {
-        "fingerprint": "cli/src/utils.ts:getLocalConfig/project-config-selects-credential-recipient",
-        "title": "A project's config file can make the CLI send the operator's saved Capgo key to a server the project chooses.",
+        "fingerprint": "sha256:7a3de1e6e9666876",
+        "title": "(new hole, kept private)",
+        "label": "real"
+      },
+      {
+        "fingerprint": "sha256:1c7249dc5a367850",
+        "title": "(new hole, kept private)",
+        "label": "real"
+      }
+    ],
+    "wrong": 0,
+    "real": 2,
+    "unchecked": 0,
+    "engine_calls": 8,
+    "credits": 0,
+    "areas": "8/69"
+  },
+  {
+    "id": "GHSA-jq3q-62jc-fqq9",
+    "verdict": "FOUND",
+    "why": "",
+    "matched": "src/utils/getGitHandler.ts:getBranchDiff/shell-from-repository-metadata",
+    "others": [
+      {
+        "fingerprint": "src/tools/toolRegistry.ts:pr-comment-handlers/unbound-publication-scope",
+        "title": "Text in a pull request's changed files can steer the review tool into posting comments on other pull requests under the server's GitHub identity.",
         "label": "wrong"
       }
     ],
     "wrong": 1,
     "real": 0,
     "unchecked": 0,
-    "engine_calls": 7,
+    "engine_calls": 8,
     "credits": 0,
-    "areas": "3/87"
+    "areas": "5/13"
   },
   {
-    "id": "GHSA-ch3g-4xvr-674q",
-    "verdict": "MISSED",
-    "why": "read the file only for other kinds of flaw; never queued it for this kind",
-    "matched": null,
-    "others": [],
-    "wrong": 0,
-    "real": 0,
-    "unchecked": 0,
-    "engine_calls": 6,
-    "credits": 0,
-    "areas": "3/19"
-  },
-  {
-    "id": "GHSA-f46q-3v67-fmm4",
+    "id": "GHSA-pfvc-3p5h-x7h6",
     "verdict": "NEAR",
     "why": "spotted it, then ran out of budget before checking it",
     "matched": null,
     "others": [
       {
-        "fingerprint": "sha256:2ff9b6c6047c7a53",
+        "fingerprint": "sha256:5c647a4c4c238226",
         "title": "(new hole, kept private)",
         "label": "real"
       }
@@ -213,78 +304,36 @@
     "unchecked": 0,
     "engine_calls": 8,
     "credits": 0,
-    "areas": "4/73"
-  },
-  {
-    "id": "GHSA-jq3q-62jc-fqq9",
-    "verdict": "FOUND",
-    "why": "",
-    "matched": "src/utils/getGitHandler.ts:git-launch/shell-from-repository-data",
-    "others": [
-      {
-        "fingerprint": "src/utils/getGitHandler.ts:getCurrentBranch/provider-credentials-in-child-environment",
-        "title": "Local repository commands and the GitHub CLI receive the server's service keys in their environment even though they do not need them.",
-        "label": "wrong"
-      }
-    ],
-    "wrong": 1,
-    "real": 0,
-    "unchecked": 0,
-    "engine_calls": 8,
-    "credits": 0,
-    "areas": "4/11"
-  },
-  {
-    "id": "GHSA-pfvc-3p5h-x7h6",
-    "verdict": "MISSED",
-    "why": "never read the file",
-    "matched": null,
-    "others": [
-      {
-        "fingerprint": "config/config.go:EnsurePterodactylUser/username-interpreted-as-process-options",
-        "title": "A holder of the node token can make host account creation receive extra options taken from a configuration update.",
-        "label": "wrong"
-      },
-      {
-        "fingerprint": "sha256:adf4ccfd77ad07bc",
-        "title": "(new hole, kept private)",
-        "label": "real"
-      },
-      {
-        "fingerprint": "sha256:bc51fe5cdc682b11",
-        "title": "(new hole, kept private)",
-        "label": "real"
-      }
-    ],
-    "wrong": 1,
-    "real": 2,
-    "unchecked": 0,
-    "engine_calls": 8,
-    "credits": 0,
-    "areas": "4/29"
+    "areas": "9/30"
   },
   {
     "id": "GHSA-q4gh-4ffp-5cg8",
     "verdict": "FOUND",
     "why": "",
-    "matched": "js/node_helper.js:setSocketIO/client-controlled-secret-resolution",
-    "others": [],
+    "matched": "defaultmodules/weather/node_helper.js:initWeatherProvider/client-config-credential-routing",
+    "others": [
+      {
+        "fingerprint": "sha256:8852ac28562443c1",
+        "title": "(new hole, kept private)",
+        "label": "real"
+      }
+    ],
     "wrong": 0,
-    "real": 0,
+    "real": 1,
     "unchecked": 0,
     "engine_calls": 8,
     "credits": 0,
-    "areas": "3/26"
+    "areas": "10/28"
   },
   {
     "id": "GHSA-rrvg-cxh4-qhrv",
-    "verdict": "MISSED",
-    "why": "read the file for this kind of flaw but did not see it",
+    "verdict": "NEAR",
+    "why": "spotted it, then ran out of budget before checking it",
     "matched": null,
     "others": [
       {
-        "fingerprint": "oauthenticator/globus.py:pre_spawn_start/unfiltered-token-response-export",
-        "title": "The notebook process receives login credentials that the operator meant to keep on the Hub.",
+        "fingerprint": "oauthenticator/globus.py:user_info_to_username/discarded-identity-namespace",
+        "title": "A sign-in from a different Globus identity can take over an existing local account that shares the same name before the provider's domain.",
         "label": "wrong"
       }
     ],
@@ -293,7 +342,7 @@
     "unchecked": 0,
     "engine_calls": 8,
     "credits": 0,
-    "areas": "3/14"
+    "areas": "8/14"
   },
   {
     "id": "GHSA-w89x-c962-c44g",
@@ -302,58 +351,58 @@
     "matched": null,
     "others": [
       {
-        "fingerprint": "middleware/common.go:Logging/reset-secret-in-request-query",
-        "title": "Opening a password reset link writes the live reset secret into the server's request log.",
+        "fingerprint": "sha256:46e86604aaff3044",
+        "title": "(new hole, kept private)",
+        "label": "real"
+      },
+      {
+        "fingerprint": "middleware/wopi.go:ViewerSessionValidation/historical-session-write-authorization-missing",
+        "title": "A view-only viewer credential for an older file version can overwrite the owner's current file.",
         "label": "wrong"
       },
       {
-        "fingerprint": "middleware/common.go:Logging/unredacted-incoming-credential-urls",
-        "title": "Request logs record live viewer access tokens and upload callback keys in plain text.",
+        "fingerprint": "service/node/rpc.go:OauthCredentialService.Get/unscoped-storage-credential",
+        "title": "A registered worker can receive OneDrive access tokens for storage policies it is not assigned to.",
         "label": "wrong"
       }
     ],
     "wrong": 2,
-    "real": 0,
+    "real": 1,
     "unchecked": 0,
     "engine_calls": 8,
     "credits": 0,
-    "areas": "3/30"
+    "areas": "4/31"
   },
   {
     "id": "GHSA-wchh-mrv2-5h4q",
-    "verdict": "MISSED",
-    "why": "read the file for this kind of flaw but did not see it",
-    "matched": null,
+    "verdict": "FOUND",
+    "why": "",
+    "matched": "cmd/webserver.go:startWebServer/unrestricted-proxy-trust",
     "others": [
       {
-        "fingerprint": "pkg/api/oauth2_authentications.go:OAuth2AuthenticationApi/secret-bearing-state-diagnostics",
-        "title": "Sign-in error logs record secret proof values from pending sign-in attempts.",
-        "label": "wrong"
-      },
-      {
-        "fingerprint": "pkg/middlewares/request_log.go:RequestLog/unredacted-query-credentials",
-        "title": "Request logs record credentials passed in URL query strings, including account-linking session tokens and password-reset and email-verification tokens.",
-        "label": "wrong"
+        "fingerprint": "sha256:370266587dc485a6",
+        "title": "(new hole, kept private)",
+        "label": "real"
       }
     ],
-    "wrong": 2,
-    "real": 0,
+    "wrong": 0,
+    "real": 1,
     "unchecked": 0,
-    "engine_calls": 8,
+    "engine_calls": 7,
     "credits": 0,
-    "areas": "4/38"
+    "areas": "5/36"
   },
   {
     "id": "GHSA-wv4w-6qv2-qqfg",
-    "verdict": "NEAR",
-    "why": "spotted it, left it as a lead that needs a fact",
+    "verdict": "MISSED",
+    "why": "read the file for this kind of flaw but did not see it",
     "matched": null,
     "others": [],
     "wrong": 0,
     "real": 0,
     "unchecked": 0,
-    "engine_calls": 4,
+    "engine_calls": 3,
     "credits": 0,
-    "areas": "2/4"
+    "areas": "2/3"
   }
 ]
