@@ -1,0 +1,455 @@
+[
+  {
+    "id": "GHSA-2xhg-73j7-rrgx",
+    "cve": "CVE-2026-53957",
+    "split": "seen",
+    "class": "agent-tool",
+    "repo": "contentful/contentful-mcp-server",
+    "language": "TypeScript",
+    "advisory_url": "https://github.com/advisories/GHSA-2xhg-73j7-rrgx",
+    "severity": "high",
+    "advisory_title": "Contentful MCP Server: export_space/import_space tools pass LLM-controlled `host`/`proxy` args to CMA client, redirecting server PAT to attacker-controlled endpoint",
+    "vulnerable_commit": "6e0038494a09c435f6a0a9a76fde2dc077f18b18",
+    "fix_commit": "fa7477ee48515f4248bc91a025eab0ca83423fe0",
+    "fix_url": "https://github.com/contentful/contentful-mcp-server/commit/fa7477ee48515f4248bc91a025eab0ca83423fe0",
+    "hole_file": "packages/mcp-tools/src/tools/jobs/space-to-space-migration/exportSpace.ts",
+    "hole_line": 134,
+    "also": [
+      {
+        "file": "packages/mcp-tools/src/tools/jobs/space-to-space-migration/exportSpace.ts",
+        "line": 99
+      },
+      {
+        "file": "packages/mcp-tools/src/tools/jobs/space-to-space-migration/importSpace.ts",
+        "line": 69
+      }
+    ],
+    "hole": "The export and import tools take host, proxy and headers from the model's tool call and send them along with the management token, so a prompt-injected call can ship the token to an attacker's server."
+  },
+  {
+    "id": "GHSA-3fcr-jvgp-7f58",
+    "cve": "CVE-2026-54635",
+    "split": "held-out",
+    "class": "webhook-header",
+    "repo": "nessshon/tonapi",
+    "language": "Python",
+    "advisory_url": "https://github.com/advisories/GHSA-3fcr-jvgp-7f58",
+    "severity": "high",
+    "advisory_title": "pytonapi has a Webhook Custom Path Authentication Bypass",
+    "vulnerable_commit": "e46c4a4b907cbb1f290ef73af299b5020ec9de71",
+    "fix_commit": "854222b7ee68d3fb7b4d6d899d200f388483bd86",
+    "fix_url": "https://github.com/nessshon/tonapi/commit/854222b7ee68d3fb7b4d6d899d200f388483bd86",
+    "hole_file": "pytonapi/webhook/dispatcher.py",
+    "hole_line": 287,
+    "also": [
+      {
+        "file": "pytonapi/webhook/dispatcher.py",
+        "line": 112
+      }
+    ],
+    "hole": "Webhook tokens are stored only under the default suffix path, so handlers on a custom path have no expected token and the webhook auth check is skipped."
+  },
+  {
+    "id": "GHSA-45gf-fjxp-cjpq",
+    "cve": "CVE-2026-54549",
+    "split": "seen",
+    "class": "ssrf",
+    "repo": "pipeboard-co/meta-ads-mcp",
+    "language": "Python",
+    "advisory_url": "https://github.com/advisories/GHSA-45gf-fjxp-cjpq",
+    "severity": "high",
+    "advisory_title": "meta-ads-mcp: Server-Side Request Forgery (SSRF) in `upload_ad_image` via Unrestricted `image_url` Fetch",
+    "vulnerable_commit": "95e852793b7ff8604a8132e85d5facd08c91a36e",
+    "fix_commit": "7d9926336bbdac6285a988d043c4ccfe126c94c5",
+    "fix_url": "https://github.com/pipeboard-co/meta-ads-mcp/commit/7d9926336bbdac6285a988d043c4ccfe126c94c5",
+    "hole_file": "meta_ads_mcp/core/utils.py",
+    "hole_line": 168,
+    "also": [
+      {
+        "file": "meta_ads_mcp/core/utils.py",
+        "line": 215
+      }
+    ],
+    "hole": "The upload_ad_image tool fetches any caller-given image URL from the server, following redirects, with no block on internal addresses (server-side request forgery)."
+  },
+  {
+    "id": "GHSA-4g5x-hcwm-82jw",
+    "cve": "CVE-2026-53553",
+    "split": "held-out",
+    "class": "traversal",
+    "repo": "zhenorzz/goploy",
+    "language": "Go",
+    "advisory_url": "https://github.com/advisories/GHSA-4g5x-hcwm-82jw",
+    "severity": "high",
+    "advisory_title": "Goploy: Arbitrary File Read via Path Traversal in /deploy/fileDiff allows Remote Server Compromise",
+    "vulnerable_commit": "5438ef05777e1d3b1e1ed2fa0892a39b4cb3161a",
+    "fix_commit": "d51aa15ebc0a474d9d71d6c453a0fe798dd5e007",
+    "fix_url": "https://github.com/zhenorzz/goploy/commit/d51aa15ebc0a474d9d71d6c453a0fe798dd5e007",
+    "hole_file": "cmd/server/api/deploy/handler.go",
+    "hole_line": 405,
+    "also": [
+      {
+        "file": "cmd/server/api/deploy/handler.go",
+        "line": 306
+      }
+    ],
+    "hole": "The file diff and compare endpoints join a caller-supplied filePath to the project folder with no traversal check, so ../ reads any file on the server."
+  },
+  {
+    "id": "GHSA-588f-fvcv-xhvf",
+    "cve": "CVE-2026-50554",
+    "split": "seen",
+    "class": "access",
+    "repo": "enchant97/note-mark",
+    "language": "Go",
+    "advisory_url": "https://github.com/advisories/GHSA-588f-fvcv-xhvf",
+    "severity": "medium",
+    "advisory_title": "Note Mark: Unauthenticated disclosure of soft-deleted note metadata via deleted=true on public books",
+    "vulnerable_commit": "67b7de04308a858ef27ceff87b514067b6d667e5",
+    "fix_commit": "9c9b72740f22a06131a8f64b53bb08e3b05b81a6",
+    "fix_url": "https://github.com/enchant97/note-mark/commit/9c9b72740f22a06131a8f64b53bb08e3b05b81a6",
+    "hole_file": "backend/services/notes.go",
+    "hole_line": 82,
+    "also": [
+      {
+        "file": "backend/services/notes.go",
+        "line": 75
+      }
+    ],
+    "hole": "Listing a book's deleted notes is allowed whenever the book is public, so soft-deleted notes in public books leak to anyone, signed out included."
+  },
+  {
+    "id": "GHSA-5g9x-qwh5-33x4",
+    "cve": "CVE-2026-69138",
+    "split": "held-out",
+    "class": "access",
+    "repo": "django-cms/djangocms-versioning",
+    "language": "Python",
+    "advisory_url": "https://github.com/advisories/GHSA-5g9x-qwh5-33x4",
+    "severity": "medium",
+    "advisory_title": "djangocms-versioning: Authorization Bypass Through User-Controlled Key and Missing Authorization",
+    "vulnerable_commit": "986e9f30c46d55ff784ab7c5d175e24e23e510bb",
+    "fix_commit": "d8c570daa5f7805e8be51f15545fe77b24c44daf",
+    "fix_url": "https://github.com/django-cms/djangocms-versioning/commit/d8c570daa5f7805e8be51f15545fe77b24c44daf",
+    "hole_file": "djangocms_versioning/models.py",
+    "hole_line": 536,
+    "also": [
+      {
+        "file": "djangocms_versioning/models.py",
+        "line": 542
+      }
+    ],
+    "hole": "Discard and edit-redirect on a version check its state and lock but not the user's change permission, so a user without change rights can discard or open someone's draft."
+  },
+  {
+    "id": "GHSA-5p54-whvp-x327",
+    "cve": "CVE-2026-63405",
+    "split": "seen",
+    "class": "webhook-header",
+    "repo": "anycable/anycable",
+    "language": "Go",
+    "advisory_url": "https://github.com/advisories/GHSA-5p54-whvp-x327",
+    "severity": "medium",
+    "advisory_title": "AnyCable: Pusher REST API Does Not Verify Request Body MD5 Enabling Signed-Request Replay with Arbitrary Body",
+    "vulnerable_commit": "427d984fbc147fd95c5773c5f8e415ee1f8778df",
+    "fix_commit": "d2cbadec792f038f4695c84a65c0d957b0fde72c",
+    "fix_url": "https://github.com/anycable/anycable/commit/d2cbadec792f038f4695c84a65c0d957b0fde72c",
+    "hole_file": "pusher/http.go",
+    "hole_line": 169,
+    "also": [
+      {
+        "file": "pusher/http.go",
+        "line": 161
+      }
+    ],
+    "hole": "The Pusher REST API signs the body_md5 query value but never checks it against the real body (nor the timestamp), so a captured signed request can be replayed with any body."
+  },
+  {
+    "id": "GHSA-62gx-5q78-wrvx",
+    "cve": null,
+    "split": "held-out",
+    "class": "traversal",
+    "repo": "coddingtonbear/obsidian-local-rest-api",
+    "language": "TypeScript",
+    "advisory_url": "https://github.com/advisories/GHSA-62gx-5q78-wrvx",
+    "severity": "high",
+    "advisory_title": "obsidian-local-rest-api: Authenticated path traversal via URL-encoded %2F in /vault/{path} — arbitrary host file read/write/delete",
+    "vulnerable_commit": "7c5f60152414dac4f40d94131d2217aabe19a6d0",
+    "fix_commit": "fdc97f9e652e0d38cb43911d31f827a12b248fc8",
+    "fix_url": "https://github.com/coddingtonbear/obsidian-local-rest-api/commit/fdc97f9e652e0d38cb43911d31f827a12b248fc8",
+    "hole_file": "src/requestHandler.ts",
+    "hole_line": 408,
+    "also": [],
+    "hole": "Vault endpoints URL-decode the request path and use it with no traversal check, so an encoded ../ reaches files outside the vault."
+  },
+  {
+    "id": "GHSA-89vx-jh4q-vg3w",
+    "cve": "CVE-2026-63116",
+    "split": "seen",
+    "class": "access",
+    "repo": "deepstreamIO/deepstream.io",
+    "language": "TypeScript",
+    "advisory_url": "https://github.com/advisories/GHSA-89vx-jh4q-vg3w",
+    "severity": "high",
+    "advisory_title": "deepstream: PATCH_MULTI action bypasses Valve permission system allowing unauthorized record writes",
+    "vulnerable_commit": "3abde8de3df91e1b6d18f719d9e38e94bfa314f6",
+    "fix_commit": "1c2adde6581c53ef47e204364bc740bc3c2e2e2a",
+    "fix_url": "https://github.com/deepstreamIO/deepstream.io/commit/1c2adde6581c53ef47e204364bc740bc3c2e2e2a",
+    "hole_file": "src/services/permission/valve/rules-map.ts",
+    "hole_line": 50,
+    "also": [],
+    "hole": "The permission rules map has no entry for PATCH_MULTI, so multi-path record patches skip the write permission rule."
+  },
+  {
+    "id": "GHSA-8cfq-jgf7-8m27",
+    "cve": "CVE-2026-63198",
+    "split": "held-out",
+    "class": "signin",
+    "repo": "traPtitech/traQ",
+    "language": "Go",
+    "advisory_url": "https://github.com/advisories/GHSA-8cfq-jgf7-8m27",
+    "severity": "high",
+    "advisory_title": "traQ: Privilege escalation by OAuth prompt=none request",
+    "vulnerable_commit": "16d735491331ea8ce21cedfc1bf972b9a28f18ff",
+    "fix_commit": "5510fe8aa9bb15fc4755c78792381dbb03d576c3",
+    "fix_url": "https://github.com/traPtitech/traQ/commit/5510fe8aa9bb15fc4755c78792381dbb03d576c3",
+    "hole_file": "router/oauth2/authorization_endpoint.go",
+    "hole_line": 209,
+    "also": [],
+    "hole": "Silent OAuth authorization (prompt=none) with no scope checks prior consent against the empty requested set, then issues every scope the client has."
+  },
+  {
+    "id": "GHSA-9x83-rrg6-9pr9",
+    "cve": "CVE-2026-100623",
+    "split": "seen",
+    "class": "rls",
+    "repo": "Cap-go/capgo.app",
+    "language": "SQL (Supabase RLS)",
+    "advisory_url": "https://github.com/advisories/GHSA-9x83-rrg6-9pr9",
+    "severity": "high",
+    "advisory_title": "Capgo (capgo.app) exposes the legacy membership table public.org_users directly through Supabase ...",
+    "vulnerable_commit": "1fb35ce1b70cb45be462c604f2a35516b95a1354",
+    "fix_commit": "c85c4e081033249504d598d0d441f29ce72c2b20",
+    "fix_url": "https://github.com/Cap-go/capgo.app/commit/c85c4e081033249504d598d0d441f29ce72c2b20",
+    "fix_note": "The advisory names no patch. The fix commit listed is the one that closed the direct insert path (requires a pending invite); it is inferred from the code, not linked by the advisory.",
+    "hole_file": "supabase/migrations/20260708000000_prod_baseline.sql",
+    "hole_line": 28759,
+    "also": [
+      {
+        "file": "supabase/migrations/20260708000000_prod_baseline.sql",
+        "line": 28773
+      },
+      {
+        "file": "supabase/schemas/prod.sql",
+        "line": 24071
+      }
+    ],
+    "hole": "The org_users insert and update row-level security policies only require org-admin rights, so an admin can write an active membership for any existing user straight through the database API, skipping the invite and role checks."
+  },
+  {
+    "id": "GHSA-ch3g-4xvr-674q",
+    "cve": "CVE-2026-62282",
+    "split": "held-out",
+    "class": "ssrf",
+    "repo": "opencve/opencve",
+    "language": "Python",
+    "advisory_url": "https://github.com/advisories/GHSA-ch3g-4xvr-674q",
+    "severity": "medium",
+    "advisory_title": "OpenCVE: Server-Side Request Forgery (SSRF) in notifications",
+    "vulnerable_commit": "928bbadbb1672051bcfc2a6289a9e6a8f029c106",
+    "fix_commit": "0af7f894debc95c67fa53e7ba5a6cdecb10c34f0",
+    "fix_url": "https://github.com/opencve/opencve/commit/0af7f894debc95c67fa53e7ba5a6cdecb10c34f0",
+    "hole_file": "web/projects/notifications.py",
+    "hole_line": 74,
+    "also": [
+      {
+        "file": "web/projects/notifications.py",
+        "line": 60
+      }
+    ],
+    "hole": "User-set webhook and Slack notification URLs are fetched by the server with no block on private or internal addresses (server-side request forgery)."
+  },
+  {
+    "id": "GHSA-f46q-3v67-fmm4",
+    "cve": "CVE-2026-62251",
+    "split": "seen",
+    "class": "injection",
+    "repo": "sipcapture/homer",
+    "language": "Go",
+    "advisory_url": "https://github.com/advisories/GHSA-f46q-3v67-fmm4",
+    "severity": "high",
+    "advisory_title": "Homer: Authenticated SQL Injection via Unvalidated rawquery Field in /api/v4/statistics/query",
+    "vulnerable_commit": "385ba27af7d78ac6ef5d8d096ec7fcfdb59acfa6",
+    "fix_commit": "a7d027dc684b210b62285c49f555ac88d64f35f0",
+    "fix_url": "https://github.com/sipcapture/homer/commit/a7d027dc684b210b62285c49f555ac88d64f35f0",
+    "hole_file": "src/coordinator/handlers/statistics_v4.go",
+    "hole_line": 90,
+    "also": [],
+    "hole": "The statistics endpoint runs a caller-supplied raw SQL string straight against the database."
+  },
+  {
+    "id": "GHSA-jq3q-62jc-fqq9",
+    "cve": "CVE-2026-68934",
+    "split": "held-out",
+    "class": "injection",
+    "repo": "Orcus2021/code-review-mcp-server",
+    "language": "TypeScript",
+    "advisory_url": "https://github.com/advisories/GHSA-jq3q-62jc-fqq9",
+    "severity": "high",
+    "advisory_title": "code-review-mcp-server: Command injection via unsanitized folderPath/baseBranch parameters",
+    "vulnerable_commit": "8141a8f11dbfc5e7bc5bebe7f8290c70c341ad81",
+    "fix_commit": "d11642322b607556affaaa3fd631d4f8942c05d8",
+    "fix_url": "https://github.com/Orcus2021/code-review-mcp-server/commit/d11642322b607556affaaa3fd631d4f8942c05d8",
+    "hole_file": "src/utils/getGitHandler.ts",
+    "hole_line": 17,
+    "also": [
+      {
+        "file": "src/utils/githubProvider/cliProvider.ts",
+        "line": 18
+      }
+    ],
+    "hole": "The code-review tool builds git and gh shell commands by pasting folderPath and branch names into execSync strings, so a crafted value runs commands."
+  },
+  {
+    "id": "GHSA-pfvc-3p5h-x7h6",
+    "cve": "CVE-2026-52855",
+    "split": "seen",
+    "class": "secrets",
+    "repo": "pterodactyl/wings",
+    "language": "Go",
+    "advisory_url": "https://github.com/advisories/GHSA-pfvc-3p5h-x7h6",
+    "severity": "critical",
+    "advisory_title": "Wings exposes node configuration secrets through egg configuration-file templating",
+    "vulnerable_commit": "c2de795725e4178dc8c3eb359466dcde8ae3e681",
+    "fix_commit": "eb65e27ae077a63e38518c490768486af1cd86a9",
+    "fix_url": "https://github.com/pterodactyl/wings/commit/eb65e27ae077a63e38518c490768486af1cd86a9",
+    "hole_file": "parser/parser.go",
+    "hole_line": 197,
+    "also": [
+      {
+        "file": "parser/helpers.go",
+        "line": 252
+      }
+    ],
+    "hole": "Server config-file templating is given the whole node configuration, so a server owner can template the node's own secrets (tokens, keys) into their files and read them."
+  },
+  {
+    "id": "GHSA-q4gh-4ffp-5cg8",
+    "cve": "CVE-2026-63640",
+    "split": "held-out",
+    "class": "secrets",
+    "repo": "MagicMirrorOrg/MagicMirror",
+    "language": "JavaScript",
+    "advisory_url": "https://github.com/advisories/GHSA-q4gh-4ffp-5cg8",
+    "severity": "medium",
+    "advisory_title": "MagicMirror socket payload secret placeholder expansion can disclose SECRET_* environment variables",
+    "vulnerable_commit": "6ab8104dda9eedb17ed4d3e0d8e5e03df501858b",
+    "fix_commit": "ca7b752025962441196e148f8c1bc04b90117979",
+    "fix_url": "https://github.com/MagicMirrorOrg/MagicMirror/commit/ca7b752025962441196e148f8c1bc04b90117979",
+    "hole_file": "js/node_helper.js",
+    "hole_line": 93,
+    "also": [
+      {
+        "file": "js/server_functions.js",
+        "line": 24
+      }
+    ],
+    "hole": "Socket messages from the browser have **SECRET_*** placeholders replaced with server environment values before the module sees them, so any client can get any SECRET_ variable echoed back."
+  },
+  {
+    "id": "GHSA-rrvg-cxh4-qhrv",
+    "cve": "CVE-2026-33175",
+    "split": "seen",
+    "class": "signin",
+    "repo": "jupyterhub/oauthenticator",
+    "language": "Python",
+    "advisory_url": "https://github.com/advisories/GHSA-rrvg-cxh4-qhrv",
+    "severity": "high",
+    "advisory_title": "Auth0OAuthenticator has an Authentication Bypass via Unverified Email Claims",
+    "vulnerable_commit": "26d6bae53c7e106f4cb3e1d70a363a62840e1368",
+    "fix_commit": "f0c7002dc36e41efae0f674033cf7888a21d96f9",
+    "fix_url": "https://github.com/jupyterhub/oauthenticator/commit/f0c7002dc36e41efae0f674033cf7888a21d96f9",
+    "hole_file": "oauthenticator/auth0.py",
+    "hole_line": 22,
+    "also": [
+      {
+        "file": "oauthenticator/auth0.py",
+        "line": 13
+      }
+    ],
+    "hole": "Auth0 sign-in uses the email claim as the username and never checks email_verified, so someone with an unverified email can sign in as the existing user with that email."
+  },
+  {
+    "id": "GHSA-w89x-c962-c44g",
+    "cve": "CVE-2026-77637",
+    "split": "held-out",
+    "class": "access",
+    "repo": "cloudreve/cloudreve",
+    "language": "Go",
+    "advisory_url": "https://github.com/advisories/GHSA-w89x-c962-c44g",
+    "severity": "low",
+    "advisory_title": "Cloudreve: Privilege Scope Bypass: State-Mutating Admin Operations Accessible via Read-Only OAuth Scope",
+    "vulnerable_commit": "c278c6af39de0ffde7e125481c674931826a3ab9",
+    "fix_commit": "bce08f88e9d8f881e78fd18e7a6598b31922c492",
+    "fix_url": "https://github.com/cloudreve/cloudreve/commit/bce08f88e9d8f881e78fd18e7a6598b31922c492",
+    "hole_file": "routers/router.go",
+    "hole_line": 938,
+    "also": [
+      {
+        "file": "routers/router.go",
+        "line": 930
+      }
+    ],
+    "hole": "Two admin tool routes (send a test mail, fetch WOPI discovery) lack the admin-write scope check their neighbours have, so a read-only admin OAuth token can trigger them."
+  },
+  {
+    "id": "GHSA-wchh-mrv2-5h4q",
+    "cve": "CVE-2026-86041",
+    "split": "seen",
+    "class": "webhook-header",
+    "repo": "mayswind/ezbookkeeping",
+    "language": "Go",
+    "advisory_url": "https://github.com/advisories/GHSA-wchh-mrv2-5h4q",
+    "severity": "medium",
+    "advisory_title": "ezBookkeeping: Source-IP allowlist (MCP & API token) is bypassable via a spoofed `X-Forwarded-For` header",
+    "vulnerable_commit": "92b568b835b9396aaa99755b95ce77a3b283bef7",
+    "fix_commit": "d79a5beb8037e529dc4dc64a6d22bd2d02b2e986",
+    "fix_url": "https://github.com/mayswind/ezbookkeeping/commit/d79a5beb8037e529dc4dc64a6d22bd2d02b2e986",
+    "hole_file": "pkg/middlewares/mcp_server_ip_limit.go",
+    "hole_line": 19,
+    "also": [
+      {
+        "file": "pkg/middlewares/api_token_ip_limit.go",
+        "line": 31
+      },
+      {
+        "file": "cmd/webserver.go",
+        "line": 104
+      }
+    ],
+    "hole": "The MCP and API-token IP allowlists use the framework's client IP, which trusts X-Forwarded-For from any caller, so a caller can set the header and pass the allowlist."
+  },
+  {
+    "id": "GHSA-wv4w-6qv2-qqfg",
+    "cve": "CVE-2025-61783",
+    "split": "held-out",
+    "class": "signin",
+    "repo": "python-social-auth/social-app-django",
+    "language": "Python",
+    "advisory_url": "https://github.com/advisories/GHSA-wv4w-6qv2-qqfg",
+    "severity": "medium",
+    "advisory_title": "Python Social Auth - Django has unsafe account association ",
+    "vulnerable_commit": "cd16cfa589d6a44e06cdc1fb59fd2438f087e423",
+    "fix_commit": "10c80e2ebabeccd4e9c84ad0e16e1db74148ed4c",
+    "fix_url": "https://github.com/python-social-auth/social-app-django/commit/10c80e2ebabeccd4e9c84ad0e16e1db74148ed4c",
+    "hole_file": "social_django/storage.py",
+    "hole_line": 95,
+    "also": [
+      {
+        "file": "social_django/storage.py",
+        "line": 90
+      }
+    ],
+    "hole": "When creating a user fails as a duplicate, the code looks up and returns the existing user with the same fields, binding the new social login to someone else's account."
+  }
+]

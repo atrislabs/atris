@@ -1,0 +1,239 @@
+#!/usr/bin/env node
+'use strict';
+
+// Real-advisory scorecard for the sentinel audit.
+//
+// 20 published security holes from GitHub Security Advisories, each pinned to
+// the commit just before its public fix (atris/sentinel-bench/real-advisories/
+// advisories.json). The audit runs on each vulnerable commit and is scored:
+//   FOUND   a confirmed finding names the hole's file, near the hole's line,
+//           and a person marked it as the same flaw (labels.json)
+//   NEAR    an unchecked lead, rejected finding or hardening note on that spot
+//   MISSED  nothing on that spot
+// Every other confirmed finding is a candidate wrong alarm until labels.json
+// marks it "real" (a new hole) or "wrong".
+//
+//   node scripts/sentinel-real-scorecard.js fetch            clone the vulnerable commits
+//   node scripts/sentinel-real-scorecard.js run [ids...]     run the audit (quick, local engines)
+//   node scripts/sentinel-real-scorecard.js score [--json]   print the table
+//
+// Options: --root <dir> (default /tmp/sentinel-scorecard), --fresh (run: replace
+// an existing run folder), --atris <bin/atris.js> (default: this checkout).
+//
+// The clones are untrusted code. This script never runs, installs, builds or
+// tests anything from them: it only uses git to fetch and check out, and runs
+// the audit from this checkout with the clone as its working folder. It refuses
+// a clone that carries agent settings able to run commands (hooks, MCP servers)
+// because the audit's engines start inside the clone.
+
+const fs = require('fs');
+const path = require('path');
+const { execFileSync, spawnSync } = require('child_process');
+
+const BENCH = path.join(__dirname, '..', 'atris', 'sentinel-bench', 'real-advisories');
+const LINE_WINDOW = 30;
+
+// Settings a clone could use to run commands when the audit's engines (codex,
+// claude) start in it. Present means the item is refused, not run.
+const EXEC_FILES = ['.mcp.json', '.claude/hooks', '.codex/config.toml', '.codex/hooks.json'];
+// Claude settings keys that run a command.
+const CLAUDE_EXEC_KEYS = ['hooks', 'mcpServers', 'enableAllProjectMcpServers', 'enabledMcpjsonServers', 'statusLine', 'apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport', 'otelHeadersHelper', 'fileSuggestion', 'plugins', 'enabledPlugins', 'extraKnownMarketplaces'];
+
+function execConfigs(dir) {
+  const hits = EXEC_FILES.filter((p) => fs.existsSync(path.join(dir, p)));
+  for (const p of ['.claude/settings.json', '.claude/settings.local.json']) {
+    const full = path.join(dir, p);
+    if (!fs.existsSync(full)) continue;
+    let json;
+    try { json = JSON.parse(fs.readFileSync(full, 'utf8')); } catch { hits.push(`${p} (unreadable)`); continue; }
+    const keys = CLAUDE_EXEC_KEYS.filter((k) => json && Object.prototype.hasOwnProperty.call(json, k));
+    if (keys.length) hits.push(`${p} (${keys.join(', ')})`);
+  }
+  return hits;
+}
+
+function parseArgs(argv) {
+  const o = { cmd: argv[0], ids: [], root: '/tmp/sentinel-scorecard', fresh: false, json: false, atris: path.join(__dirname, '..', 'bin', 'atris.js') };
+  for (let i = 1; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '--root') o.root = argv[++i];
+    else if (a === '--atris') o.atris = argv[++i];
+    else if (a === '--fresh') o.fresh = true;
+    else if (a === '--json') o.json = true;
+    else if (a.startsWith('-')) throw new Error(`unknown flag ${a}`);
+    else o.ids.push(a);
+  }
+  o.root = path.resolve(o.root);
+  o.atris = path.resolve(o.atris);
+  return o;
+}
+
+function load() {
+  const list = JSON.parse(fs.readFileSync(path.join(BENCH, 'advisories.json'), 'utf8'));
+  let labels = {};
+  try { labels = JSON.parse(fs.readFileSync(path.join(BENCH, 'labels.json'), 'utf8')); } catch {}
+  return { list, labels };
+}
+
+const repoDir = (o, id) => path.join(o.root, 'repos', id);
+const runDir = (o, id) => path.join(o.root, 'runs', id);
+const inside = (child, parent) => { const r = path.relative(parent, child); return r === '' || (!r.startsWith('..') && !path.isAbsolute(r)); };
+
+function git(cwd, args) {
+  return execFileSync('git', ['-c', 'core.hooksPath=/dev/null', '-c', 'protocol.file.allow=never', '-c', 'core.fsmonitor=false', ...args], {
+    cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GIT_LFS_SKIP_SMUDGE: '1', GIT_TERMINAL_PROMPT: '0' },
+  }).trim();
+}
+
+function fetchOne(o, a) {
+  const dir = repoDir(o, a.id);
+  if (fs.existsSync(dir)) {
+    let head = '';
+    try { head = git(dir, ['rev-parse', 'HEAD']); } catch {}
+    if (head === a.vulnerable_commit) return 'ready';
+    throw new Error(`${dir} exists and is not at ${a.vulnerable_commit}; move it away first`);
+  }
+  fs.mkdirSync(dir, { recursive: true });
+  git(dir, ['init', '-q']);
+  git(dir, ['remote', 'add', 'origin', `https://github.com/${a.repo}.git`]);
+  git(dir, ['fetch', '-q', '--depth', '1', '--no-tags', 'origin', a.vulnerable_commit]);
+  git(dir, ['-c', 'advice.detachedHead=false', 'checkout', '-q', 'FETCH_HEAD']);
+  const head = git(dir, ['rev-parse', 'HEAD']);
+  if (head !== a.vulnerable_commit) throw new Error(`${a.id}: checked out ${head}, wanted ${a.vulnerable_commit}`);
+  return 'fetched';
+}
+
+function refuseReason(o, a) {
+  const dir = repoDir(o, a.id);
+  if (inside(o.atris, path.join(o.root, 'repos'))) return 'the audit program sits inside the clones folder';
+  if (!fs.existsSync(dir)) return 'not fetched';
+  if (inside(runDir(o, a.id), dir)) return 'run folder is inside the clone';
+  const hits = execConfigs(dir);
+  if (hits.length) return `clone carries settings that can run commands: ${hits.join(', ')}`;
+  return null;
+}
+
+function runOne(o, a) {
+  const why = refuseReason(o, a);
+  if (why) return { id: a.id, status: 'refused', why };
+  const out = runDir(o, a.id);
+  if (fs.existsSync(out)) {
+    if (!o.fresh) return { id: a.id, status: 'kept', why: 'run folder exists (use --fresh to replace)' };
+    if (!inside(out, path.join(o.root, 'runs'))) throw new Error(`refusing to remove ${out}`);
+    fs.rmSync(out, { recursive: true, force: true });
+  }
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  const t0 = Date.now();
+  const r = spawnSync(process.execPath, [o.atris, 'security-review', 'audit', '--quick', '--no-upload', '--engine', 'local', '--out', out], {
+    cwd: repoDir(o, a.id), encoding: 'utf8', maxBuffer: 64 << 20, env: { ...process.env, ATRIS_SENTINEL_SCORECARD: '1' },
+  });
+  fs.writeFileSync(`${out}.log`, `${r.stdout || ''}\n${r.stderr || ''}`);
+  return { id: a.id, status: r.status === 0 ? 'ran' : `exit ${r.status}`, seconds: Math.round((Date.now() - t0) / 1000) };
+}
+
+function readJson(p, fallback) { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return fallback; } }
+
+function holeSpots(a) {
+  return [{ file: a.hole_file, line: a.hole_line }, ...(a.also || [])];
+}
+
+function touches(spots, file, line) {
+  return spots.some((s) => s.file === file && (line == null || s.line == null || Math.abs(Number(line) - s.line) <= LINE_WINDOW));
+}
+
+function findingFiles(f) {
+  const out = (f.trace || []).map((t) => ({ file: t.file, line: t.line }));
+  const fp = String(f.fingerprint || '').split(':')[0];
+  if (fp) out.push({ file: fp, line: null });
+  return out;
+}
+
+function scoreOne(o, a, labels) {
+  const dir = runDir(o, a.id);
+  const meta = readJson(path.join(dir, 'run-metadata.json'), null);
+  if (!meta) return { id: a.id, verdict: 'NO RUN', others: [] };
+  const findings = readJson(path.join(dir, 'findings.json'), []);
+  const ledger = readJson(path.join(dir, 'coverage-ledger.json'), []);
+  const lab = labels[a.id] || {};
+  const spots = holeSpots(a);
+  const files = new Set(spots.map((s) => s.file));
+  const hits = findings.filter((f) => findingFiles(f).some((t) => touches(spots, t.file, t.line)));
+
+  let verdict = 'MISSED';
+  let matched = null;
+  const confirmedHits = hits.filter((f) => f.verdict === 'confirmed');
+  const same = confirmedHits.find((f) => (lab.match || {})[f.fingerprint] === 'same');
+  const unlabeled = confirmedHits.find((f) => !(lab.match || {})[f.fingerprint]);
+  if (same) { verdict = 'FOUND'; matched = same; }
+  else if (unlabeled) { verdict = 'FOUND?'; matched = unlabeled; }
+  else if (hits.some((f) => f.verdict !== 'confirmed' || (lab.match || {})[f.fingerprint] === 'near')) verdict = 'NEAR';
+  else if (ledger.some((u) => (u.hardening || []).some((h) => [...files].some((fl) => String(h).includes(path.basename(fl)))))) verdict = 'NEAR';
+
+  // Why a miss: did the audit read the file, and did anything touch the spot.
+  let why = '';
+  if (verdict === 'MISSED' || verdict === 'NEAR') {
+    const read = ledger.filter((u) => ['covered', 'candidate', 'blocked'].includes(u.status) && [...(u.reviewed_paths || []), ...(u.starting_paths || [])].some((p) => files.has(p)));
+    const queued = ledger.filter((u) => [...(u.starting_paths || []), ...(u.hot_lines || []).map((h) => h.file)].some((p) => files.has(p)));
+    const dismissed = hits.filter((f) => f.verdict === 'rejected');
+    if (dismissed.length) why = 'saw it and dismissed it';
+    else if (read.length) why = 'read the file but did not see it';
+    else if (queued.length) why = 'queued the file but never read it (budget)';
+    else why = 'never read the file';
+  }
+
+  const others = findings.filter((f) => f.verdict === 'confirmed' && f !== matched && !(confirmedHits.includes(f) && (lab.match || {})[f.fingerprint] === 'same'))
+    .map((f) => ({ fingerprint: f.fingerprint, title: f.title, label: (lab.others || {})[f.fingerprint] || 'unchecked' }));
+  return {
+    id: a.id, verdict, why, matched: matched && matched.fingerprint,
+    others, wrong: others.filter((x) => x.label === 'wrong').length, real: others.filter((x) => x.label === 'real').length,
+    unchecked: others.filter((x) => x.label === 'unchecked').length,
+    engine_calls: meta.invocations && meta.invocations.used, credits: meta.credits_used || 0,
+    areas: meta.coverage && `${meta.coverage.done}/${meta.coverage.in_scope}`,
+  };
+}
+
+function printTable(rows, list) {
+  const byId = new Map(list.map((a) => [a.id, a]));
+  const pad = (s, n) => String(s).padEnd(n);
+  for (const half of ['seen', 'held-out']) {
+    const rs = rows.filter((r) => byId.get(r.id).split === half);
+    console.log(`\n  ${half} (${rs.length})`);
+    console.log(`  ${pad('advisory', 21)}${pad('class', 16)}${pad('result', 8)}${pad('wrong', 7)}${pad('new', 5)}${pad('unchk', 7)}${pad('areas', 8)}why`);
+    for (const r of rs) {
+      const a = byId.get(r.id);
+      console.log(`  ${pad(r.id, 21)}${pad(a.class, 16)}${pad(r.verdict, 8)}${pad(r.wrong ?? '-', 7)}${pad(r.real ?? '-', 5)}${pad(r.unchecked ?? '-', 7)}${pad(r.areas || '-', 8)}${r.why || ''}`);
+    }
+    const n = (v) => rs.filter((r) => r.verdict === v).length;
+    const sum = (k) => rs.reduce((t, r) => t + (r[k] || 0), 0);
+    console.log(`  total: found ${n('FOUND')}${n('FOUND?') ? ` (+${n('FOUND?')} unlabeled)` : ''}, near ${n('NEAR')}, missed ${n('MISSED')}, not run ${n('NO RUN')} · wrong alarms ${sum('wrong')}, new real holes ${sum('real')}, unchecked ${sum('unchecked')}`);
+  }
+}
+
+async function main() {
+  const o = parseArgs(process.argv.slice(2));
+  const { list, labels } = load();
+  const pick = o.ids.length ? list.filter((a) => o.ids.includes(a.id)) : list;
+  if (o.cmd === 'fetch') {
+    for (const a of pick) {
+      try { console.log(`  ${a.id}  ${fetchOne(o, a)}`); } catch (e) { console.log(`  ${a.id}  failed: ${e.message.split('\n')[0]}`); }
+    }
+    return 0;
+  }
+  if (o.cmd === 'run') {
+    for (const a of pick) {
+      const r = runOne(o, a);
+      console.log(`  ${a.id}  ${r.status}${r.why ? `: ${r.why}` : ''}${r.seconds ? ` (${r.seconds}s)` : ''}`);
+    }
+    return 0;
+  }
+  if (o.cmd === 'score') {
+    const rows = pick.map((a) => scoreOne(o, a, labels));
+    if (o.json) console.log(JSON.stringify(rows, null, 2));
+    else printTable(rows, list);
+    return 0;
+  }
+  console.log('usage: node scripts/sentinel-real-scorecard.js fetch|run|score [ids...] [--root dir] [--fresh] [--json]');
+  return 2;
+}
+
+main().then((c) => process.exit(c), (e) => { console.error(e.message); process.exit(2); });
