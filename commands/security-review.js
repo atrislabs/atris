@@ -402,7 +402,7 @@ function installHook() {
 }
 
 function parseAuditArgs(argv) {
-  const opts = { profile: 'standard', scope: [], json: false, planOnly: false, budget: null, out: null, hunter: null, verifier: null, timeoutMs: null, engine: null, yes: false, upload: true, scheduled: false };
+  const opts = { profile: 'standard', scope: [], json: false, planOnly: false, budget: null, out: null, hunter: null, verifier: null, timeoutMs: null, engine: null, yes: false, upload: true, scheduled: false, with: [], ref: null, keepClones: false };
   const takes = (i, flag) => {
     if (!argv[i + 1] || argv[i + 1].startsWith('--')) throw new Error(`${flag} needs a value`);
     return argv[i + 1];
@@ -424,6 +424,9 @@ function parseAuditArgs(argv) {
     else if (flag === '--yes' || flag === '-y') opts.yes = true;
     else if (flag === '--no-upload') opts.upload = false;
     else if (flag === '--scheduled') opts.scheduled = true;
+    else if (flag === '--with') opts.with.push(value());
+    else if (flag === '--ref') opts.ref = value();
+    else if (flag === '--keep-clones') opts.keepClones = true;
     else if (arg.startsWith('-')) throw new Error(`unknown flag: ${arg}`);
     else opts.scope.push(arg);
   }
@@ -449,11 +452,25 @@ function renderAuditLanding({ dir, meta, records }) {
   const cov = meta.coverage;
   const sevText = ['critical', 'high', 'medium', 'low', 'informational'].filter((s) => sev[s]).map((s) => `${sev[s]} ${s}`).join(', ');
   const L = ['', `  ◉ sentinel security audit · ${meta.profile}${meta.scope_paths.length ? ` · ${meta.scope_paths.join(', ')}` : ''}`, ''];
+  const parts = Array.isArray(meta.parts) ? meta.parts : [];
+  if (parts.length) {
+    L.push(parts.length > 1 ? `  one system in ${parts.length} parts, reviewed together:` : '  reviewing:');
+    for (const p of parts) {
+      const where = p.source === 'git' ? `${p.url}${p.ref ? ` (${p.ref})` : ''}` : tildePath(p.path);
+      L.push(`    ${p.name.padEnd(14)} ${where}${p.commit ? ` · ${p.commit.slice(0, 7)}` : ''}`);
+    }
+    L.push('');
+  }
   if (meta.incomplete_reason === 'plan_only') {
     L.push(`  plan only: ${cov.in_scope} areas to review, no engines called`);
+    if (parts.length > 1) {
+      const byPart = new Map(parts.map((p) => [p.name, 0]));
+      for (const id of meta.plan.areas_by_part ? Object.keys(meta.plan.areas_by_part) : []) byPart.set(id, meta.plan.areas_by_part[id]);
+      L.push(`  areas per part: ${[...byPart].map(([n, c]) => `${n} ${c}`).join(', ')}`);
+    }
     const { hunters, hunters_needed: needed, units_per_hunter: per, verifyReserve } = meta.plan;
     const sending = Math.min(hunters, needed);
-    L.push(`  a ${meta.profile} run with budget ${meta.budget} sends about ${sending} hunter${sending === 1 ? '' : 's'} (up to ${per} area${per === 1 ? '' : 's'} each) and keeps ${verifyReserve} checks for verifying`);
+    L.push(`  a ${meta.profile} run with budget ${meta.budget}${parts.length > 1 ? ` (one budget shared by all ${parts.length} parts)` : ''} sends about ${sending} hunter${sending === 1 ? '' : 's'} (up to ${per} area${per === 1 ? '' : 's'} each) and keeps ${verifyReserve} checks for verifying`);
     if (hunters < 1) L.push('  this budget is too small to send a hunter; try --budget 8 or more');
     else L.push(needed <= hunters ? '  one run can read every area' : `  about ${Math.ceil(needed / hunters)} runs to read every area`);
   } else {
@@ -743,6 +760,28 @@ function addRunToRecord(root, dir, tell, deps = {}) {
   return res;
 }
 
+// Scope paths in a system review start with a part name (api/src). A path
+// without one belongs to the current folder's part, when it is one.
+function systemScope(places, system, cwd) {
+  const names = new Set(system.parts.map((p) => p.name));
+  const home = places.places[0] && places.places[0].home ? system.parts[0].name : null;
+  return places.scope.map((word) => {
+    const clean = String(word).replace(/\\/g, '/').replace(/^\.\/+/, '');
+    if (names.has(clean.split('/')[0])) return clean;
+    if (!home) throw new Error(`start ${word} with the name of its part (${[...names].join(', ')}), like ${[...names][0]}/src`);
+    const rel = path.relative(cwd, path.resolve(cwd, word)).split(path.sep).join('/');
+    if (!rel || rel.startsWith('..')) throw new Error(`${word} is not inside this folder`);
+    return `${home}/${rel}`;
+  });
+}
+
+// The review folder always goes. Clones go too unless --keep-clones.
+function finishSystem(system, tell) {
+  let kept = [];
+  try { ({ kept } = system.cleanup()); } catch (e) { tell(`  warning: could not remove the temporary review copy: ${e.message}`); }
+  for (const dir of kept) tell(`  kept the clone at ${tildePath(dir)}. delete it when you are done`);
+}
+
 async function auditCommand(argv, deps = {}) {
   if (argv[0] === 'help' || argv.includes('-h') || argv.includes('--help')) return printAuditHelp();
   const audit = require('../lib/security-audit');
@@ -770,6 +809,12 @@ async function auditCommand(argv, deps = {}) {
   if (argv[0] === 'schedule') return auditScheduleCommand(argv.slice(1), deps);
   let opts;
   try { opts = parseAuditArgs(argv); } catch (e) { console.error(`security-review audit: ${e.message}`); return 2; }
+  let places;
+  try {
+    places = require('../lib/sentinel-places').resolvePlaces(root, opts.scope, opts.with);
+    if ((opts.ref || opts.keepClones) && !places.places.some((p) => p.kind === 'url')) throw new Error(`${opts.ref ? '--ref' : '--keep-clones'} only applies to a git URL place`);
+    if (places.multi && opts.scheduled) throw new Error('a timed review covers one folder; run reviews of several places by hand');
+  } catch (e) { console.error(`security-review audit: ${e.message}`); return 2; }
   const cloud = deps.cloud || require('../lib/sentinel-cloud');
   // A timer run does only what the owner approved at install.
   let capOverride = null;
@@ -800,16 +845,45 @@ async function auditCommand(argv, deps = {}) {
   const spend = hosted ? cloud.spendGuard({ quoteCall: deps.quoteCall }) : null;
   if (!runJobs && hosted) runJobs = cloud.atrisJobRunner({ token, spend });
   const confirmSpend = spendConfirmer({ cloud, token, spend, capOverride, opts, deps, tell });
+  // Several places (folders or git URLs) become one review folder. One
+  // place keeps the one-folder review exactly as it was.
+  let system = null;
+  let runRoot = root;
+  let scope = opts.scope;
+  let stopped = null;
+  if (places.multi) {
+    if (opts.out) {
+      const out = path.resolve(root, opts.out);
+      const hit = places.places.find((p) => p.kind === 'path' && !path.relative(p.path, out).startsWith('..') && !path.isAbsolute(path.relative(p.path, out)));
+      if (hit) { console.error(`security-review audit: --out ${opts.out} is inside ${hit.path}; pick a folder outside the places you review`); return 2; }
+    }
+    try {
+      system = require('../lib/sentinel-places').buildSystem(places, { ref: opts.ref, keepClones: opts.keepClones, spawn: deps.spawn, tmpBase: deps.tmpBase, env: deps.env || process.env, log });
+      runRoot = system.root;
+      scope = system.multi ? systemScope(places, system, root) : places.scope;
+    } catch (e) {
+      if (system) finishSystem(system, tell);
+      console.error(`security-review audit: ${e.message}`);
+      return 2;
+    }
+    // Ctrl-C mid-review still removes the clones and the review copy.
+    stopped = (sig) => { finishSystem(system, tell); process.exit(sig === 'SIGINT' ? 130 : 143); };
+    process.once('SIGINT', stopped);
+    process.once('SIGTERM', stopped);
+  }
   let result;
   try {
     result = await audit.runAudit({
-      root, profile: opts.profile, scope: opts.scope, budget: opts.budget ?? undefined, out: opts.out,
+      root: runRoot, profile: opts.profile, scope, budget: opts.budget ?? undefined, out: opts.out,
       hunter, verifier, planOnly: opts.planOnly, runJobs, confirmSpend,
       timeoutMs: opts.timeoutMs || undefined, log,
     });
   } catch (e) {
     console.error(`security-review audit: ${e.message}`);
     return 2;
+  } finally {
+    if (stopped) { process.removeListener('SIGINT', stopped); process.removeListener('SIGTERM', stopped); }
+    if (system) finishSystem(system, tell);
   }
   if (result.declined) return 1;
   const fail = !opts.planOnly && audit.shouldFailRun(result.dir, result.records);
@@ -837,6 +911,29 @@ function printAuditHelp() {
                                                 which engines hunt and which verify
     atris security-review audit --out DIR       write the run here (outside the repo)
     atris security-review audit status          the last run's landing
+
+  several places as one system (a website, a server and a phone app that
+  live in separate repos):
+
+    atris sentinel ../web ../mobile             this repo plus two folders next to it
+    atris sentinel --with git@github.com:acme/api.git
+                                                add a repo from any git host
+    atris sentinel --with https://gitlab.example.com/acme/web.git --ref main
+                                                a branch or tag of the repo
+    atris sentinel web api mobile               from a parent folder: just these three
+    atris sentinel ../web --plan                show the parts and the budget, call no engine
+
+  each place becomes a part named after its folder or repo, and every path in
+  the report starts with that name, so two parts can both have src/index.js.
+  the engines are told the parts are one system and follow requests across
+  them: a page calling a server route, a webhook sender and its receiver. one
+  budget covers all the parts; it is never multiplied.
+
+  a git URL is cloned with your own git login into a fresh temporary folder:
+  newest commit only, no hooks, no submodules, no large files, and nothing in
+  it ever runs. the clone is deleted when the review ends, even when it fails.
+  add --keep-clones to keep it. only tracked files of each part are reviewed.
+  to narrow a several-place review, start the path with its part: api/src.
 
   on atris models (no other AI subscription needed, paid in atris credits):
 
@@ -956,4 +1053,4 @@ function printHelp() {
   return 0;
 }
 
-module.exports = { securityReviewCommand, auditCommand };
+module.exports = { securityReviewCommand, auditCommand, parseAuditArgs };

@@ -651,6 +651,7 @@ function showHelpAll() {
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
   console.log('  slop       - Deterministic slop detector: frontend/prose tells, dead code (slop dead --exports)');
   console.log('  sentinel   - Security audit: engines hunt for holes, a different model verifies each one');
+  console.log('               several repos as one system: sentinel ../web --with git@host:org/api.git');
   console.log('               free checks: sentinel agents, sentinel watch, sentinel guard install');
   console.log('               exam and self-improvement: sentinel bench, sentinel improve');
   console.log('               fix a confirmed finding on its own branch: sentinel fix <id>');
