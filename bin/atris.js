@@ -28,6 +28,11 @@ if (process.argv[2] === 'memory'
 // The desktop app keeps the decision feed open all day and asks often, so
 // atris feed answers before the rest of the CLI loads too. `feed list` and
 // `feed post` (the business group feed) fall through to the normal dispatch.
+if (process.argv[2] === 'element') {
+  require('../commands/element').runFromCli(process.argv.slice(3));
+  return;
+}
+
 if (process.argv[2] === 'feed') {
   const decisionFeed = require('../commands/decision-feed');
   const feedRoute = decisionFeed.route(process.argv.slice(3), { isTTY: Boolean(process.stdout.isTTY) });
@@ -767,6 +772,7 @@ function showHelpAll() {
   console.log('  night      - Give your agent a goal for tonight with a dollar cap (atris night "<goal>" --cap 1)');
   console.log('  morning    - How last night went: score, what it learned (saved to your atris/ folder), spend');
   console.log('  town       - Walk the Atris town from here: look, go, map, who, night, grow (atris town --help)');
+  console.log('  element    - Headless single-focus swarm feed: next, yes, no, pass, talk, say, more (atris element --help)');
   console.log('  join       - Join a computer as a named agent (--name), or accept an invite (<code>)');
   console.log('  receipt    - Save evidence from an agent run');
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
@@ -3492,6 +3498,8 @@ if (command === 'guide') {
   Promise.resolve().then(() => require('../commands/unknowns').unknownsCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'element') {
+  require('../commands/element').runFromCli(process.argv.slice(3));
 } else if (command === 'feed') {
   // Feed: read and post the business group feed, receipts and state changes only.
   // Sets exitCode instead of process.exit() so large --json output flushes fully.
