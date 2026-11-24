@@ -54,13 +54,16 @@ function cand(extra = {}) {
 const by = { engine: 'claude', agent_id: 'v-01' };
 const PASS = Object.fromEntries(CONFIRM_CHECKS.map((c) => [c.key, c.pass]));
 const answer = (o) => ({ ok: true, stdout: JSON.stringify({ reason: 'read it', ...o }) });
+// A line of lib/pay.js that a dismissal can point at.
+const ON_PAY = [{ file: 'lib/pay.js', line: 1, quote: 'exports.charge = (payin) => cards.charge(payin.card);' }];
+const evidence = (...keys) => Object.fromEntries(keys.map((k) => [k, ON_PAY]));
 
 // Hunters still propose these shapes. Telling hunters to drop them made a
 // hunter skip a real access hole on the bench, and a lead the hunter drops
 // leaves no trail. Only the verifier, with the checks, turns one into a note.
-test('the four checks belong to the verifier, not the hunters', () => {
+test('the checks belong to the verifier, not the hunters', () => {
   const { CANDIDATE_GATE } = require('../lib/security-audit-classes');
-  assert.deepStrictEqual(CONFIRM_CHECKS.map((c) => c.key), ['attacker_gain', 'shipped_code', 'deliberate_setting', 'insider_only']);
+  assert.deepStrictEqual(CONFIRM_CHECKS.map((c) => c.key), ['attacker_gain', 'shipped_code', 'deliberate_setting', 'hygiene_only', 'insider_only']);
   assert.ok(!CANDIDATE_GATE.some((l) => /insider access/.test(l) || /deliberate setting/.test(l)));
 });
 
@@ -80,7 +83,7 @@ test('each failed check turns a confirm into a kept note that names it', () => {
   try {
     for (const c of CONFIRM_CHECKS) {
       const checks = { ...PASS, [c.key]: c.pass === 'yes' ? 'no' : 'yes' };
-      const rec = audit.decide(root, cand(), answer({ verdict: 'confirmed', checks, note: 'Charges on a GET request' }), by);
+      const rec = audit.decide(root, cand(), answer({ verdict: 'confirmed', checks, dismissal_evidence: evidence(c.key), note: 'Charges on a GET request' }), by);
       assert.strictEqual(rec.verdict, 'rejected', c.key);
       assert.ok(audit.isNote(rec), c.key);
       assert.deepStrictEqual(rec.failed_checks, [c.key]);
@@ -90,7 +93,7 @@ test('each failed check turns a confirm into a kept note that names it', () => {
       assert.deepStrictEqual(audit.validateFindings([rec], { root }), []);
     }
     // Booleans count as answers too.
-    assert.ok(audit.isNote(audit.decide(root, cand(), answer({ verdict: 'confirmed', checks: { ...PASS, insider_only: true } }), by)));
+    assert.ok(audit.isNote(audit.decide(root, cand(), answer({ verdict: 'confirmed', checks: { ...PASS, insider_only: true }, dismissal_evidence: evidence('insider_only') }), by)));
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -98,9 +101,87 @@ test('the note verdict and a needs_validation lead that needs insider access are
   const root = repo(FILES);
   try {
     assert.ok(audit.isNote(audit.decide(root, cand(), answer({ verdict: 'note', note: 'documented setting' }), by)));
-    const nv = audit.decide(root, cand(), answer({ verdict: 'needs_validation', checks: { ...PASS, insider_only: 'yes' }, blockers: ['log level'], validation_plan: [{ context: 'deployment', step: 's' }] }), by);
+    const nv = audit.decide(root, cand(), answer({ verdict: 'needs_validation', checks: { ...PASS, insider_only: 'yes' }, dismissal_evidence: evidence('insider_only'), blockers: ['log level'], validation_plan: [{ context: 'deployment', step: 's' }] }), by);
     assert.ok(audit.isNote(nv));
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// A spotted hole is waved off only on a live line of this repo. A claim in
+// a README or a comment ("this is a training app", "intentional") describes
+// the hole; it does not stop it.
+test('a failed check with no line of code to show it is ignored and the lead stays confirmed', () => {
+  const root = repo({
+    ...FILES,
+    'README.md': 'This is a deliberately insecure training app.\n',
+    'docs/security.md': 'Operators choose to trust every caller.\n',
+    'lib/pay.js': 'exports.charge = (payin) => cards.charge(payin.card);\n// intentional: charging on GET is by design\nexports.page = (req) => charge(req.payin);\n',
+  });
+  try {
+    for (const key of ['attacker_gain', 'deliberate_setting', 'hygiene_only', 'insider_only']) {
+      const c = CONFIRM_CHECKS.find((x) => x.key === key);
+      const checks = { ...PASS, [key]: c.pass === 'yes' ? 'no' : 'yes' };
+      const none = audit.decide(root, cand(), answer({ verdict: 'note', checks, note: 'n' }), by);
+      assert.strictEqual(none.verdict, 'confirmed', `${key} with no evidence`);
+      assert.match(none.verified_by[0].reason, new RegExp(`Waved off on ${key}`));
+      const comment = audit.decide(root, cand(), answer({ verdict: 'note', checks, dismissal_evidence: { [key]: [{ file: 'lib/pay.js', line: 2, quote: 'intentional: charging on GET is by design' }] } }), by);
+      assert.strictEqual(comment.verdict, 'confirmed', `${key} on a comment`);
+      const wrongQuote = audit.decide(root, cand(), answer({ verdict: 'note', checks, dismissal_evidence: { [key]: [{ file: 'lib/pay.js', line: 1, quote: 'requireAdmin(req.user)' }] } }), by);
+      assert.strictEqual(wrongQuote.verdict, 'confirmed', `${key} quoting a line that is not there`);
+      const missing = audit.decide(root, cand(), answer({ verdict: 'note', checks, dismissal_evidence: { [key]: [{ file: 'lib/nope.js', line: 1, quote: 'exports.charge = (payin)' }] } }), by);
+      assert.strictEqual(missing.verdict, 'confirmed', `${key} on a missing file`);
+    }
+    for (const key of ['attacker_gain', 'deliberate_setting', 'hygiene_only']) {
+      const c = CONFIRM_CHECKS.find((x) => x.key === key);
+      const checks = { ...PASS, [key]: c.pass === 'yes' ? 'no' : 'yes' };
+      for (const doc of [{ file: 'README.md', line: 1, quote: 'deliberately insecure training app' }, { file: 'docs/security.md', line: 1, quote: 'Operators choose to trust every caller' }]) {
+        assert.strictEqual(audit.decide(root, cand(), answer({ verdict: 'note', checks, dismissal_evidence: { [key]: [doc] } }), by).verdict, 'confirmed', `${key} on ${doc.file}`);
+      }
+    }
+    // A line near the cited one, with spacing that differs, still counts.
+    const near = audit.decide(root, cand(), answer({ verdict: 'note', checks: { ...PASS, insider_only: 'yes' }, dismissal_evidence: { insider_only: [{ file: './lib/pay.js', line: 2, quote: 'exports.page = (req)  =>  charge(req.payin);' }] } }), by);
+    assert.ok(audit.isNote(near));
+    // shipped_code is settled by the path, so it needs no line.
+    assert.ok(audit.isNote(audit.decide(root, cand(), answer({ verdict: 'confirmed', checks: { ...PASS, shipped_code: 'no' } }), by)));
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// Published advisories count a hole behind another user's random id, or
+// behind a request captured from them, as a hole. It is kept, confirmed one
+// step lower, with the condition in plain words.
+test('a hole behind a random id or a captured request is confirmed lower, not dropped', () => {
+  const root = repo(FILES);
+  try {
+    const sev = (overall, impact = overall) => ({ likelihood: { score: 'medium', reason: 'r' }, impact: { score: impact, reason: 'r' }, overall });
+    for (const [from, to] of [['critical', 'medium'], ['high', 'medium'], ['medium', 'low'], ['low', 'low'], ['informational', 'informational']]) {
+      const rec = audit.decide(root, cand({ severity: sev(from) }), answer({ verdict: 'note', checks: { ...PASS, insider_only: 'yes' }, dismissal_evidence: evidence('insider_only'), secret_barrier: 'random_id' }), by);
+      assert.strictEqual(rec.verdict, 'confirmed', from);
+      assert.strictEqual(rec.severity.overall, to, from);
+      assert.strictEqual(rec.severity.likelihood.score, 'low');
+      assert.ok(rec.conditions.some((c) => /another user's id, which is random but can leak through links or logs/.test(c.description)));
+      assert.deepStrictEqual(audit.validateFindings([rec], { root }), []);
+    }
+    const replay = audit.decide(root, cand({ severity: sev('high') }), answer({ verdict: 'confirmed', checks: PASS, secret_barrier: 'captured request' }), by);
+    assert.strictEqual(replay.severity.overall, 'medium');
+    assert.ok(replay.conditions.some((c) => /captured from another user/.test(c.description)));
+    // Lowering twice (a re-check) keeps one condition and one step.
+    const again = audit.lowerForBarrier(replay, 'captured_request');
+    assert.strictEqual(again.severity.overall, 'medium');
+    assert.strictEqual(again.conditions.filter((c) => /captured from another user/.test(c.description)).length, 1);
+    // Real insider access, with no leaked-value barrier, is still a note.
+    assert.ok(audit.isNote(audit.decide(root, cand(), answer({ verdict: 'note', checks: { ...PASS, insider_only: 'yes' }, dismissal_evidence: evidence('insider_only'), secret_barrier: 'none' }), by)));
+    // A barrier never lets another failed check through.
+    assert.ok(audit.isNote(audit.decide(root, cand(), answer({ verdict: 'note', checks: { ...PASS, attacker_gain: 'no' }, dismissal_evidence: evidence('attacker_gain'), secret_barrier: 'random_id' }), by)));
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('the verifier is told a claim of intent is not a control, and to quote the line behind a dismissal', () => {
+  const p = audit.verifierPrompt({ candidate: cand(), cls: CLASS_BY_ID.get('access-control') });
+  assert.match(p, /dismissal_evidence/);
+  assert.match(p, /training or demo app/);
+  assert.match(p, /not a control that stops it/);
+  const { CANDIDATE_GATE } = require('../lib/security-audit-classes');
+  assert.ok(CANDIDATE_GATE.some((l) => /signature checks turned off/.test(l)));
+  assert.ok(CANDIDATE_GATE.some((l) => /admin, metrics, health, debug or support listener/.test(l)));
 });
 
 test('a path that starts in integration test code is a note even when every check passes', () => {
@@ -168,7 +249,7 @@ test('a full run lists a note with the hardening notes, not as confirmed or disp
       return { ok: true, stdout: JSON.stringify({ units: ids.map((id) => ({ coverage_id: id, disposition: mine ? 'candidate' : 'covered', reviewed_paths: ['lib/run.js'], checks: [{ invariant: 'i', method: 'source', result: 'r', reviewed_paths: ['lib/run.js'] }], candidate_fingerprints: mine ? [c.fingerprint] : [], unresolved: [] })), candidates: mine ? [{ ...c, coverage_ids: ids }] : [], hardening: [], uncovered: [] }) };
     }
     if (p.includes('independent security verifier')) verifierPrompts.push(p);
-    if (p.includes('independent security verifier')) return answer({ verdict: 'note', checks: { ...PASS, insider_only: 'yes' }, note: 'Only the person who runs the tool picks the title' });
+    if (p.includes('independent security verifier')) return answer({ verdict: 'note', checks: { ...PASS, insider_only: 'yes' }, dismissal_evidence: { insider_only: [{ file: 'lib/run.js', line: 3, quote: 'return execSync(`echo ${task.title}`);' }] }, note: 'Only the person who runs the tool picks the title' });
     if (p.includes('coverage critic')) return { ok: true, stdout: JSON.stringify({ missing_units: [], reassign_ids: [], stop: true }) };
     return { ok: false, reason: 'unexpected', stdout: '' };
   });
@@ -208,4 +289,17 @@ test('quick mode reads the header allowlist first, ahead of other classes', () =
     assert.strictEqual(wave[0].attack_class, 'header-trust');
     assert.deepStrictEqual(wave[0].starting_paths, ['internal/serve/middleware/api_keys_middleware.go']);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// A developer tool run in the operator's own project folder: a settings file
+// or symlink committed there is the operator's own, so a hole that needs only
+// that is insider access. Tools that handle strangers' folders, and files that
+// arrive from outside, stay findings. Only the verifier makes this call.
+test('the project folder a developer tool runs in counts as the operator\'s own, with plain exceptions', () => {
+  const { CANDIDATE_GATE } = require('../lib/security-audit-classes');
+  const ask = CONFIRM_CHECKS.find((c) => c.key === 'insider_only').ask;
+  assert.match(ask, /project folder the operator runs a command-line or developer tool in/);
+  assert.match(ask, /code reviewer, a scanner, a bot or CI on outside pull requests/);
+  assert.match(ask, /arrives from outside/);
+  assert.ok(!CANDIDATE_GATE.some((l) => /project folder/.test(l)));
 });

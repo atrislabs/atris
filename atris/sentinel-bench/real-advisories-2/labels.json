@@ -1,0 +1,475 @@
+{
+ "GHSA-4g9m-rffv-h6wq": {
+  "others": {
+   "sha256:2af96033958b28cb": "real",
+   "sha256:88e37e67c006f79a": "real",
+   "sha256:cd21c25efd5810dd": "real",
+   "sha256:122c89c35b3bd47f": "real",
+   "internal/cli/artifacts.go:artifactsCollect/default-bundle-follows-repository-symlinks": "wrong",
+   "internal/cli/config.go:loadConfig/project-endpoint-reuses-operator-credentials": "wrong",
+   "sha256:367a2505b7d061c2": "real",
+   "sha256:4748a09cfffc3619": "real",
+   "sha256:b2a66b7c00a5482e": "real",
+   "internal/cli/artifacts.go:artifactCollect/checkout-symlink-output": "wrong",
+   "internal/cli/claim.go:leaseClaimPath/unvalidated-lease-id": "wrong",
+   "internal/cli/config.go:loadConfig/repository-endpoints-inherit-user-credentials": "wrong",
+   "internal/cli/ssh.go:sshArgsWithOptions/unterminated-destination-options": "wrong",
+   "sha256:0283090388f7de13": "real",
+   "sha256:cf2a01f475b6c6dc": "real",
+   "sha256:d80b52d5ba274ed1": "real",
+   "sha256:f7db01b0a31ce328": "real"
+  },
+  "note": "11 confirmed findings labelled real; details kept private. A committed symlink redirects a fixed-name metadata file; the contributor already ships code the operator runs. Strict call. Project config choosing the server is the documented project setting, and its author already commits to the operator own project; same call as the exam 1 CLI config finding. Same as the earlier symlink artifact finding: a project contributor already ships code the operator runs, and only a fixed metadata file lands outside. Strict call. Needs a repo-local crabbox.yaml, which earlier calls treat as the operator's own project setting, and it only writes a fixed-shape claim file. Strict call. Same as the earlier project-endpoint finding: picking the server is a documented project setting written by the operator's own project. The user@host argument has no -- separator, so a dash-leading static user becomes an ssh option, but it only comes from repo config that earlier calls trust as the operator's own project. Strict call."
+ },
+ "GHSA-5gpm-rgj3-9q76": {
+  "others": {
+   "sha256:cb1c0ef428a2c9ee": "real",
+   "filters/auth/grantcookie.go:extractCookie/duplicate-session-cookie-forwarded": "wrong",
+   "sha256:16e89708816484ed": "real",
+   "config/config.go:ReverseSourcePredicate/unverified-healthcheck-source": "wrong",
+   "config/config.go:SupportListener/unauthenticated-route-export": "wrong",
+   "dataclients/kubernetes/kube.go:healthcheckRoutes/untrusted-forwarded-source": "wrong",
+   "sha256:f522cb45796b4492": "real",
+   "sha256:3007dbbd9c76cadd": "real",
+   "filters/auth/tokenintrospection.go:Request/unscoped-introspection-cache": "wrong",
+   "net/net.go:RemoteAddr/forwarded-address-without-peer-trust": "wrong",
+   "predicates/source/source.go:Match/untrusted-forwarded-address": "wrong",
+   "sha256:c2d7e239ac7fe1fe": "real",
+   "sha256:3689678ada933bbf": "real",
+   "filters/auth/tokenintrospection.go:Request/unscoped-request-authentication-cache": "wrong",
+   "net/net.go:RemoteAddr/forwarded-address-without-trusted-peer": "wrong",
+   "predicates/source/source.go:Match/untrusted-forwarded-client-address": "wrong",
+   "dataclients/kubernetes/kube.go:healthcheckRoutes/untrusted-forwarded-address": "wrong",
+   "sha256:e39838c942f85a15": "real",
+   "filters/auth/oidc.go:extractDomainFromHost/default-parent-domain-session-cookie": "wrong",
+   "sha256:ec4d920628663977": "real",
+   "sha256:72fb65df977ead7f": "real",
+   "sha256:5bd3148f4cb62374": "real",
+   "net/net.go:forwarded-client-address/unverified-proxy-for-route-allowlist": "wrong",
+   "predicates/source/source.go:Match/unverified-forwarded-address": "wrong",
+   "dataclients/kubernetes/kube.go:healthcheckRoutes/unverified-forwarded-client-address": "wrong",
+   "sha256:9c4683ca1bcf8b1f": "real",
+   "filters/auth/tokenintrospection.go:Request/unscoped-introspection-result": "wrong",
+   "sha256:a7d011148a092621": "real",
+   "sha256:14c1b5c7727be618": "real",
+   "sha256:0742c8b34164e6d9": "real",
+   "filters/auth/tokenintrospection.go:Request/cache-not-bound-to-validation-context": "wrong",
+   "sha256:28d77705e16bb87e": "real",
+   "sha256:79ad4550fe78a54a": "real",
+   "filters/auth/oidc.go:oidc-and-introspection/shared-credential-with-route-selected-issuer": "wrong",
+   "filters/auth/tokenintrospection.go:Request/issuer-independent-verdict-cache": "wrong"
+  },
+  "note": "16 confirmed findings labelled real; details kept private. The only receiver of the extra same-name cookie is the operator's own backend that already handles the user's traffic; same strict call as the earlier forwarded gateway cookie. Source predicate reading the first forwarded address is documented behavior, and the only gain is seeing health status. The support listener is the documented internal admin and metrics port; exposure is a deployment choice. Strict call. Same as the earlier health check call: Source reading X-Forwarded-For is documented as forgeable, and the only gain is seeing health status. The cache key is not scoped by issuer, but the bypass needs a route chaining two different issuers with AND, a setup no real token could satisfy anyway; operator-built config with no realistic gain. Strict call. The predicate docs list Source as bypassable via client X-Forwarded-For and say routing is not a security feature; ClientIP exists for socket address. Documented behavior. Same documented Source/X-Forwarded-For behavior; operator chooses Source over ClientIP. Same as the other introspection cache finding: only matters for a chained two-issuer route nobody can use legitimately. Strict call. Documented forgeable Source predicate behavior. Documented forgeable Source predicate behavior. Same as the earlier health route call: the Source predicate reading X-Forwarded-For is documented as forgeable and the only gain is health status. The parent-domain cookie is the documented SSO default with a 0 opt-out, and sibling hosts under the operator's own domain are operator-controlled. Documented forgeable Source predicate behavior; only health status is gained. Documented forgeable Source predicate behavior; only health status is gained. Same as the earlier health route calls: the Source predicate reading X-Forwarded-For is documented as forgeable and the only gain is health status. Same root as the earlier introspection cache calls: the state bag result is reused across issuers only on a chained two-issuer route no real token could satisfy. Strict call. Same root as the earlier introspection cache calls: only matters on a chained two-issuer route no real token could satisfy. Strict call. The OIDC_CLIENT_SECRET fallback for an empty route argument is documented, and route authors are operator-trusted config writers who can already send traffic and headers anywhere; no lower-trust gain. Same root as the earlier introspection cache calls: a chained two-issuer route nobody can use legitimately. Strict call."
+ },
+ "GHSA-6mwv-4mrm-5p3m": {
+  "others": {
+   "sha256:5029004cc1ff9ea4": "real",
+   "sha256:c17e2b8834fb704e": "real",
+   "src/lib/auth/dashboardSession.js:loadJwtSecret/sample-signing-secret": "wrong",
+   "sha256:d5a62676526a8817": "real",
+   "sha256:1959c427ccce5733": "real",
+   "sha256:2df78a506e25ebe9": "real",
+   "src/app/api/proxy-pools/cloudflare-deploy/route.js:relay/unauthenticated-cloud-forwarding": "wrong",
+   "sha256:b695943d9cf9089b": "real"
+  },
+  "note": "6 confirmed findings labelled real; details kept private. The value is a change-me placeholder the operator is told to replace, and an unset secret is randomly generated; only the operator controls it. The deployed relay is an open public proxy, but it only gives free egress from public cloud IPs that anyone can get, and it reaches no private network or operator data. Strict call."
+ },
+ "GHSA-7j4w-x8x8-5mvg": {
+  "others": {
+   "sha256:dcfa01db7a490659": "real",
+   "Containerfile:backend-builder/ui-label-as-shell-source": "wrong",
+   "Containerfile:dnf-install/disabled-package-signature-verification": "wrong",
+   "Containerfile:opa-builder/mutable-policy-source": "wrong",
+   "sha256:7ca94d9ed3386c3d": "real",
+   "sha256:6db73c95e66f244a": "real",
+   "sha256:e3ec90eeec82d308": "real",
+   "sha256:d2565689abb384f0": "real",
+   "sha256:8b91d1c74d91a069": "real",
+   "sha256:66c6ab4fe99d6124": "real",
+   "sha256:938918a6774d0c85": "real",
+   "sha256:e9a90fc0c40d54bd": "real",
+   "sha256:0a4eeb6ced208da8": "real",
+   "sha256:e36af3dbc15869b5": "real",
+   "sha256:54670d5ab41cf2d0": "real",
+   "sha256:c7fe83e18874d4dd": "real",
+   "sha256:34b4f654ad3ad20b": "real"
+  },
+  "match": {
+   "sha256:0a4eeb6ced208da8": "same",
+   "internal/services/vddk.go:extractTarGz/lexical-only-archive-containment": "same",
+   "sha256:6db73c95e66f244a": "same",
+   "sha256:8b91d1c74d91a069": "near",
+   "sha256:938918a6774d0c85": "same",
+   "sha256:e9a90fc0c40d54bd": "same",
+   "sha256:54670d5ab41cf2d0": "same",
+   "sha256:34b4f654ad3ad20b": "same"
+  },
+  "note": "14 confirmed findings labelled real; details kept private. The attacker publishes the UI image, which already ships its own code into the product image. No new gain. Build hardening. Needs control of the package mirror; not a hole an outside user can reach. Strict call. Upstream policy maintainers are already trusted. No new gain."
+ },
+ "GHSA-9q47-3cm2-2rp8": {
+  "others": {
+   "sha256:7c2d0457f44a221c": "real",
+   "src/pyload/plugins/downloaders/XDCC.py:do_download/unconfined-peer-filename": "wrong",
+   "sha256:be32518d5c7b14c7": "real",
+   "sha256:557531afdbbf97c2": "real",
+   "sha256:3d711193f5c31324": "real",
+   "src/pyload/webui/app/themes/modern/templates/js/base.js:windowEventListener/unverified-captcha-sender": "wrong",
+   "sha256:3bbc930fd27d87df": "real"
+  },
+  "note": "5 confirmed findings labelled real; details kept private. Checked: the peer name is assigned to pyfile.name, whose setter strips / and \\, so the join stays in the download folder (a bare .. only makes a rename onto a directory fail). With no origin check, another window can submit an answer for the active captcha, but that only fails one pending captcha and reads nothing. Strict call."
+ },
+ "GHSA-c9w5-qp6m-m395": {
+  "others": {
+   "sha256:813fc1274bdf640d": "real",
+   "sha256:f61c64e940d33b1f": "real",
+   "sha256:a2480182d51fde36": "real",
+   "sha256:8844a1afacb529db": "real",
+   "sha256:6c37ff8d49ad1063": "real",
+   "sha256:65ed24b6f0707394": "real",
+   "sha256:ebe949e054c60196": "real",
+   "sha256:1ecd7108a2016bf6": "real",
+   "sha256:319dcd499de65f32": "real",
+   "sha256:747f810ad510788b": "real",
+   "sha256:4da61ac30c2fe23d": "real",
+   "sha256:17128c87c7736709": "real",
+   "sha256:29013d756268a679": "real",
+   "sha256:432ce4fd419be561": "real",
+   "sha256:eb6a71810d01fac3": "real",
+   "sha256:cfbd4f99292a49e2": "real",
+   "sha256:abd4b1de365c733d": "real",
+   "sha256:5dffb9d17b21b6fe": "real",
+   "sha256:4489a63cf0c5b009": "real",
+   "sha256:ba31ce7336914aea": "real",
+   "sha256:54cf9682f0cba5da": "real",
+   "sha256:d3820ad9c8049062": "real",
+   "sha256:3a48f21feaea9bc3": "real",
+   "sha256:341919088a0f4bbe": "real",
+   "sha256:d5334aa411350082": "real",
+   "sha256:24ca76712ac79b38": "real",
+   "sha256:6e39d16810ab010e": "real",
+   "sha256:b2d4070cf1a9a1d2": "real",
+   "sha256:280ac4ef14f74ad0": "real",
+   "sha256:2ffe5ef7ffc11b6e": "real",
+   "sha256:eb666cee6216b948": "real",
+   "sha256:b1197756e35a2e08": "real",
+   "sha256:73f067754e4c7ade": "real",
+   "sha256:cf28a5e579384338": "real",
+   "sha256:769364fcbf12bb48": "real",
+   "sha256:4417c09276c7c1b2": "real",
+   "sha256:e82efd3b54fdac59": "real",
+   "service/proxy.go:forwardHandler/gateway-bearer-forwarded-upstream": "wrong",
+   "sha256:4aa86d68e3ba3029": "real",
+   "sha256:bbd1bf49f0507e59": "real",
+   "sha256:cf660cd335401d64": "real",
+   "sha256:96b8ea96f3b37ed2": "real",
+   "sha256:58f8d8317319e12c": "real",
+   "sha256:2ea9406168338a3a": "real",
+   "sha256:a10a7e390d6854ee": "real",
+   "sha256:1f801ace79e508e1": "real",
+   "sha256:c036d5ba9971a537": "real",
+   "sha256:11aae43e22e85ce5": "real",
+   "sha256:b7674e424d7d1f3c": "real",
+   "sha256:bc6c481f3211fbe1": "real",
+   "sha256:ba70f5e3c647d63a": "real",
+   "sha256:bc97610d96a34b8a": "real",
+   "sha256:d66964169517f00a": "real",
+   "sha256:a29b7c5cb9d5df31": "real",
+   "sha256:141b14dcd8a31bf2": "real",
+   "sha256:68a091d0b4711b7d": "real",
+   "sha256:19cabf71f97f0670": "real",
+   "sha256:3a674bd0873d0437": "real",
+   "sha256:6d5af37061baf22b": "real",
+   "sha256:434494e16b2075d5": "real",
+   "sha256:51119a7069cd1fd5": "real",
+   "sha256:b6b1639b452306bc": "real",
+   "sha256:56274eb3afc7b3c4": "real",
+   "sha256:5801081da66690b5": "real",
+   "sha256:a84e54ce5e00626f": "real",
+   "sha256:9a0e3cfdf4582de2": "real",
+   "sha256:95486811dd0c75a8": "real"
+  },
+  "match": {
+   "sha256:813fc1274bdf640d": "other",
+   "sha256:65ed24b6f0707394": "other",
+   "sha256:ebe949e054c60196": "other",
+   "sha256:eb6a71810d01fac3": "other",
+   "sha256:b2d4070cf1a9a1d2": "other",
+   "sha256:2ea9406168338a3a": "other",
+   "sha256:56274eb3afc7b3c4": "other"
+  },
+  "note": "66 confirmed findings labelled real; details kept private. The only receiver is the operator's own upstream behind the gateway, which already handles the user's traffic; same strict call as Skipper's forwarded cookie."
+ },
+ "GHSA-f8c7-rwf9-fmgm": {
+  "others": {
+   "mercury_app/handlers.py:MercuryHandler/open-omits-resource-authorization": "wrong",
+   "mercury_app/mercury_hybrid_cm.py:HybridContentsManager/shadows-keyed-without-owner": "wrong"
+  },
+  "note": "Needs an operator-written custom authorizer, and it only creates a stripped copy in the same folder without showing that the denied user can read it. The copy holds only the source cells of the published notebook, with outputs and widget state stripped, which the caller can already open."
+ },
+ "GHSA-h5gx-45rj-2h5j": {
+  "others": {
+   "sha256:ed30625890f41b2e": "real",
+   "sha256:d752c94c38eb88e7": "real",
+   "sha256:1ad2d605daac8bb2": "real",
+   "sha256:6cc81f003d4fcb63": "real",
+   "sha256:10738c3af9ec9991": "real",
+   "sha256:1dc3b30e7481a3e4": "real",
+   "sha256:a1a631420b87ae67": "real",
+   "sha256:a68ae1c38a474a03": "real",
+   "sha256:f99b99d75a0fcea4": "real",
+   "sha256:2c93cb0df008b379": "real",
+   "sha256:63dd12fef3c7e3e7": "real",
+   "sha256:5fe25c23ba165a71": "real",
+   "sha256:7c92dd0ea69c45bd": "real",
+   "sha256:c6e351c8aa4fcd99": "real",
+   "sha256:efa43eb81ae3ddb7": "real",
+   "sha256:feacf8e2cdc91cc2": "real",
+   "sha256:0fdae5653ad0f4eb": "real",
+   "sha256:d21e40704ddaad26": "real",
+   "sha256:d43fca1061b719da": "real",
+   "sha256:0a300f1b435a5b0f": "real",
+   "sha256:d8f84f13d72a35cc": "real",
+   "sha256:937498a86e335a3f": "real",
+   "sha256:f00f9fc14eeb9dd1": "real",
+   "sha256:ebfa5745ae9cba76": "real",
+   "sha256:884b5803896b62f3": "real",
+   "sha256:3f87a54d43e02277": "real",
+   "sha256:166d48f3b34d95c1": "real",
+   "sha256:c132a96bb2a64ccb": "real",
+   "sha256:897ec86371eb70da": "real",
+   "sha256:4bc1c61e2d9d25e1": "real",
+   "sha256:1f460e9a5c47036c": "real",
+   "ui/src/api/api.js:axiosBase/credentials-over-plaintext-http": "wrong",
+   "sha256:9e4056c0f2f8e1d6": "real"
+  },
+  "note": "32 confirmed findings labelled real; details kept private. The UI uses the page's own protocol and the agent is a plain HTTP appliance meant to sit on a LAN or behind the operator's TLS proxy; transport is a deployment choice, not a code flaw."
+ },
+ "GHSA-hrw6-wg82-cm62": {
+  "others": {
+   "jupyter_server/base/handlers.py:check_host/filesystem-existence-from-host": "wrong",
+   "jupyter_server/services/contents/fileio.py:_get_os_path/lexical-prefix-containment": "wrong",
+   "jupyter_server/utils.py:_request_for_tornado_client/unverified-shutdown-peer": "wrong",
+   "jupyter_server/services/contents/manager.py:delete/root-check-before-normalization": "wrong"
+  },
+  "match": {
+   "sha256:1046b5739bc8ae07": "other"
+  },
+  "note": "check_host only reads the Host header, so a remote non-browser client can already send Host: localhost; the gain is the login page plus a path-exists hint. Strict call. Same as the earlier wrong contents-manager call: the attacker is already an authorized contents writer, who normally can also run code on the server. On the hole file but a different flaw. The stop command talks to the server it recorded, normally on the same machine. Strict call. As in the earlier call, the attacker is already an authorized contents writer, who normally can also run code on the server. Strict call."
+ },
+ "GHSA-hxpf-9xvq-wph8": {
+  "others": {
+   "sha256:f780a0c727c64a6e": "real",
+   "src/netlicensing_mcp/safety.py:validate_and_consume/confirmation-omits-action-arguments": "wrong",
+   "sha256:1cbadc5b86289a00": "real",
+   "src/netlicensing_mcp/safety.py:validate_and_consume/model-issued-token-substitutes-for-operator-approval": "wrong",
+   "sha256:1f61c7f37f200fcf": "real",
+   "src/netlicensing_mcp/server.py:netlicensing_delete_product/model-can-satisfy-user-approval": "wrong",
+   "src/netlicensing_mcp/safety.py:validate_and_consume/confirmation-omits-approved-parameters-and-principal": "wrong",
+   "sha256:ea4bf4f7be0378ad": "real",
+   "src/netlicensing_mcp/safety.py:validate_and_consume/confirmation-omits-action-parameters": "wrong",
+   "sha256:6199b729a1082f00": "real",
+   "src/netlicensing_mcp/safety.py:validate_and_consume/confirmation-omits-requested-effect": "wrong",
+   "src/netlicensing_mcp/safety.py:validate_and_consume/agent-controlled-approval": "wrong",
+   "sha256:c56124c71cfcea47": "real"
+  },
+  "match": {
+   "sha256:f780a0c727c64a6e": "same",
+   "sha256:1cbadc5b86289a00": "same",
+   "sha256:1f61c7f37f200fcf": "same",
+   "sha256:ea4bf4f7be0378ad": "same",
+   "sha256:6199b729a1082f00": "same",
+   "sha256:c56124c71cfcea47": "same"
+  },
+  "note": "6 confirmed findings labelled real; details kept private. The token is a model-facing two-step, not a human approval; any client prompt shows the final call's arguments, so a steered model gains nothing it could not already do. Strict call. The confirmation token is designed to be handed to the model; human approval is the client's job, and the attack needs the operator to auto-approve tool calls. Same as the earlier wrong calls: the confirmation token is a model-facing two-step, and human approval is the client's job. Same as the earlier wrong calls: the confirmation token is a model-facing two-step, and human approval of the final call is the client's job. Strict call. Same as the earlier wrong calls: the confirmation token is a model-facing two-step, not a human approval. Strict call. Same as the earlier wrong calls: the confirmation token is a model-facing two-step, and human approval of the final call is the client's job. Strict call. Same as the earlier wrong calls: the confirmation token is designed to be handed to the model; human approval is the client's job."
+ },
+ "GHSA-jcxm-m3jx-f287": {
+  "others": {
+   "sha256:a6d358bc4206f2a0": "real"
+  },
+  "match": {
+   "sha256:a6d358bc4206f2a0": "other"
+  },
+  "note": "1 confirmed finding labelled real; details kept private."
+ },
+ "GHSA-m98r-6667-4wq7": {
+  "others": {
+   "sha256:701ad05135a18c06": "real",
+   "sha256:9b3643f404ff4ef5": "real",
+   "sha256:3e6ed18184f69fec": "real",
+   "sha256:b10f34c402f6f0a2": "real",
+   "sha256:520fc03305ac1241": "real",
+   "sha256:db8eb4eb2c794781": "real",
+   "sha256:790069b29d5f75ed": "real",
+   "sha256:d2108b91d610f7f2": "real",
+   "sha256:c259ca4a87d67b23": "real",
+   "sha256:005f810d1bfc1c7e": "real",
+   "sha256:101c79b231121d85": "real",
+   "sha256:46b56cf375dce4a8": "real",
+   "sha256:f84df53214d0b754": "real",
+   "sha256:6c21d4579cf67544": "real",
+   "libs/aegra-api/src/aegra_api/core/auth_middleware.py:authenticate/custom-auth-load-fails-open": "wrong",
+   "sha256:d72365382bbab4b0": "real",
+   "sha256:e7ac0a66a6677884": "real",
+   "sha256:56d8ed405e2d18fa": "real",
+   "sha256:fe7015cc18f40132": "real",
+   "sha256:4a5ad6932e873632": "real",
+   "sha256:a3454c9580218b3f": "real",
+   "sha256:88724af94f6c34c7": "real",
+   "sha256:46a24ece8918cb34": "real",
+   "sha256:a6b839993f94cff6": "real",
+   "sha256:bd056a48b017a98e": "real"
+  },
+  "match": {
+   "sha256:701ad05135a18c06": "other",
+   "sha256:9b3643f404ff4ef5": "other",
+   "sha256:3e6ed18184f69fec": "other",
+   "sha256:b10f34c402f6f0a2": "other",
+   "sha256:db8eb4eb2c794781": "other",
+   "sha256:d2108b91d610f7f2": "other",
+   "sha256:c259ca4a87d67b23": "other",
+   "sha256:101c79b231121d85": "near",
+   "sha256:46b56cf375dce4a8": "same",
+   "sha256:f84df53214d0b754": "other",
+   "sha256:e7ac0a66a6677884": "near",
+   "sha256:56d8ed405e2d18fa": "same",
+   "sha256:4a5ad6932e873632": "same",
+   "sha256:a3454c9580218b3f": "near",
+   "sha256:88724af94f6c34c7": "other",
+   "sha256:a6b839993f94cff6": "near",
+   "sha256:bd056a48b017a98e": "same"
+  },
+  "note": "24 confirmed findings labelled real; details kept private. Checked that a failed auth module load falls back to the anonymous user, but the trigger is the operator's own broken deployment, which the attacker cannot cause, and other owners' records stay filtered. Strict call."
+ },
+ "GHSA-mw3h-qjxj-6xg9": {
+  "others": {
+   "sha256:00a84837e0e5bcb9": "real",
+   "sha256:c4f3c255c474acaa": "real",
+   "sha256:d910712d402e963c": "real",
+   "thumbor/handlers/image_resource.py:ImageResourceHandler/shared-original-storage-namespace": "wrong",
+   "sha256:174c50452d25899e": "real",
+   "sha256:b57d49923d39ad01": "real"
+  },
+  "match": {
+   "sha256:00a84837e0e5bcb9": "other",
+   "sha256:d910712d402e963c": "other",
+   "sha256:b57d49923d39ad01": "other"
+  },
+  "note": "5 confirmed findings labelled real; details kept private. The cached original is the public source image the caller named; no data gained."
+ },
+ "GHSA-rmxw-pq4x-3fvh": {
+  "others": {
+   "sha256:1364cb0d3b72b8a0": "real",
+   "sha256:58d3a5f0eff01014": "real",
+   "sha256:6d120d81e26713b6": "real",
+   "assets/js/src/preview.js:previewFile/raw-filename-as-request-url": "wrong",
+   "sha256:64568a960402dc5c": "real",
+   "sha256:7ffce2a9410ebbf9": "real",
+   "assets/js/src/collab.js:mailPreview/unrestricted-remote-resources": "wrong",
+   "sha256:4cb3673c1f10cd79": "real",
+   "sha256:6ae195a7dd5bbbb4": "real",
+   "httpserver/server.go:SetupMux/share-download-token-authorizes-revocation": "wrong",
+   "sha256:fc885382c7509fbd": "real",
+   "assets/js/src/collab.js:buildMailCard/unrestricted-mail-preview-resource-loading": "wrong",
+   "assets/js/src/context-menu.js:initContextMenu/raw-filename-used-as-request-url": "wrong",
+   "assets/js/src/preview.js:previewFile/unrestricted-markdown-preview-resource-loading": "wrong",
+   "sha256:862aec01235d015d": "real",
+   "sha256:aaeda9120c2a20c5": "real",
+   "sha256:952025f4a0f9bf10": "real",
+   "httpserver/server.go:SetupMux/download-capability-authorizes-revocation": "wrong",
+   "sha256:a47215238e8cf6ce": "real",
+   "sha256:8f880798c1678d51": "real",
+   "sha256:9d74947e50d811b8": "real",
+   "sha256:95eb9ef143f2ada9": "real",
+   "sha256:4753c5f020453ecc": "real",
+   "sha256:5de77bc17056c4fd": "real",
+   "sha256:42a91f9a4b4d8c97": "real",
+   "sha256:218f63d2f684369b": "real",
+   "sha256:f1d6650dd2cd7b09": "real",
+   "sha256:82ddbf1071e88edd": "real",
+   "sha256:fe0725f6013e3fbf": "real",
+   "httpserver/server.go:SetupMux/share-revocation-accepts-download-token": "wrong",
+   "sha256:a82394e322b70bc7": "real",
+   "sha256:55d157cbd8573f06": "real",
+   "sha256:4871428d11969c49": "real",
+   "logger/logger.go:logVerbose/authorization-in-webhook-payload": "wrong",
+   "assets/js/src/catcher.js:upgradeCatcherWindows/unauthenticated-script-download": "wrong",
+   "sha256:ebce701b6b466197": "real",
+   "sha256:88f111324a6ba285": "real",
+   "sha256:a28daed7f5a3e70d": "real",
+   "sha256:32578e15e4936990": "real",
+   "httpserver/server.go:SetupMux/download-token-authorizes-revocation": "wrong",
+   "sha256:9b50ffa07b65ed6b": "real"
+  },
+  "match": {
+   "sha256:55d157cbd8573f06": "same",
+   "sha256:fc885382c7509fbd": "same",
+   "sha256:a47215238e8cf6ce": "same",
+   "sha256:8f880798c1678d51": "other",
+   "sha256:42a91f9a4b4d8c97": "same"
+  },
+  "note": "30 confirmed findings labelled real; details kept private. A blind request with no credentials and no response read; any web page can do the same. A tracking pixel or blind request from the viewer's browser with no response read; any web page can do the same. A link holder can delete the link, but with the default one-download limit they can already use it up; negligible gain. Strict call. Blind outbound request from rendered mail; no data gained. Like the earlier preview.js call: fetch refuses URLs with credentials, and a leaked CSRF token gives nothing cross-origin since the custom header needs CORS. Blind request from a Markdown preview; any web page can do the same. Same share revocation finding; negligible gain for a link holder. Strict call. Same as the earlier wrong share revocation calls: a link holder can already use up the link. Strict call. Checked: credentials reach the webhook only when the operator turns on verbose mode and subscribes the webhook to verbose events (all excludes them); the recipient is the operator's own channel. The on-path party already sits on the plaintext reverse shell this command travels over and can inject commands directly; no new gain. Same as the earlier wrong share revocation calls: a link holder can already use up the link. Strict call."
+ },
+ "GHSA-v667-gc2r-2xm7": {
+  "others": {
+   "sha256:d3719defe4710838": "real",
+   "sha256:9d78cdc235e1bf86": "real",
+   "sha256:b198d9649b330d15": "real",
+   "sha256:17984f1ce3f2e7b7": "real",
+   "sha256:c05711fa239abe70": "real",
+   "sha256:8c8e02ec0ec454dc": "real",
+   "sha256:fd8df77931f63f23": "real",
+   "shell/update.sh:gen_list_repo/word-split-destination-paths": "wrong",
+   "sha256:b3b0a8b7a396500a": "real",
+   "sha256:efdab0bc1d396dac": "real",
+   "sha256:9187e7c9ef9287f1": "real",
+   "sha256:a5572a468c546b4c": "real",
+   "sha256:50320c25c823dee7": "real",
+   "sha256:4f74b07e842d8239": "real",
+   "sha256:bcc080e503551827": "real"
+  },
+  "match": {
+   "sha256:9d78cdc235e1bf86": "other",
+   "sha256:c05711fa239abe70": "other",
+   "sha256:9187e7c9ef9287f1": "same",
+   "sha256:4f74b07e842d8239": "other"
+  },
+  "note": "14 confirmed findings labelled real; details kept private. Only creates empty folders one level up. Strict call."
+ },
+ "GHSA-vx32-xf7g-9ghr": {
+  "others": {
+   "sha256:1c61c11452343539": "real",
+   "app/configuration/file_manager.go:downloadMetadataCompare/cleanup-before-parent-validation": "wrong",
+   "app/cmd/bootstrap.go:bootstrapCommand/credential-in-process-arguments": "wrong",
+   "app/configuration/file_manager.go:downloadMetadataCompare/partial-cleanup-before-ancestor-check": "wrong",
+   "sha256:809faf46b348b34b": "real",
+   "app/cmd/bootstrap.go:bootstrapCommand/credentials-in-process-arguments": "wrong",
+   "sha256:a64494c53f867ea3": "real",
+   "app/api/proxy.go:UseProxy/cleartext-proxy-authentication": "wrong",
+   "sha256:1e3346532051cca1": "real",
+   "sha256:fcf3d2e3b292ffb1": "real"
+  },
+  "match": {
+   "sha256:fcf3d2e3b292ffb1": "same"
+  },
+  "note": "5 confirmed findings labelled real; details kept private. Checked: the only file the early remove can hit is named .<dest>.part, a name only the agent's own partial downloads use, and a symlinked final name is unlinked not followed, so there is no meaningful gain. Enrollment key in process arguments; the enrollment still waits on an administrator approval, so the gain is small. Strict call. Same idea as the baseline download cleanup finding, labelled wrong there too. Strict call. Same as the earlier wrong call: enrollment key in process arguments still needs administrator approval. Strict call. Basic credentials to a plain HTTP proxy is how the operator-configured proxy protocol works; the observer gains only proxy use. Hygiene, strict call."
+ },
+ "GHSA-xgjr-7j9q-2h4r": {
+  "others": {
+   "sha256:3b52e63a36b40e6a": "real",
+   "cmd/settings.go:TestSMTPSettings/log-read-permission-gap": "wrong",
+   "sha256:92501e77706c21ec": "real",
+   "sha256:952466a959382f94": "real",
+   "sha256:95f41913d7fb5e68": "real",
+   "cmd/public.go:processSubForm/email-only-single-optin-reactivation": "wrong",
+   "sha256:83c5f8a493ed5ea0": "real"
+  },
+  "note": "5 confirmed findings labelled real; details kept private. A settings:manage holder can already rewrite every setting and reload the app; seeing buffered log lines through the SMTP test adds nothing meaningful. Strict call. Single opt-in lists take any email without proof by design, and the resubscribe override is an intended public-form behavior; blocklisted addresses stay protected. Strict call."
+ },
+ "GHSA-xgm2-5f3f-mvvc": {
+  "others": {
+   "sha256:c33ffa63b965c5e4": "real",
+   "src/router/trie-router/node.ts:search/pattern-child-literal-lookup": "wrong"
+  },
+  "note": "1 confirmed finding labelled real; details kept private. Code does allow the literal label text (decoded braces) to hit the pattern node, but the handler then runs with the param missing; no concrete gain shown and it depends entirely on app code. Strict call."
+ }
+}

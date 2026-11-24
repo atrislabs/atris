@@ -17,8 +17,14 @@
 //   node scripts/sentinel-real-scorecard.js run [ids...]     run the audit (quick, local engines)
 //   node scripts/sentinel-real-scorecard.js score [--json]   print the table
 //
-// Options: --root <dir> (default /tmp/sentinel-scorecard), --fresh (run: replace
-// an existing run folder), --atris <bin/atris.js> (default: this checkout),
+// Options: --exam <name> (default real-advisories; real-advisories-2 is the
+// second, fresh exam), --root <dir> (default /tmp/sentinel-scorecard, or
+// /tmp/sentinel-scorecard/<exam> for other exams), --fresh (run: replace an
+// existing run folder), --atris <bin/atris.js> (default: this checkout),
+// --jobs <n> (run: audits at once, default 1), --keep <dir> (run: where each
+// finished run is copied for later hand checks, default
+// ~/.atris/sentinel-real-scorecard/runs/<date-time>/<exam>), --runs <dir>
+// (score: read runs from this folder instead of <root>/runs, e.g. a kept copy),
 // --show-real (score: show new real holes by name; local use only, never paste
 // that output anywhere public).
 //
@@ -31,9 +37,10 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { execFileSync, spawnSync } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 
-const BENCH = path.join(__dirname, '..', 'atris', 'sentinel-bench', 'real-advisories');
+const BENCH_ROOT = path.join(__dirname, '..', 'atris', 'sentinel-bench');
+const os = require('os');
 const LINE_WINDOW = 30;
 
 // Settings a clone could use to run commands when the audit's engines (codex,
@@ -70,10 +77,14 @@ function execConfigs(dir) {
 }
 
 function parseArgs(argv) {
-  const o = { cmd: argv[0], ids: [], root: '/tmp/sentinel-scorecard', fresh: false, json: false, atris: path.join(__dirname, '..', 'bin', 'atris.js') };
+  const o = { cmd: argv[0], ids: [], exam: 'real-advisories', root: null, runs: null, keep: null, jobs: 1, fresh: false, json: false, atris: path.join(__dirname, '..', 'bin', 'atris.js') };
   for (let i = 1; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--root') o.root = argv[++i];
+    else if (a === '--exam') o.exam = argv[++i];
+    else if (a === '--runs') o.runs = argv[++i];
+    else if (a === '--keep') o.keep = argv[++i];
+    else if (a === '--jobs') o.jobs = Math.max(1, Number(argv[++i]) || 1);
     else if (a === '--atris') o.atris = argv[++i];
     else if (a === '--fresh') o.fresh = true;
     else if (a === '--json') o.json = true;
@@ -81,15 +92,20 @@ function parseArgs(argv) {
     else if (a.startsWith('-')) throw new Error(`unknown flag ${a}`);
     else o.ids.push(a);
   }
-  o.root = path.resolve(o.root);
+  if (!/^[a-z0-9-]+$/.test(o.exam)) throw new Error(`bad exam name ${o.exam}`);
+  o.bench = path.join(BENCH_ROOT, o.exam);
+  o.root = path.resolve(o.root || (o.exam === 'real-advisories' ? '/tmp/sentinel-scorecard' : `/tmp/sentinel-scorecard/${o.exam}`));
+  o.runs = path.resolve(o.runs || path.join(o.root, 'runs'));
+  const stamp = new Date().toISOString().replace(/[:]/g, '-').replace(/\..*$/, '');
+  o.keep = path.resolve(o.keep || path.join(os.homedir(), '.atris', 'sentinel-real-scorecard', 'runs', stamp, o.exam));
   o.atris = path.resolve(o.atris);
   return o;
 }
 
-function load() {
-  const list = JSON.parse(fs.readFileSync(path.join(BENCH, 'advisories.json'), 'utf8'));
+function load(o) {
+  const list = JSON.parse(fs.readFileSync(path.join(o.bench, 'advisories.json'), 'utf8'));
   let labels = {};
-  try { labels = JSON.parse(fs.readFileSync(path.join(BENCH, 'labels.json'), 'utf8')); } catch {}
+  try { labels = JSON.parse(fs.readFileSync(path.join(o.bench, 'labels.json'), 'utf8')); } catch {}
   return { list, labels };
 }
 
@@ -103,7 +119,7 @@ const otherLabel = (lab, fp) => ((lab.others || {})[fp] || (lab.others || {})[fp
 const matchLabel = (lab, fp) => ((lab.match || {})[fp] || (lab.match || {})[fpKey(fp)]);
 
 const repoDir = (o, id) => path.join(o.root, 'repos', id);
-const runDir = (o, id) => path.join(o.root, 'runs', id);
+const runDir = (o, id) => path.join(o.runs, id);
 const inside = (child, parent) => { const r = path.relative(parent, child); return r === '' || (!r.startsWith('..') && !path.isAbsolute(r)); };
 
 function git(cwd, args) {
@@ -134,30 +150,42 @@ function refuseReason(o, a) {
   const dir = repoDir(o, a.id);
   if (inside(o.atris, path.join(o.root, 'repos'))) return 'the audit program sits inside the clones folder';
   if (!fs.existsSync(dir)) return 'not fetched';
-  if (inside(runDir(o, a.id), dir)) return 'run folder is inside the clone';
+  if (inside(runDir(o, a.id), dir) || inside(o.keep, dir)) return 'run folder is inside the clone';
   const hits = execConfigs(dir);
   if (hits.length) return `clone carries settings that can run commands: ${hits.join(', ')}`;
   return null;
 }
 
-function runOne(o, a) {
+async function runOne(o, a) {
   const why = refuseReason(o, a);
   if (why) return { id: a.id, status: 'refused', why };
   const out = runDir(o, a.id);
   if (fs.existsSync(out)) {
     if (!o.fresh) return { id: a.id, status: 'kept', why: 'run folder exists (use --fresh to replace)' };
-    if (!inside(out, path.join(o.root, 'runs'))) throw new Error(`refusing to remove ${out}`);
+    if (!inside(out, path.join(o.root, 'runs')) || out === path.join(o.root, 'runs')) throw new Error(`refusing to remove ${out}`);
     fs.rmSync(out, { recursive: true, force: true });
   }
   fs.mkdirSync(path.dirname(out), { recursive: true });
   const t0 = Date.now();
-  const r = spawnSync(process.execPath, [o.atris, 'security-review', 'audit', '--quick', '--no-upload', '--engine', 'local', '--out', out], {
-    cwd: repoDir(o, a.id), encoding: 'utf8', maxBuffer: 64 << 20, env: { ...process.env, ATRIS_SENTINEL_SCORECARD: '1' },
+  const r = await new Promise((resolve) => {
+    const child = spawn(process.execPath, [o.atris, 'security-review', 'audit', '--quick', '--no-upload', '--engine', 'local', '--out', out], {
+      cwd: repoDir(o, a.id), env: { ...process.env, ATRIS_SENTINEL_SCORECARD: '1' }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => { stdout += d; });
+    child.stderr.on('data', (d) => { stderr += d; });
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
+    child.on('error', (e) => resolve({ status: -1, stdout, stderr: `${stderr}${e.message}` }));
   });
   fs.writeFileSync(`${out}.log`, `${r.stdout || ''}\n${r.stderr || ''}`);
   // The audit exits 1 when it confirms findings, so a run counts as done when
   // its metadata says it finished, whatever the exit code.
   const done = Boolean(readJson(path.join(out, 'run-metadata.json'), {}).finished_at);
+  // Keep a copy outside /tmp so findings can be hand-checked later.
+  fs.mkdirSync(o.keep, { recursive: true });
+  fs.cpSync(out, path.join(o.keep, a.id), { recursive: true });
+  fs.copyFileSync(`${out}.log`, path.join(o.keep, `${a.id}.log`));
   return { id: a.id, status: done ? 'ran' : `failed (exit ${r.status}, see ${out}.log)`, seconds: Math.round((Date.now() - t0) / 1000) };
 }
 
@@ -260,7 +288,7 @@ function printTable(rows, list) {
 
 async function main() {
   const o = parseArgs(process.argv.slice(2));
-  const { list, labels } = load();
+  const { list, labels } = load(o);
   const pick = o.ids.length ? list.filter((a) => o.ids.includes(a.id)) : list;
   if (o.cmd === 'fetch') {
     for (const a of pick) {
@@ -269,10 +297,15 @@ async function main() {
     return 0;
   }
   if (o.cmd === 'run') {
-    for (const a of pick) {
-      const r = runOne(o, a);
-      console.log(`  ${a.id}  ${r.status}${r.why ? `: ${r.why}` : ''}${r.seconds ? ` (${r.seconds}s)` : ''}`);
-    }
+    const queue = [...pick];
+    const worker = async () => {
+      for (let a = queue.shift(); a; a = queue.shift()) {
+        const r = await runOne(o, a);
+        console.log(`  ${a.id}  ${r.status}${r.why ? `: ${r.why}` : ''}${r.seconds ? ` (${r.seconds}s)` : ''}`);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(o.jobs, queue.length) }, worker));
+    console.log(`  copies kept in ${o.keep}`);
     return 0;
   }
   if (o.cmd === 'score') {
@@ -281,7 +314,7 @@ async function main() {
     else printTable(rows, list);
     return 0;
   }
-  console.log('usage: node scripts/sentinel-real-scorecard.js fetch|run|score [ids...] [--root dir] [--fresh] [--json]');
+  console.log('usage: node scripts/sentinel-real-scorecard.js fetch|run|score [ids...] [--exam name] [--root dir] [--runs dir] [--keep dir] [--jobs n] [--fresh] [--json]');
   return 2;
 }
 
