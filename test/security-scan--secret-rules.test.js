@@ -14,6 +14,7 @@ const EXPECTED_IDS = [
   'private-key', 'aws-access-key-id', 'github-token', 'slack-token', 'slack-webhook',
   'openai-key', 'anthropic-key', 'google-api-key', 'stripe-key', 'npm-token',
   'sendgrid-key', 'jwt', 'bearer-token', 'assigned-secret',
+  'connection-string-password', 'assigned-password',
 ];
 
 const ALNUM = 'Y7qP2mN8vR4tL6zX9cB3sD5fH1jK0wE2aG9R6tV5mQ8nB4xC';
@@ -197,4 +198,18 @@ test('scanLine with SECRET_RULES ignores personal data and code-risk lines', () 
   assert.deepStrictEqual(scanLine('home is /Users/someone/project', SECRET_RULES), []);
   assert.deepStrictEqual(scanLine('mail jane.doe@acme.com or call 415-555-0134', SECRET_RULES), []);
   assert.deepStrictEqual(scanLine('eval(userInput)', SECRET_RULES), []);
+});
+
+test('database passwords and connection strings are findings, not a clean review', () => {
+  const hits = (line) => scanLine(line, SECRET_RULES).map((f) => f.rule);
+  assert.deepStrictEqual(hits('DATABASE_URL=postgres://admin:hunter2pass@db.internal/prod'), ['connection-string-password']);
+  assert.deepStrictEqual(hits('mongodb+srv://svc:Qz7mongoPass@cluster0.abcde.mongodb.net/db'), ['connection-string-password']);
+  assert.deepStrictEqual(hits('DATABASE_PASSWORD = "Pa55w0rd-prod"'), ['assigned-password']);
+  assert.deepStrictEqual(hits('DB_PASSWORD=s3cretDbPw'), ['assigned-password']);
+  assert.deepStrictEqual(hits('db_password: hunter2pass'), ['assigned-password']);
+  // code that reads the password, a template, or a placeholder is not one
+  assert.deepStrictEqual(hits('password: process.env.DB_PASSWORD,'), []);
+  assert.deepStrictEqual(hits('url = `postgres://${user}:${pass}@${host}/db`'), []);
+  assert.deepStrictEqual(hits('password = "changeme"'), []);
+  assert.deepStrictEqual(hits('redis://localhost:6379/0'), []);
 });

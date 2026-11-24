@@ -354,7 +354,7 @@ async function withBackend(backend, fn) {
     const err = console.error;
     console.log = (...a) => out.push(a.join(' '));
     console.error = (...a) => out.push(a.join(' '));
-    try { return await fn({ home, out, env: { HOME: home, PATH: '' } }); } finally {
+    try { return await fn({ home, out, env: { HOME: home, PATH: '', ATRIS_SENTINEL_UPLOAD: '1' } }); } finally {
       console.log = log;
       console.error = err;
       if (prev === undefined) delete process.env.ATRIS_API_URL; else process.env.ATRIS_API_URL = prev;

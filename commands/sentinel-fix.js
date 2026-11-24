@@ -14,7 +14,7 @@ function tildePath(p, home = require('os').homedir()) {
 }
 
 function parseFixArgs(argv) {
-  const opts = { positionals: [], allOpen: false, verify: null, builder: null, verifier: null, engine: null, yes: false, pr: false, upload: true, timeoutMs: null };
+  const opts = { positionals: [], allOpen: false, verify: null, builder: null, verifier: null, engine: null, yes: false, pr: false, upload: null, timeoutMs: null };
   const takes = (i, flag) => {
     if (argv[i + 1] === undefined || argv[i + 1].startsWith('--')) throw new Error(`${flag} needs a value`);
     return argv[i + 1];
@@ -31,6 +31,7 @@ function parseFixArgs(argv) {
     else if (flag === '--yes' || flag === '-y') opts.yes = true;
     else if (flag === '--pr') opts.pr = true;
     else if (flag === '--no-upload') opts.upload = false;
+    else if (flag === '--upload') opts.upload = true;
     else if (flag === '--timeout') opts.timeoutMs = Number(value()) * 1000;
     else if (arg.startsWith('-')) throw new Error(`unknown flag: ${arg}`);
     else opts.positionals.push(arg);
@@ -281,12 +282,13 @@ async function fixCommand(argv, deps = {}) {
   if (done.length) {
     const events = require('../lib/sentinel-events');
     let upload;
-    if (!opts.upload) upload = { skipped: 'no-upload' };
+    const consent = token ? await require('../lib/sentinel-consent').uploadConsent(opts.upload, { token, deps, tell: (m) => console.log(m) }) : null;
+    if (opts.upload === false || (consent && !consent.upload)) upload = { skipped: 'no-upload' };
     else if (!token) upload = { skipped: 'not-logged-in' };
     else {
       try { upload = await events.postEvents(done.map((x) => fix.fixEvent(root, x.record, x.res)), { token, base: deps.base }); } catch (e) { upload = { ok: false, reason: e.message }; }
     }
-    if (upload.skipped === 'no-upload') console.log('\n  kept on this machine. nothing was sent (--no-upload)');
+    if (upload.skipped === 'no-upload') console.log('\n  kept on this machine. nothing was sent to your dashboard');
     else if (upload.skipped === 'not-logged-in') console.log('\n  not logged in. nothing was sent to your dashboard');
     else if (!upload.ok) console.log(`\n  warning: could not tell your atris dashboard: ${upload.reason}. the fix itself is done`);
     else console.log('\n  told your atris dashboard. no code was sent');

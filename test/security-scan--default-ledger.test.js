@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { DEFAULT_LEDGER, recordRun, loadLedger } = require('../lib/security-scan');
+const { DEFAULT_LEDGER, recordRun, loadLedger, ledgerFile } = require('../lib/security-scan');
 
 function tmpRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ledger-'));
@@ -30,8 +30,11 @@ test('DEFAULT_LEDGER resolves inside an arbitrary root without escaping it', () 
   }
 });
 
-test('recordRun writes to DEFAULT_LEDGER and loadLedger reads it back; empty root yields []', () => {
+test('recordRun writes to the home folder, never the project, and loadLedger reads it back; empty root yields []', () => {
   const root = tmpRoot();
+  const home = tmpRoot();
+  const savedHome = process.env.HOME;
+  process.env.HOME = home;
   try {
     assert.deepStrictEqual(loadLedger(root), [], 'ledger on a fresh root is empty');
 
@@ -39,7 +42,9 @@ test('recordRun writes to DEFAULT_LEDGER and loadLedger reads it back; empty roo
     const row = recordRun(root, scan);
     assert.ok(row, 'recordRun returned null');
 
-    const file = path.join(root, DEFAULT_LEDGER);
+    assert.ok(!fs.existsSync(path.join(root, '.atris')), 'nothing is written inside the project');
+    const file = ledgerFile(root);
+    assert.ok(file.startsWith(home), `ledger file is in the home folder: ${file}`);
     assert.ok(fs.existsSync(file), `ledger file missing at ${file}`);
     const lines = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean);
     assert.strictEqual(lines.length, 1);
@@ -51,6 +56,8 @@ test('recordRun writes to DEFAULT_LEDGER and loadLedger reads it back; empty roo
     assert.strictEqual(loaded.length, 1);
     assert.strictEqual(loaded[0].scanned, 2);
   } finally {
+    if (savedHome === undefined) delete process.env.HOME; else process.env.HOME = savedHome;
     fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
   }
 });
