@@ -6,13 +6,15 @@
 //
 // Backend (atrisos-backend routers/nexus_router.py, under /nexus):
 //   GET /lists                    {lists: [{id, name, count}]}
-//   GET /lists/{id}/ranked        {list, as_of, counts: {S, A, B, none}, rows: [...]}, rows already in order
+//   GET /lists/{id}/ranked?day=YYYY-MM-DD   {list, as_of, counts: {S, A, B, none}, rows: [...]}, rows already in order;
+//                                 day is the local calendar day, as_of the day the service counted from
 // An older backend answers 404 for /ranked; that says so in one line.
 //
 // The facts behind a row are ordinary columns: hook (why now), window_ends, decider, email_status.
 // Fill them with atris nexus set, window and decides. Nothing here sends anything or writes anything.
 
 const X = require('./nexus-experiments');
+const { localDay } = require('../lib/local-day');
 
 const { clean, plural, quote } = X;
 const SUBS = new Set(['rank']);
@@ -179,7 +181,9 @@ async function run(ctx) {
 
     let data;
     try {
-      data = await api.get(`/nexus/lists/${encodeURIComponent(String(found.list.id))}/ranked`, { soon: true });
+      // Days left count from your own calendar day; the service runs on UTC, already tomorrow on a US evening.
+      const day = localDay(ctx.now || new Date());
+      data = await api.get(`/nexus/lists/${encodeURIComponent(String(found.list.id))}/ranked?day=${day}`, { soon: true });
     } catch (error) {
       if (error instanceof X.NotLive) return fail(NOT_LIVE, 1, { not_live: true });
       throw error;

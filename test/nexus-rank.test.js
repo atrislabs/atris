@@ -107,11 +107,11 @@ function card(id, name, extra = {}) {
   return { id, mine: true, name, company_name: null, location_raw: null, private: { stage: 'found', closeness: 1, extra } };
 }
 
-async function run(args, server, env = PERSON) {
+async function run(args, server, env = PERSON, now = NOW) {
   const out = [];
   const errs = [];
   const code = await nexusCommand(args, {
-    log: (l) => out.push(String(l)), err: (l) => errs.push(String(l)), now: () => NOW, env,
+    log: (l) => out.push(String(l)), err: (l) => errs.push(String(l)), now: () => now, env,
     getToken: async () => ({ token: 't' }), apiRequestJson: server.request,
     client: () => ({ read: async () => { throw new Error('the saved list is never read'); }, write: async () => { throw new Error('never written'); } }),
   });
@@ -200,6 +200,20 @@ test('rank --limit caps and says how many are left out', async () => {
   const server = backend();
   await run(['rank', LIST, '--limit', 'x'], server);
   assert.equal(server.state.calls.length, 0, 'a bad flag makes no call');
+});
+
+test('rank sends the local calendar day, not the UTC one, so days left count from your own day', async () => {
+  // Just after midnight and late in the evening, local time: in any zone but UTC one of these is
+  // a different day in UTC, so a toISOString day would fail one of them.
+  for (const now of [new Date(2026, 10, 23, 0, 30), new Date(2026, 10, 23, 23, 30)]) {
+    const server = backend();
+    const r = await run(['rank', LIST], server, PERSON, now);
+    assert.equal(r.code, 0, r.err);
+    const call = server.state.calls.find((c) => c.path === `/nexus/lists/${LIST}/ranked`);
+    assert.equal(new URL(call.url, 'https://x.test').searchParams.get('day'), '2026-11-23');
+  }
+  const j = await run(['rank', LIST, '--json'], backend(), PERSON, new Date(2026, 10, 23, 23, 30));
+  assert.deepEqual(JSON.parse(j.out), RANKED);
 });
 
 test('rank --json prints the backend answer untouched', async () => {
