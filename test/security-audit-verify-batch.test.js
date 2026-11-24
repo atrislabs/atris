@@ -166,3 +166,23 @@ test('a quick run whose first wave finds nothing spends spare calls reading more
     assert.ok(res.meta.invocations.used <= 8);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }));
+
+test('areas whose hunter call failed go first in the extra quick wave', () => withHome(async () => {
+  const root = repo(30);
+  try {
+    const calls = [];
+    const inner = engines(calls, { leadsPerArea: 0 });
+    let failedOnce = null;
+    const runJobs = async (jobs) => (await inner(jobs)).map((a, i) => {
+      if (failedOnce === null && kindOf(jobs[i]) === 'hunter') {
+        failedOnce = [...jobs[i].prompt.matchAll(/coverage_id: (\S+)/g)].map((m) => m[1]);
+        return { ok: false, reason: 'exit_1', stdout: '' };
+      }
+      return a;
+    });
+    const res = await audit.runAudit({ root, profile: 'quick', budget: 8, runJobs });
+    assert.ok(failedOnce && failedOnce.length);
+    const byId = new Map(res.ledger.map((u) => [u.coverage_id, u]));
+    for (const id of failedOnce) assert.strictEqual(byId.get(id).status, 'covered', id);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}));
