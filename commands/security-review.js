@@ -740,7 +740,7 @@ async function auditScheduleCommand(argv, deps) {
     let quote;
     try { quote = await quoteQuickRun(target, { hunter: engines.hunter, verifier: engines.verifier, token, cloud }); } catch (e) { console.error(`  no timer was set. ${e.message}`); return 2; }
     const cap = maxCredits || quote.credits;
-    console.log(`\n  each scheduled review runs on atris models (no codex or claude needed)`);
+    console.log(`\n  each scheduled review runs on atris models (no Claude Code or Codex needed)`);
     console.log(`  ${cloud.describeQuote(quote)}`);
     console.log(`  each run may spend at most ${cap} credits, once a ${every}. a run that reaches that stops\n`);
     if (!yes) {
@@ -759,7 +759,7 @@ async function auditScheduleCommand(argv, deps) {
   console.log(`  scheduled reviews are on for ${tildePath(target)}, once a ${every}`);
   console.log('  each run uses the quick profile and saves its summary to your atris account');
   console.log('  each run also checks your agent setup and dependencies for free');
-  if (approval.engine === 'local') console.log('  runs use only codex and claude on this machine. they never switch to atris models');
+  if (approval.engine === 'local') console.log('  runs use only Claude Code or Codex on this computer. they never switch to atris models');
   else console.log(`  runs use atris models and stop at ${approval.max_credits} credits`);
   console.log(`  log: ${tildePath(plan.log_path)}`);
   console.log(`  stop with: atris sentinel schedule --uninstall ${tildePath(target)}`);
@@ -873,7 +873,7 @@ async function auditRecheckCommand(argv, deps = {}) {
     if (pre.roles) verifier = pre.roles.verifier;
     if (pre.note) tell(pre.note);
   }
-  if (hosted && engines.chosen === 'no_local_engine') tell('  no codex or claude found on this machine. this re-check runs on atris models');
+  if (hosted && engines.chosen === 'no_local_engine') tell('  no Claude Code or Codex found on this computer. this re-check runs on atris models');
   const spend = hosted ? cloud.spendGuard({ quoteCall: deps.quoteCall }) : null;
   let runJobs = deps.runJobs;
   if (!runJobs && hosted) runJobs = cloud.atrisJobRunner({ token, spend });
@@ -1011,7 +1011,7 @@ async function auditCommand(argv, deps = {}) {
   }
   const progress = opts.json || deps.quiet ? null : reviewProgress({ say: (m) => console.log(m), planOnly: opts.planOnly });
   const log = progress ? progress.log : () => {};
-  if (hosted && engines.chosen === 'no_local_engine' && !opts.planOnly) tell('  no codex or claude found on this machine. this review runs on atris models');
+  if (hosted && engines.chosen === 'no_local_engine' && !opts.planOnly) tell('  no Claude Code or Codex found on this computer. this review runs on atris models');
   if (engines.chosen === 'only_one_local' && !opts.planOnly) tell(`  only ${engines.only} is installed, so ${engines.only} both looks for problems and double-checks them, in separate sessions`);
   let runJobs = deps.runJobs;
   const spend = hosted ? cloud.spendGuard({ quoteCall: deps.quoteCall }) : null;
@@ -1141,9 +1141,9 @@ function printAuditHelpAll() {
 
     atris sentinel --engine atris               atris:fast searches, atris:pro checks
     atris sentinel --engine atris --yes         skip the price question
-    atris sentinel --engine local               only codex and claude on this machine
+    atris sentinel --engine local               only Claude Code or Codex on this computer
 
-  with no --engine, local engines run when codex or claude is installed.
+  with no --engine, it uses Claude Code or Codex when one is installed.
   atris models run only when neither is installed and you are logged in.
   every run on atris models shows the most it can cost first and stops
   before it could pass that. lines that look like secrets are hidden and
@@ -1254,4 +1254,4 @@ function printHelp() {
   return 0;
 }
 
-module.exports = { securityReviewCommand, auditCommand, parseAuditArgs, enginePreflight, plainProgress, reviewProgress, renderAuditLanding };
+module.exports = { securityReviewCommand, auditCommand, parseAuditArgs, enginePreflight, plainProgress, reviewProgress, renderAuditLanding, printAuditHelp };

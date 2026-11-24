@@ -256,6 +256,16 @@ test('the fix list puts the worst problem first and says nothing changes until y
   assert.deepStrictEqual(order, ['critical', 'high', 'medium']);
   assert.match(r.out, new RegExp(`fix one with: atris sentinel fix ${fix.shortId('x/b')}`));
   assert.match(r.out, /nothing goes into your code until you merge that branch/);
+
+  // A problem that already has a fix ready is not suggested again.
+  execFileSync('git', ['branch', fix.branchFor(rec('critical', 'b'))], { cwd: root });
+  const again = await capture(() => fixCommand([], { root, env: process.env }));
+  assert.match(again.out, new RegExp(`\\(fix ready: ${fix.branchFor(rec('critical', 'b'))}\\)`));
+  assert.match(again.out, new RegExp(`fix one with: atris sentinel fix ${fix.shortId('x/c')}`));
+  for (const n of ['a', 'c']) execFileSync('git', ['branch', fix.branchFor(rec('high', n))], { cwd: root });
+  const done = await capture(() => fixCommand([], { root, env: process.env }));
+  assert.match(done.out, /every problem here has a fix ready/);
+  assert.ok(!/fix one with/.test(done.out));
 });
 
 test('a review writes nothing inside a project that is not an Atris workspace', () => {

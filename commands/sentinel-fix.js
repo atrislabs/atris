@@ -136,13 +136,20 @@ async function fixCommand(argv, deps = {}) {
     const rank = { critical: 0, high: 1, medium: 2, low: 3, informational: 4 };
     const sorted = [...records].sort((a, b) => (rank[sevOf(a)] ?? 5) - (rank[sevOf(b)] ?? 5));
     console.log('\n  confirmed problems you can fix, worst first\n');
+    const open = [];
     for (const r of sorted) {
-      const has = fix.branchExists(root, fix.branchFor(r));
-      console.log(`  ${fix.shortId(r.fingerprint)}  ${sevOf(r).padEnd(8)}  ${r.title}${has ? '  (fix branch exists)' : ''}`);
+      const branch = fix.branchFor(r);
+      const has = fix.branchExists(root, branch);
+      if (!has) open.push(r);
+      console.log(`  ${fix.shortId(r.fingerprint)}  ${sevOf(r).padEnd(8)}  ${r.title}${has ? `  (fix ready: ${branch})` : ''}`);
     }
-    console.log(`\n  fix one with: atris sentinel fix ${fix.shortId(sorted[0].fingerprint)}`);
-    console.log('  it writes the fix and a test that proves the hole is closed, on a new branch.');
-    console.log('  nothing goes into your code until you merge that branch.\n');
+    if (open.length) {
+      console.log(`\n  fix one with: atris sentinel fix ${fix.shortId(open[0].fingerprint)}`);
+      console.log('  it writes the fix and a test that proves the hole is closed, on a new branch.');
+      console.log('  nothing goes into your code until you merge that branch.\n');
+    } else {
+      console.log('\n  every problem here has a fix ready. take one with git merge <branch>, or say no with git branch -D <branch>\n');
+    }
     return 0;
   }
 
@@ -182,7 +189,7 @@ async function fixCommand(argv, deps = {}) {
     allowed = require('../lib/security-audit').hostedAllowedFiles(root, []);
     const rows = [];
     if (fix.isHosted(engines.builder)) {
-      const sizes = targets.map((r) => Buffer.byteLength(fix.builderPrompt(r, { testCommand, hosted: true, fileList: [...allowed].slice(0, 400), source: fix.hostedSourceBlock(root, fix.citedFiles(r), allowed, 64 * 1024) })));
+      const sizes = targets.map((r) => Buffer.byteLength(fix.builderPrompt(r, { testCommand, hosted: true, others: records, fileList: [...allowed].slice(0, 400), source: fix.hostedSourceBlock(root, fix.citedFiles(r), allowed, 64 * 1024) })));
       const max = Math.max(4096, ...sizes) + 1024;
       rows.push({ role: 'builder', model: engines.builder, calls: targets.length, input_tokens: max, output_tokens: fix.HOSTED_OUTPUT_TOKENS.builder, max_input_bytes: max });
     }
@@ -210,6 +217,7 @@ async function fixCommand(argv, deps = {}) {
   const ctx = {
     from,
     testCommand,
+    others: records,
     engines,
     env,
     allowed,
@@ -248,9 +256,15 @@ async function fixCommand(argv, deps = {}) {
     } else {
       console.log(`  no fix was committed: ${res.reason}`);
       if (res.branch === null || res.branch === undefined) console.log(`  you are on ${from}. nothing in your project changed${res.patch ? `. the attempt is saved at ${tildePath(res.patch, env.HOME || undefined)}` : ''}`);
+      if (res.test_output) console.log(`  what the tests printed: ${tildePath(res.test_output, env.HOME || undefined)}`);
       // A refusal is a dead end without a next step.
       if (records.length > 1) console.log(`  if that reason points at another problem on the list, fix that one first (atris sentinel fix), then try this one again`);
       console.log(`  try again with: atris sentinel fix ${fix.shortId(record.fingerprint)}`);
+      // A tool that stopped or wrote nothing may simply decline this one; the other may not.
+      const otherTool = { codex: 'claude', claude: 'codex' }[engines.builder];
+      if (otherTool && !engines.same && /the builder (stopped|changed nothing)/.test(res.reason || '')) {
+        console.log(`  or let the other tool write it: atris sentinel fix ${fix.shortId(record.fingerprint)} --builder ${otherTool} --verifier ${engines.builder}`);
+      }
     }
   }
 

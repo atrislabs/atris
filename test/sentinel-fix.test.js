@@ -529,3 +529,198 @@ test('a push from a generated test fails and the test sees no credentials', asyn
   assert.strictEqual(spawnGit(bare, ['rev-parse', '--verify', '--quiet', 'refs/heads/leak2']).status, 1);
   assert.strictEqual(spawnGit(root, ['config', '--get', 'remote.origin.pushurl']).status, 1, 'your own push settings are unchanged');
 });
+
+// ---------------------------------------------------------------- first real fixes
+
+test('the temp copy gets your installed packages, and they never become part of the fix', async () => {
+  const { root } = makeRepo();
+  write(root, '.gitignore', 'node_modules/\n');
+  sh(root, 'add', '.gitignore');
+  sh(root, 'commit', '-q', '-m', 'ignore');
+  // An installed package the new test needs, as in any Express app.
+  write(root, 'node_modules/name-rules/index.js', "module.exports = { separators: [';', '|', '&'] };\n");
+  const needsPackage = "const test = require('node:test');\nconst assert = require('node:assert');\nconst { separators } = require('name-rules');\nconst { safeName } = require('../lib/run');\ntest('every separator is refused', () => { for (const s of separators) assert.strictEqual(safeName(`x${s}rm`), false); });\n";
+  let sawPackage = null;
+  const runBuilder = async (job) => {
+    sawPackage = fs.existsSync(path.join(job.root, 'node_modules', 'name-rules', 'index.js'));
+    write(job.root, 'lib/run.js', FIXED);
+    write(job.root, 'test/fix.test.js', needsPackage);
+    return { ok: true, stdout: JSON.stringify({ summary: 'Allow only plain characters', test_files: ['test/fix.test.js'] }) };
+  };
+  const r = await capture(() => fixCommand([short], baseDeps(root, { runBuilder, runChecker: checkerSaying('fixed') })));
+  assert.strictEqual(r.code, 0, r.out + r.err);
+  assert.strictEqual(sawPackage, true, 'the fix writer can run tests that use installed packages');
+  const files = sh(root, 'diff', '--name-only', `main...${BRANCH}`).split('\n').sort();
+  assert.deepStrictEqual(files, ['lib/run.js', 'test/fix.test.js'], 'the package link is not part of the fix');
+  assert.ok(fs.existsSync(path.join(root, 'node_modules', 'name-rules', 'index.js')), 'your installed packages are left as they were');
+  assert.strictEqual(sh(root, 'status', '--porcelain'), '');
+});
+
+test('package links: only ignored folders are linked, hidden from changes, and removed cleanly', () => {
+  const { root } = makeRepo();
+  write(root, '.gitignore', 'node_modules/\n');
+  write(root, 'venv/keep.txt', 'tracked on purpose\n');
+  sh(root, 'add', '-A');
+  sh(root, 'commit', '-q', '-m', 'venv tracked');
+  write(root, 'node_modules/a/index.js', 'module.exports = 1;\n');
+  const wt = path.join(tmp('sentinel-fix-links-'), 'repo');
+  sh(root, 'worktree', 'add', '-q', '--detach', wt, 'HEAD');
+  try {
+    assert.deepStrictEqual(fix.linkDependencies(root, wt), ['node_modules'], 'a tracked folder is already in the copy and is not linked');
+    assert.ok(fs.lstatSync(path.join(wt, 'node_modules')).isSymbolicLink());
+    assert.deepStrictEqual(fix.changedPaths(wt), [], 'the link does not show up as a change');
+    fix.unlinkDependencies(wt);
+    assert.ok(!fs.existsSync(path.join(wt, 'node_modules')));
+    assert.ok(fs.existsSync(path.join(root, 'node_modules', 'a', 'index.js')), 'removing the link keeps your packages');
+  } finally {
+    sh(root, 'worktree', 'remove', '--force', wt);
+  }
+});
+
+test('a refused fix keeps what the tests printed, so the reason can be read', async () => {
+  const { root } = makeRepo();
+  const deps = baseDeps(root, { runBuilder: builderWriting({ 'lib/run.js': FIXED, 'test/fix.test.js': WEAK_TEST }), runChecker: checkerSaying('fixed') });
+  const r = await capture(() => fixCommand([short], deps));
+  assert.strictEqual(r.code, 1);
+  assert.match(r.out, /what the tests printed: /);
+  const saved = path.join(deps.env.HOME, '.atris', 'sentinel', 'fixes');
+  const outFile = fs.readdirSync(saved).map((d) => path.join(saved, d, 'test-output.txt')).find((f) => fs.existsSync(f));
+  assert.ok(outFile, 'the test output is saved next to the attempt');
+  assert.match(fs.readFileSync(outFile, 'utf8'), /^\$ node --test/);
+});
+
+test('the fix writer is told how it is judged and to write the attack test first', () => {
+  const others = [RECORD, { verdict: 'confirmed', fingerprint: 'path-traversal/x', title: 'Any file can be downloaded', trace: [{ file: 'server.js', line: 49 }] }];
+  const local = fix.builderPrompt(RECORD, { testCommand: 'npm test', others, canRun: true });
+  assert.match(local, /Write the regression test first, before touching the code/);
+  assert.match(local, /Run only that test and see it fail on an assertion/);
+  // Claude Code builds with file tools only, so it is told to trace the test by hand.
+  const noShell = fix.builderPrompt(RECORD, { testCommand: 'npm test', others });
+  assert.match(noShell, /You cannot run commands in this session/);
+  assert.ok(!/Run only that test/.test(noShell));
+  assert.match(local, /fails on an assertion\. A crash, an import error, a missing file or a timeout does not count/);
+  assert.match(local, /from the side of the person who should be stopped/);
+  // Written in defensive words: a tool safety filter refused "attack" wording.
+  assert.ok(!/attacker|the attack|attack test/i.test(local.split("## Confirmed finding")[0]), "the instructions avoid attack words");
+  assert.match(local, /Any file can be downloaded \(server\.js:49\)/);
+  assert.ok(!local.split('## Other confirmed problems')[1].includes(RECORD.title), 'the problem being fixed is not listed as another one');
+  const hosted = fix.builderPrompt(RECORD, { testCommand: 'npm test', hosted: true, others });
+  assert.ok(!/Order of work/.test(hosted), 'a hosted builder cannot run tests, so it gets no run steps');
+  assert.match(hosted, /How your work is judged/);
+  const checker = fix.checkerPrompt(RECORD, { diff: '', others });
+  assert.match(checker, /Judge this problem only/);
+  assert.match(checker, /Any file can be downloaded/);
+  assert.ok(!/Judge this problem only/.test(fix.checkerPrompt(RECORD, { diff: '' })), 'no scope line when there is nothing else to point at');
+});
+
+test('the fix run hands the other confirmed problems to the writer and the checker', async () => {
+  const { root } = makeRepo();
+  const other = { ...RECORD, fingerprint: 'path-traversal/lib/files.js/read', title: 'Any file can be read' };
+  const dir = path.join(auditHome, audit.repoName(root), 'run-1');
+  fs.writeFileSync(path.join(dir, 'findings.json'), JSON.stringify([RECORD, other]));
+  const runBuilder = builderWriting({ 'lib/run.js': FIXED, 'test/fix.test.js': REGRESSION });
+  const runChecker = checkerSaying('fixed');
+  const r = await capture(() => fixCommand([short], baseDeps(root, { runBuilder, runChecker })));
+  assert.strictEqual(r.code, 0, r.out + r.err);
+  assert.match(runBuilder.calls[0].prompt, /Any file can be read/);
+  assert.match(runChecker.calls[0].prompt, /Any file can be read/);
+});
+
+test('every place sentinel names the tools that work says Claude Code or Codex', () => {
+  const files = ['commands/security-review.js', 'commands/sentinel-fix.js', 'lib/sentinel-fix.js', 'lib/sentinel-cloud.js', 'bin/atris.js'];
+  for (const rel of files) {
+    const text = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+    for (const bad of [/\bno codex or claude\b/i, /\bonly codex and claude\b/i, /\buse codex or claude\b/i, /\bcodex or claude is installed\b/i, /Claude Code, Codex,? and so on/i]) {
+      assert.ok(!bad.test(text), `${rel} names the tools another way: ${bad}`);
+    }
+  }
+  const { printAuditHelp } = require('../commands/security-review');
+  const lines = [];
+  const orig = console.log;
+  console.log = (...a) => lines.push(a.join(' '));
+  try { printAuditHelp(); } finally { console.log = orig; }
+  assert.match(lines.join('\n'), /Claude Code or Codex/);
+});
+
+test('a refused first try gets one more round with the reason and the test output, then lands', async () => {
+  const { root } = makeRepo();
+  const prompts = [];
+  let round = 0;
+  const runBuilder = async (job) => {
+    prompts.push(job.prompt);
+    round += 1;
+    write(job.root, 'lib/run.js', FIXED);
+    // First try: a test that does not drive the attack. Second: the real one.
+    write(job.root, 'test/fix.test.js', round === 1 ? WEAK_TEST : REGRESSION);
+    return { ok: true, stdout: JSON.stringify({ summary: 'Allow only plain characters', test_files: ['test/fix.test.js'] }) };
+  };
+  const logs = [];
+  const runChecker = checkerSaying('fixed');
+  const r = await capture(() => fixCommand([short], baseDeps(root, { runBuilder, runChecker, log: (m) => logs.push(m) })));
+  assert.strictEqual(r.code, 0, r.out + r.err);
+  assert.strictEqual(prompts.length, 2);
+  assert.ok(!/Your last try was refused/.test(prompts[0]));
+  assert.match(prompts[1], /Your last try was refused/);
+  assert.match(prompts[1], /the new test also passes on the original code and does not catch this problem/);
+  assert.match(prompts[1], /What the tests printed/);
+  assert.ok(logs.some((l) => /giving codex one more try/.test(l)), logs.join('\n'));
+  assert.strictEqual(runChecker.calls.length, 1, 'the checker sees only the try that passed the tests');
+  const files = sh(root, 'diff', '--name-only', `main...${BRANCH}`).split('\n').sort();
+  assert.deepStrictEqual(files, ['lib/run.js', 'test/fix.test.js']);
+  assert.match(sh(root, 'show', `${BRANCH}:test/fix.test.js`), /a shell separator in the name is refused/);
+});
+
+test('a second miss stops: two rounds at most, nothing committed', async () => {
+  const { root } = makeRepo();
+  const runBuilder = builderWriting({ 'lib/run.js': FIXED });
+  const r = await capture(() => fixCommand([short], baseDeps(root, { runBuilder, runChecker: checkerSaying('fixed') })));
+  assert.strictEqual(r.code, 1);
+  assert.strictEqual(runBuilder.calls.length, 2);
+  assert.match(r.out, /no fix was committed: the builder added no regression test/);
+  assert.strictEqual(fix.branchExists(root, BRANCH), false);
+});
+
+test('the checker saying the attack still works also earns one more round, with its reason', async () => {
+  const { root } = makeRepo();
+  const runBuilder = builderWriting({ 'lib/run.js': FIXED, 'test/fix.test.js': REGRESSION });
+  let n = 0;
+  const runChecker = async (job) => {
+    n += 1;
+    return { ok: true, stdout: JSON.stringify(n === 1 ? { verdict: 'not_fixed', reason: 'a second route skips the check' } : { verdict: 'fixed', reason: 'both routes check now' }) };
+  };
+  const r = await capture(() => fixCommand([short], baseDeps(root, { runBuilder, runChecker })));
+  assert.strictEqual(r.code, 0, r.out + r.err);
+  assert.strictEqual(runBuilder.calls.length, 2);
+  assert.match(runBuilder.calls[1].prompt, /a second route skips the check/);
+});
+
+test('a builder that stops with an error gets one more try, and the refusal quotes what it said', async () => {
+  const { root } = makeRepo();
+  let n = 0;
+  const flaky = async (job) => {
+    n += 1;
+    if (n === 1) return { ok: false, reason: 'exit_1', stdout: '', stderr: 'thinking...\nERROR: usage limit reached, try again in 2 minutes\n' };
+    write(job.root, 'lib/run.js', FIXED);
+    write(job.root, 'test/fix.test.js', REGRESSION);
+    return { ok: true, stdout: JSON.stringify({ summary: 's', test_files: ['test/fix.test.js'] }) };
+  };
+  const r = await capture(() => fixCommand([short], baseDeps(root, { runBuilder: flaky, runChecker: checkerSaying('fixed') })));
+  assert.strictEqual(r.code, 0, r.out + r.err);
+  assert.strictEqual(n, 2);
+
+  const { root: root2 } = makeRepo();
+  const alwaysDown = async () => ({ ok: false, reason: 'exit_1', stdout: '', stderr: 'ERROR: usage limit reached, try again in 2 minutes\n' });
+  const r2 = await capture(() => fixCommand([short], baseDeps(root2, { runBuilder: alwaysDown, runChecker: checkerSaying('fixed') })));
+  assert.strictEqual(r2.code, 1);
+  assert.match(r2.out, /the builder stopped before it finished \(exit_1\)\. it said: ERROR: usage limit reached/);
+  assert.match(r2.out, new RegExp(`or let the other tool write it: atris sentinel fix ${short} --builder claude --verifier codex`));
+
+  const { root: root3 } = makeRepo();
+  const idle = async () => ({ ok: true, stdout: 'I could not find the route this finding names.\n{"summary":"nothing"}', stderr: '' });
+  const r3 = await capture(() => fixCommand([short], baseDeps(root3, { runBuilder: idle, runChecker: checkerSaying('fixed') })));
+  assert.match(r3.out, /the builder changed nothing\. it said: I could not find the route this finding names\./);
+
+  // A line of code the tool quoted is not what it said, even if it reads like an error.
+  assert.strictEqual(fix.toolSaid({ stdout: '    raise HTTPException(status_code=401, detail="sign in first")\nNo change was needed.\ntokens used\n11,484\n', stderr: '' }), 'No change was needed.');
+  assert.strictEqual(fix.toolSaid({ stdout: 'raise HTTPException(401, "sign in first")', stderr: 'ERROR: This content was flagged for possible cybersecurity risk.' }), 'ERROR: This content was flagged for possible cybersecurity risk.');
+});
