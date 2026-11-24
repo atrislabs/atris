@@ -255,3 +255,27 @@ test('code execution and account takeover leads are checked first', () => {
   assert.ok(audit.graveLead({ title: 'An authenticated user can execute JavaScript on the server' }));
   assert.ok(!audit.graveLead({ title: 'A user can run a report for another team' }));
 });
+
+// The reading tool's own safety check refused the request. Asking it again
+// is often refused again, so the one retry goes to the checking tool.
+test('a hunter call the engine refuses is retried on the other local engine', () => withHome(async () => {
+  const root = repo(3);
+  try {
+    const calls = [];
+    const inner = engines(calls, { leadsPerArea: 0 });
+    let refused = 0;
+    const runJobs = async (jobs) => (await inner(jobs)).map((a, i) => {
+      if (kindOf(jobs[i]) === 'hunter' && jobs[i].engine === 'codex' && refused === 0) {
+        refused += 1;
+        return { ok: false, reason: 'exit_1', stdout: '', stderr: '47,566\nERROR: This content was flagged for possible cybersecurity risk.\n' };
+      }
+      return a;
+    });
+    const res = await audit.runAudit({ root, profile: 'quick', budget: 8, hunter: 'codex', verifier: 'claude', runJobs });
+    const retried = calls.filter((j) => / h1-\d+r$/.test(j.label));
+    assert.strictEqual(retried.length, 1);
+    assert.strictEqual(retried[0].engine, 'claude');
+    assert.deepStrictEqual(res.meta.unread_areas, []);
+    assert.match(audit.engineErrorTail({ stderr: '47,566\nERROR: This content was flagged for possible cybersecurity risk.\n' }), /flagged for possible cybersecurity risk/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}));
