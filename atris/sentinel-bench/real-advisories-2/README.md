@@ -365,10 +365,16 @@ looked at or run for this change.
 3.92.1 is one run per repo. Under the same reader, its wrong alarms move from
 11% to 11%, 28% (was 22%), 15% (was 10%) and 22% (was 22%).
 
-What the rule did: on exam 1's seen half, the repo where this wrong alarm
-lived (a command-line tool reading its project's config) went from 3 and 2
-wrong alarms to 0 and 0, and exam 1's wrong alarms fell from 25% to 14%
-pooled.
+What the rule did: little, measured. On exam 1's seen half the repo where
+this wrong alarm lives (a command-line tool reading its project's config and
+committed symlinks) had 1 such wrong alarm in each round 4 run, and 0 and 2
+in round 5. In the run that still confirmed them, the checker named "a
+repository contributor" as the attacker and did not apply the rule. Exam 1's
+wrong alarms did fall from 25% to 14% pooled, but that came from other repos
+(fewer confirmed findings overall), not from this rule. A stronger wording
+that says outright that a repository contributor is not a lower-trust
+attacker against the person who runs the tool in that repository is the
+next thing to try; it was not tried here.
 
 What it did not do: finds fell on both seen halves in round 5. None of the
 lost holes was turned away under the new rule. On this exam, the goshs bulk
@@ -378,7 +384,7 @@ Homer hole was lost in one run to reads the engine refused, and the Auth0
 hole was left as "needs a fact" about the operator's Auth0 tenant, as it was
 in two runs before the rule. This exam's extra wrong alarms are the same
 Skipper and goshs kinds seen in round 4, not project folders. So the drop
-looks like run-to-run luck, not the rule, and the rule is kept. That is a
+looks like run-to-run luck, not the rule, and the rule is kept since it cost nothing measurable. That is a
 judgment from the records, not a measured difference: two runs per repo
 cannot separate a one-hole change from luck.
 
