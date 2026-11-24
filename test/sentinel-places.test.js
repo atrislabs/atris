@@ -213,8 +213,8 @@ test('the plan shows the parts and one shared budget; the report and saved resul
       assert.strictEqual(code, 0, out.join('\n'));
       const text = out.join('\n');
       assert.match(text, /one system in 3 parts/);
-      assert.match(text, /budget 20 \(one budget shared by all 3 parts\)/);
-      assert.match(text, /areas per part: api \d+, web \d+, mobile \d+/);
+      assert.match(text, /up to 20 AI tool calls in total, shared by all 3 places/);
+      assert.match(text, /parts per place: api \d+, web \d+, mobile \d+/);
       const runDir = path.join(home, 'api+mobile+web', 'run-1');
       const meta = JSON.parse(fs.readFileSync(path.join(runDir, 'run-metadata.json'), 'utf8'));
       assert.strictEqual(meta.budget, 20, 'never multiplied by the number of parts');

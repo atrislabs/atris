@@ -208,7 +208,8 @@ test('happy path: real codex and claude processes, commit on the new branch with
     assert.ok(msg.trim().endsWith('Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>'));
     assert.ok(fs.existsSync(hookLog), 'the pre-commit hook ran');
     // Builder ran with write access limited to the repo, checker read-only.
-    const calls = fs.readFileSync(engines.argLog, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    // The free sign-in checks (codex login status, claude auth status) come first; skip them.
+    const calls = fs.readFileSync(engines.argLog, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((c) => !/^(login|auth) status/.test(c.args.join(' ')));
     const codex = calls.find((c) => c.engine === 'codex');
     const claude = calls.find((c) => c.engine === 'claude');
     assert.notStrictEqual(codex.cwd, root, 'the builder runs in a temp worktree, not your checkout');

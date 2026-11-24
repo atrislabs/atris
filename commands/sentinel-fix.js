@@ -116,6 +116,7 @@ async function fixCommand(argv, deps = {}) {
   const top = fix.git(start, ['rev-parse', '--show-toplevel'], { allowFail: true });
   if (!top) { console.error(`  ${tildePath(start)} is not a git repository. a fix needs a branch to go on`); return 2; }
   const root = top;
+  require('../lib/sentinel-cloud').keepProjectClean(root);
 
   const { records, system, dir } = fix.confirmedFindings(root);
   if (system) {
@@ -125,15 +126,23 @@ async function fixCommand(argv, deps = {}) {
     console.log(`  the findings are in ${tildePath(path.join(dir, 'REPORT.md'))}. to fix one here, review this folder alone first: atris sentinel\n`);
     return opts.id || opts.allOpen ? 2 : 0;
   }
-  if (!records.length) { console.log('\n  no confirmed findings for this repository. run atris sentinel first\n'); return 0; }
+  if (!records.length) {
+    if (!dir) console.log('\n  no review of this project yet. run atris sentinel first, then come back here\n');
+    else console.log('\n  the last review has no confirmed problems, so there is nothing to fix.\n  a possible problem that is not double-checked yet cannot be fixed. run atris sentinel again to check it\n');
+    return 0;
+  }
 
   if (!opts.id && !opts.allOpen) {
-    console.log('\n  confirmed findings you can fix\n');
-    for (const r of records) {
+    const rank = { critical: 0, high: 1, medium: 2, low: 3, informational: 4 };
+    const sorted = [...records].sort((a, b) => (rank[sevOf(a)] ?? 5) - (rank[sevOf(b)] ?? 5));
+    console.log('\n  confirmed problems you can fix, worst first\n');
+    for (const r of sorted) {
       const has = fix.branchExists(root, fix.branchFor(r));
       console.log(`  ${fix.shortId(r.fingerprint)}  ${sevOf(r).padEnd(8)}  ${r.title}${has ? '  (fix branch exists)' : ''}`);
     }
-    console.log(`\n  fix one with: atris sentinel fix ${fix.shortId(records[0].fingerprint)}\n`);
+    console.log(`\n  fix one with: atris sentinel fix ${fix.shortId(sorted[0].fingerprint)}`);
+    console.log('  it writes the fix and a test that proves the hole is closed, on a new branch.');
+    console.log('  nothing goes into your code until you merge that branch.\n');
     return 0;
   }
 
@@ -152,7 +161,13 @@ async function fixCommand(argv, deps = {}) {
   if (!from || from === 'HEAD') { console.error('  check out a branch first. a fix branch is made from the branch you are on'); return 2; }
 
   const testCommand = opts.verify || fix.detectTestCommand(root);
-  if (!testCommand) { console.error('  no test command found. name one with --verify "<command>"'); return 2; }
+  if (!testCommand) {
+    console.error('  a fix is kept only when a new test proves the hole is closed, so sentinel needs to run your tests.');
+    const example = fs.existsSync(path.join(root, 'package.json')) ? 'node --test' : fs.existsSync(path.join(root, 'go.mod')) ? 'go test ./...' : 'pytest';
+    console.error('  it could not tell how. name the command that runs them, for example:');
+    console.error(`    atris sentinel fix ${opts.id || '<id>'} --verify "${example}"`);
+    return 2;
+  }
 
   let engines;
   try { engines = fix.resolveFixEngines({ engine: opts.engine, builder: opts.builder, verifier: opts.verifier, env, available: deps.available }); } catch (e) { console.error(`  ${e.message}`); return 2; }
@@ -206,6 +221,8 @@ async function fixCommand(argv, deps = {}) {
   };
 
   console.log(`\n  ◉ sentinel fix · ${engines.builder} writes the fix · ${engines.verifier} checks it · tests: ${testCommand}`);
+  if (engines.same) console.log(`  only ${engines.builder} is ready on this computer, so it also checks its own fix, in a fresh session. a second tool makes that check stronger`);
+  console.log('  this takes a few minutes. your own branch and files are not touched');
   const results = [];
   for (const record of targets) {
     console.log(`\n  ${fix.shortId(record.fingerprint)} · ${record.title}`);
@@ -223,9 +240,17 @@ async function fixCommand(argv, deps = {}) {
       } else {
         console.log('  nothing was pushed');
       }
+      if (res.pr && res.pr.ok) console.log('  to take it, merge the pull request. to say no, close it');
+      else {
+        console.log(`  to take it: git merge ${res.branch}`);
+        console.log(`  to say no:  git branch -D ${res.branch}`);
+      }
     } else {
       console.log(`  no fix was committed: ${res.reason}`);
-      if (res.branch === null || res.branch === undefined) console.log(`  you are on ${from}${res.patch ? `. the attempt is saved at ${tildePath(res.patch, env.HOME || undefined)}` : ''}`);
+      if (res.branch === null || res.branch === undefined) console.log(`  you are on ${from}. nothing in your project changed${res.patch ? `. the attempt is saved at ${tildePath(res.patch, env.HOME || undefined)}` : ''}`);
+      // A refusal is a dead end without a next step.
+      if (records.length > 1) console.log(`  if that reason points at another problem on the list, fix that one first (atris sentinel fix), then try this one again`);
+      console.log(`  try again with: atris sentinel fix ${fix.shortId(record.fingerprint)}`);
     }
   }
 
