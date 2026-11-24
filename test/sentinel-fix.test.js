@@ -103,9 +103,9 @@ function makeRepo({ branch = 'main', remote = null } = {}) {
   sh(root, 'commit', '-q', '-m', 'init');
   fs.rmSync(hookLog, { force: true });
   if (remote) sh(root, 'remote', 'add', 'origin', remote);
-  const dir = path.join(auditHome, audit.repoName(root), 'run-1');
+  const dir = path.join(auditHome, audit.historyFolder(root), 'run-1');
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'run-metadata.json'), JSON.stringify({ profile: 'quick' }));
+  fs.writeFileSync(path.join(dir, 'run-metadata.json'), JSON.stringify({ profile: 'quick', run_status: 'complete', finished_at: '2026-11-24T00:00:00.000Z' }));
   fs.writeFileSync(path.join(dir, 'findings.json'), JSON.stringify([RECORD, { verdict: 'rejected', fingerprint: 'other/x', title: 'not real', reason: 'no' }]));
   return { root, hookLog };
 }
@@ -697,7 +697,7 @@ test('the fix writer is told how it is judged and to write the attack test first
 test('the fix run hands the other confirmed problems to the writer and the checker', async () => {
   const { root } = makeRepo();
   const other = { ...RECORD, fingerprint: 'path-traversal/lib/files.js/read', title: 'Any file can be read' };
-  const dir = path.join(auditHome, audit.repoName(root), 'run-1');
+  const dir = path.join(auditHome, audit.historyFolder(root), 'run-1');
   fs.writeFileSync(path.join(dir, 'findings.json'), JSON.stringify([RECORD, other]));
   const runBuilder = builderWriting({ 'lib/run.js': FIXED, 'test/fix.test.js': REGRESSION });
   const runChecker = checkerSaying('fixed');
