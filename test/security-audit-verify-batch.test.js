@@ -186,3 +186,72 @@ test('areas whose hunter call failed go first in the extra quick wave', () => wi
     for (const id of failedOnce) assert.strictEqual(byId.get(id).status, 'covered', id);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }));
+
+// A hunter call that fails in the engine read nothing. It gets one more try
+// at once, and the failed call's last error line is kept so the cause shows.
+test('a hunter call that fails in the engine is retried once, right away', () => withHome(async () => {
+  const root = repo(3);
+  try {
+    const calls = [];
+    const inner = engines(calls, { leadsPerArea: 0 });
+    let failed = 0;
+    const runJobs = async (jobs) => (await inner(jobs)).map((a, i) => {
+      if (failed === 0 && kindOf(jobs[i]) === 'hunter') {
+        failed += 1;
+        return { ok: false, reason: 'exit_1', stdout: '', stderr: 'reading prompt\nERROR: stream disconnected before completion: rate limit reached for sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCD\n' };
+      }
+      return a;
+    });
+    const logs = [];
+    const res = await audit.runAudit({ root, profile: 'quick', budget: 8, runJobs, log: (l) => logs.push(l) });
+    assert.ok(logs.some((l) => /retrying 1 hunter call that failed \(exit_1\)/.test(l)), logs.join('\n'));
+    assert.ok(calls.some((j) => / h1-\d+r$/.test(j.label)));
+    assert.strictEqual(res.meta.run_status, 'complete');
+    assert.deepStrictEqual(res.meta.unread_areas, []);
+    assert.ok(res.meta.invocations.used <= 8);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}));
+
+// Audit item: a run whose reading tool failed must never look clean, even
+// when other parts were read, or carried over from an earlier run.
+test('areas the reading tool never read make the run incomplete and are listed by name', () => withHome(async () => {
+  const root = repo(3);
+  try {
+    await audit.runAudit({ root, profile: 'quick', budget: 8, runJobs: engines([], { leadsPerArea: 0 }) });
+    fs.appendFileSync(path.join(root, 'svc0', 'run.js'), '// changed\n');
+    execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', 'commit', '-qam', 'change'], { cwd: root });
+    const runJobs = async (jobs) => jobs.map((job) => (kindOf(job) === 'hunter' ? { ok: false, reason: 'exit_1', stdout: '', stderr: 'Error: quota exceeded\n' } : { ok: false, reason: 'unexpected', stdout: '' }));
+    const res = await audit.runAudit({ root, profile: 'quick', budget: 8, runJobs });
+    assert.strictEqual(res.meta.run_status, 'incomplete');
+    assert.strictEqual(res.meta.incomplete_reason, 'areas_not_read');
+    assert.strictEqual(res.meta.coverage_clean, false);
+    assert.ok(res.meta.unread_areas.length > 0);
+    assert.ok(res.meta.unread_areas.every((u) => /hunter codex failed: exit_1 \(Error: quota exceeded\)/.test(u.why)), JSON.stringify(res.meta.unread_areas));
+    assert.ok(res.meta.unread_areas.some((u) => u.paths.some((p) => p.startsWith('svc0'))));
+    const report = fs.readFileSync(path.join(res.dir, 'REPORT.md'), 'utf8');
+    assert.match(report, /This run is incomplete: areas not read/);
+    assert.match(report, /## Not read\n\nThe reading tool failed on these areas/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}));
+
+test('a long id or key in an engine error is cut out of the reason', () => {
+  const tail = audit.engineErrorTail({ stderr: 'ok\nError: bad key sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCD\n' });
+  assert.match(tail, /Error: bad key/);
+  assert.doesNotMatch(tail, /abcdefghijklmnop/);
+  assert.strictEqual(audit.engineErrorTail({ stderr: '' }), '');
+});
+
+// Audit item: on a training app the code execution lead was left unchecked
+// while weaker leads were checked. Code execution and takeover go first.
+test('code execution and account takeover leads are checked first', () => {
+  const lead = (fingerprint, extra) => ({ fingerprint, proposed_verdict: 'confirmed', severity: { overall: 'high' }, attack_class: 'access-control', title: 'A user reads another user\'s list', ...extra });
+  const leads = [
+    lead('a/x.js:f/read-other'),
+    lead('b/y.js:g/eval-body', { attack_class: 'code-injection', title: 'Request body is evaluated', severity: { overall: 'medium' }, proposed_verdict: 'needs_validation' }),
+    lead('c/z.js:h/reset-link', { title: 'Anyone can take over an account through the reset link', severity: { overall: 'medium' } }),
+    lead('d/w.js:i/note', { severity: { overall: 'critical' } }),
+  ];
+  assert.deepStrictEqual(leads.slice().sort(audit.verifyOrder).map((l) => l.fingerprint), ['c/z.js:h/reset-link', 'b/y.js:g/eval-body', 'd/w.js:i/note', 'a/x.js:f/read-other']);
+  assert.ok(audit.graveLead({ title: 'An authenticated user can execute JavaScript on the server' }));
+  assert.ok(!audit.graveLead({ title: 'A user can run a report for another team' }));
+});

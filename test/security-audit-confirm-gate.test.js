@@ -54,13 +54,16 @@ function cand(extra = {}) {
 const by = { engine: 'claude', agent_id: 'v-01' };
 const PASS = Object.fromEntries(CONFIRM_CHECKS.map((c) => [c.key, c.pass]));
 const answer = (o) => ({ ok: true, stdout: JSON.stringify({ reason: 'read it', ...o }) });
+// A line of lib/pay.js that a dismissal can point at.
+const ON_PAY = [{ file: 'lib/pay.js', line: 1, quote: 'exports.charge = (payin) => cards.charge(payin.card);' }];
+const evidence = (...keys) => Object.fromEntries(keys.map((k) => [k, ON_PAY]));
 
 // Hunters still propose these shapes. Telling hunters to drop them made a
 // hunter skip a real access hole on the bench, and a lead the hunter drops
 // leaves no trail. Only the verifier, with the checks, turns one into a note.
-test('the four checks belong to the verifier, not the hunters', () => {
+test('the checks belong to the verifier, not the hunters', () => {
   const { CANDIDATE_GATE } = require('../lib/security-audit-classes');
-  assert.deepStrictEqual(CONFIRM_CHECKS.map((c) => c.key), ['attacker_gain', 'shipped_code', 'deliberate_setting', 'insider_only']);
+  assert.deepStrictEqual(CONFIRM_CHECKS.map((c) => c.key), ['attacker_gain', 'shipped_code', 'deliberate_setting', 'hygiene_only', 'insider_only']);
   assert.ok(!CANDIDATE_GATE.some((l) => /insider access/.test(l) || /deliberate setting/.test(l)));
 });
 
@@ -80,7 +83,7 @@ test('each failed check turns a confirm into a kept note that names it', () => {
   try {
     for (const c of CONFIRM_CHECKS) {
       const checks = { ...PASS, [c.key]: c.pass === 'yes' ? 'no' : 'yes' };
-      const rec = audit.decide(root, cand(), answer({ verdict: 'confirmed', checks, note: 'Charges on a GET request' }), by);
+      const rec = audit.decide(root, cand(), answer({ verdict: 'confirmed', checks, dismissal_evidence: evidence(c.key), note: 'Charges on a GET request' }), by);
       assert.strictEqual(rec.verdict, 'rejected', c.key);
       assert.ok(audit.isNote(rec), c.key);
       assert.deepStrictEqual(rec.failed_checks, [c.key]);
@@ -90,7 +93,7 @@ test('each failed check turns a confirm into a kept note that names it', () => {
       assert.deepStrictEqual(audit.validateFindings([rec], { root }), []);
     }
     // Booleans count as answers too.
-    assert.ok(audit.isNote(audit.decide(root, cand(), answer({ verdict: 'confirmed', checks: { ...PASS, insider_only: true } }), by)));
+    assert.ok(audit.isNote(audit.decide(root, cand(), answer({ verdict: 'confirmed', checks: { ...PASS, insider_only: true }, dismissal_evidence: evidence('insider_only') }), by)));
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -98,9 +101,58 @@ test('the note verdict and a needs_validation lead that needs insider access are
   const root = repo(FILES);
   try {
     assert.ok(audit.isNote(audit.decide(root, cand(), answer({ verdict: 'note', note: 'documented setting' }), by)));
-    const nv = audit.decide(root, cand(), answer({ verdict: 'needs_validation', checks: { ...PASS, insider_only: 'yes' }, blockers: ['log level'], validation_plan: [{ context: 'deployment', step: 's' }] }), by);
+    const nv = audit.decide(root, cand(), answer({ verdict: 'needs_validation', checks: { ...PASS, insider_only: 'yes' }, dismissal_evidence: evidence('insider_only'), blockers: ['log level'], validation_plan: [{ context: 'deployment', step: 's' }] }), by);
     assert.ok(audit.isNote(nv));
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+// A spotted hole is waved off only on a live line of this repo. A claim in
+// a README or a comment ("this is a training app", "intentional") describes
+// the hole; it does not stop it.
+test('a failed check with no line of code to show it is ignored and the lead stays confirmed', () => {
+  const root = repo({
+    ...FILES,
+    'README.md': 'This is a deliberately insecure training app.\n',
+    'docs/security.md': 'Operators choose to trust every caller.\n',
+    'lib/pay.js': 'exports.charge = (payin) => cards.charge(payin.card);\n// intentional: charging on GET is by design\nexports.page = (req) => charge(req.payin);\n',
+  });
+  try {
+    for (const key of ['attacker_gain', 'deliberate_setting', 'hygiene_only', 'insider_only']) {
+      const c = CONFIRM_CHECKS.find((x) => x.key === key);
+      const checks = { ...PASS, [key]: c.pass === 'yes' ? 'no' : 'yes' };
+      const none = audit.decide(root, cand(), answer({ verdict: 'note', checks, note: 'n' }), by);
+      assert.strictEqual(none.verdict, 'confirmed', `${key} with no evidence`);
+      assert.match(none.verified_by[0].reason, new RegExp(`Waved off on ${key}`));
+      const comment = audit.decide(root, cand(), answer({ verdict: 'note', checks, dismissal_evidence: { [key]: [{ file: 'lib/pay.js', line: 2, quote: 'intentional: charging on GET is by design' }] } }), by);
+      assert.strictEqual(comment.verdict, 'confirmed', `${key} on a comment`);
+      const wrongQuote = audit.decide(root, cand(), answer({ verdict: 'note', checks, dismissal_evidence: { [key]: [{ file: 'lib/pay.js', line: 1, quote: 'requireAdmin(req.user)' }] } }), by);
+      assert.strictEqual(wrongQuote.verdict, 'confirmed', `${key} quoting a line that is not there`);
+      const missing = audit.decide(root, cand(), answer({ verdict: 'note', checks, dismissal_evidence: { [key]: [{ file: 'lib/nope.js', line: 1, quote: 'exports.charge = (payin)' }] } }), by);
+      assert.strictEqual(missing.verdict, 'confirmed', `${key} on a missing file`);
+    }
+    for (const key of ['attacker_gain', 'deliberate_setting', 'hygiene_only']) {
+      const c = CONFIRM_CHECKS.find((x) => x.key === key);
+      const checks = { ...PASS, [key]: c.pass === 'yes' ? 'no' : 'yes' };
+      for (const doc of [{ file: 'README.md', line: 1, quote: 'deliberately insecure training app' }, { file: 'docs/security.md', line: 1, quote: 'Operators choose to trust every caller' }]) {
+        assert.strictEqual(audit.decide(root, cand(), answer({ verdict: 'note', checks, dismissal_evidence: { [key]: [doc] } }), by).verdict, 'confirmed', `${key} on ${doc.file}`);
+      }
+    }
+    // A line near the cited one, with spacing that differs, still counts.
+    const near = audit.decide(root, cand(), answer({ verdict: 'note', checks: { ...PASS, insider_only: 'yes' }, dismissal_evidence: { insider_only: [{ file: './lib/pay.js', line: 2, quote: 'exports.page = (req)  =>  charge(req.payin);' }] } }), by);
+    assert.ok(audit.isNote(near));
+    // shipped_code is settled by the path, so it needs no line.
+    assert.ok(audit.isNote(audit.decide(root, cand(), answer({ verdict: 'confirmed', checks: { ...PASS, shipped_code: 'no' } }), by)));
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('the verifier is told a claim of intent is not a control, and to quote the line behind a dismissal', () => {
+  const p = audit.verifierPrompt({ candidate: cand(), cls: CLASS_BY_ID.get('access-control') });
+  assert.match(p, /dismissal_evidence/);
+  assert.match(p, /training or demo app/);
+  assert.match(p, /not a control that stops it/);
+  const { CANDIDATE_GATE } = require('../lib/security-audit-classes');
+  assert.ok(CANDIDATE_GATE.some((l) => /signature checks turned off/.test(l)));
+  assert.ok(CANDIDATE_GATE.some((l) => /admin, metrics, health, debug or support listener/.test(l)));
 });
 
 test('a path that starts in integration test code is a note even when every check passes', () => {
@@ -168,7 +220,7 @@ test('a full run lists a note with the hardening notes, not as confirmed or disp
       return { ok: true, stdout: JSON.stringify({ units: ids.map((id) => ({ coverage_id: id, disposition: mine ? 'candidate' : 'covered', reviewed_paths: ['lib/run.js'], checks: [{ invariant: 'i', method: 'source', result: 'r', reviewed_paths: ['lib/run.js'] }], candidate_fingerprints: mine ? [c.fingerprint] : [], unresolved: [] })), candidates: mine ? [{ ...c, coverage_ids: ids }] : [], hardening: [], uncovered: [] }) };
     }
     if (p.includes('independent security verifier')) verifierPrompts.push(p);
-    if (p.includes('independent security verifier')) return answer({ verdict: 'note', checks: { ...PASS, insider_only: 'yes' }, note: 'Only the person who runs the tool picks the title' });
+    if (p.includes('independent security verifier')) return answer({ verdict: 'note', checks: { ...PASS, insider_only: 'yes' }, dismissal_evidence: { insider_only: [{ file: 'lib/run.js', line: 3, quote: 'return execSync(`echo ${task.title}`);' }] }, note: 'Only the person who runs the tool picks the title' });
     if (p.includes('coverage critic')) return { ok: true, stdout: JSON.stringify({ missing_units: [], reassign_ids: [], stop: true }) };
     return { ok: false, reason: 'unexpected', stdout: '' };
   });
