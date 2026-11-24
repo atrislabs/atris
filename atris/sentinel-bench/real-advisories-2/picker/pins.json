@@ -1,0 +1,239 @@
+{
+ "GHSA-3m5p-2c4r-xxw2": {
+  "class": "webhook-header",
+  "hole_file": "lib/request.js",
+  "pat": "return function \\(a, i\\) \\{ return i < tp \\}",
+  "also": [],
+  "hole": "A numeric trustProxy setting trusts X-Forwarded-* entries by hop count without checking the immediate peer, so a direct client can add enough forwarded hops to spoof its IP, host and protocol."
+ },
+ "GHSA-4g9m-rffv-h6wq": {
+  "class": "signin",
+  "hole_file": "worker/src/auth.ts",
+  "pat": "x-crabbox-owner",
+  "also": [
+   [
+    "worker/src/auth.ts",
+    "x-crabbox-org",
+    2
+   ]
+  ],
+  "hole": "A caller with the shared (non-admin) bearer token gets its owner and org from the x-crabbox-owner and x-crabbox-org request headers, so it can act as any other owner or organization.",
+  "pat_nth": 2
+ },
+ "GHSA-5gpm-rgj3-9q76": {
+  "class": "access",
+  "hole_file": "filters/openpolicyagent/openpolicyagent.go",
+  "pat": "func \\(m \\*bufferedBodyReader\\) fillBuffer",
+  "also": [
+   [
+    "filters/openpolicyagent/internal/envoy/skipperadapter.go",
+    "ereq := &ext_authz_v3.CheckRequest"
+   ]
+  ],
+  "hole": "When a request body is chunked or sent over HTTP/2 and is larger than the buffer, the policy check sees only the first part and is never told the body was cut, so a policy that inspects the body can be passed by putting the forbidden content past the limit."
+ },
+ "GHSA-6mwv-4mrm-5p3m": {
+  "class": "ssrf",
+  "hole_file": "src/lib/oauth/services/kiro.js",
+  "pat": "const endpoint = `https://oidc.\\$\\{region\\}.amazonaws.com/client/register`",
+  "also": [
+   [
+    "src/lib/oauth/services/kiro.js",
+    "/device_authorization`"
+   ],
+   [
+    "src/lib/oauth/services/kiro.js",
+    "const endpoint = `https://oidc.\\$\\{region\\}.amazonaws.com/token`"
+   ],
+   [
+    "src/lib/oauth/services/kiro.js",
+    "region \\|\\| \"us-east-1\"\\}.amazonaws.com/token"
+   ],
+   [
+    "src/lib/oauth/services/kiro.js",
+    "https://codewhisperer.\\$\\{region\\}"
+   ],
+   [
+    "src/lib/oauth/providers.js",
+    "const tokenUrl = `https://oidc.\\$\\{region\\}.amazonaws.com/token`"
+   ]
+  ],
+  "hole": "The Kiro sign-in flow puts a caller-supplied region straight into the upstream host name (oidc.<region>.amazonaws.com), so a crafted region sends the request, with its credentials, to a host the caller picks."
+ },
+ "GHSA-7j4w-x8x8-5mvg": {
+  "class": "traversal",
+  "hole_file": "internal/services/vddk.go",
+  "pat": "illegal file path: %s",
+  "also": [],
+  "hole": "Tarball extraction checks each entry's path by name only and does not resolve symlinks it already created, so an entry under a symlink pointing at .. writes files outside the extraction folder."
+ },
+ "GHSA-9q47-3cm2-2rp8": {
+  "class": "signin",
+  "hole_file": "src/pyload/webui/app/helpers.py",
+  "pat": "# Get client IP, handling X-Forwarded-For for proxies",
+  "also": [
+   [
+    "src/pyload/webui/app/helpers.py",
+    "# Get client IP, safely handling X-Forwarded-For"
+   ],
+   [
+    "src/pyload/webui/app/blueprints/app_blueprint.py",
+    "client_ip = flask.request.headers.get\\(\"X-Forwarded-For\""
+   ]
+  ],
+  "hole": "The login rate limit, API key checks and sign-in audit log take the client IP from the X-Forwarded-For header any caller can set, so an attacker gets a fresh rate-limit bucket per request and can forge the logged IP."
+ },
+ "GHSA-c9w5-qp6m-m395": {
+  "class": "access",
+  "hole_file": "object/token_oauth.go",
+  "pat": "// Get certificate for token validation",
+  "also": [],
+  "hole": "Token exchange checks the subject token's signature with the requesting application's certificate and never checks the token's audience, so a token from one application or organization can be exchanged for a token of another."
+ },
+ "GHSA-f8c7-rwf9-fmgm": {
+  "class": "access",
+  "hole_file": "mercury_app/block_handler.py",
+  "pat": "api/translations\\(\\?:/\\|\\$\\)\\)\\)\\(\\?:/\\.\\*\\)\\?\"$",
+  "also": [],
+  "hole": "A missing comma joins two entries of the blocked-path list, so /api/terminals is not blocked and anyone can open a server shell without signing in."
+ },
+ "GHSA-h5gx-45rj-2h5j": {
+  "class": "secrets",
+  "hole_file": "machinery/src/cloud/kerberos_hub.go",
+  "pat": "client = &http.Client\\{Transport: tr\\}",
+  "also": [
+   [
+    "machinery/src/cloud/kerberos_hub.go",
+    "client = &http.Client\\{\\}"
+   ]
+  ],
+  "hole": "The Hub upload sends the private key in a custom header with an HTTP client that follows redirects, and Go only strips standard auth headers on a cross-host redirect, so the key goes to whatever host the Hub URL redirects to."
+ },
+ "GHSA-hrw6-wg82-cm62": {
+  "class": "secrets",
+  "hole_file": "jupyter_server/utils.py",
+  "pat": "if os.path.isabs\\(filename\\) and os.path.isfile\\(filename\\)",
+  "also": [
+   [
+    "jupyter_server/utils.py",
+    "testname = expand_path\\(os.path.join\\(path, filename\\)\\)"
+   ]
+  ],
+  "hole": "The static file finder accepts absolute paths and checks they exist before checking they are inside the served folder, so on Windows a request for a UNC path makes the server connect out and hand over the user's password hash."
+ },
+ "GHSA-hxpf-9xvq-wph8": {
+  "class": "agent-tool",
+  "hole_file": "src/netlicensing_mcp/client.py",
+  "pat": "^    url = f\"\\{BASE_URL\\}\\{path\\}\"",
+  "pat_nth": 1,
+  "also": [
+   [
+    "src/netlicensing_mcp/client.py",
+    "^    url = f\"\\{BASE_URL\\}\\{path\\}\"",
+    2
+   ],
+   [
+    "src/netlicensing_mcp/client.py",
+    "^    url = f\"\\{BASE_URL\\}\\{path\\}\"",
+    3
+   ],
+   [
+    "src/netlicensing_mcp/client.py",
+    "^    url = f\"\\{BASE_URL\\}\\{path\\}\"",
+    4
+   ]
+  ],
+  "hole": "Tool arguments from the model are pasted into REST paths, so an id of ../token reaches the token endpoint and skips the tool's API-key redaction, leaking the key to the model."
+ },
+ "GHSA-jcxm-m3jx-f287": {
+  "class": "injection",
+  "hole_file": "simple-git/src/lib/plugins/block-unsafe-operations-plugin.ts",
+  "pat": "method === 'clone' && /\\^\\\\s\\*-u\\\\b/",
+  "also": [],
+  "hole": "The unsafe-option guard blocks clone's -u (upload-pack) switch only in its plain form, so combined short flags like -vu or other spellings still pass a command for git to run."
+ },
+ "GHSA-m98r-6667-4wq7": {
+  "class": "access",
+  "hole_file": "libs/aegra-api/src/aegra_api/api/runs.py",
+  "pat": "# Authorization check \\(create_run action",
+  "also": [
+   [
+    "libs/aegra-api/src/aegra_api/api/runs.py",
+    "_prepare_run\\(session, thread_id",
+    2
+   ],
+   [
+    "libs/aegra-api/src/aegra_api/api/runs.py",
+    "_prepare_run\\(session, thread_id",
+    3
+   ]
+  ],
+  "hole": "Creating a run on a thread never checks that the thread belongs to the caller, so any signed-in user can start runs on another user's thread."
+ },
+ "GHSA-mw3h-qjxj-6xg9": {
+  "class": "webhook-header",
+  "hole_file": "thumbor/handlers/imaging.py",
+  "pat": "url_to_validate = url.replace\\(",
+  "also": [],
+  "hole": "The URL signature check strips the signature with str.replace, which removes every copy, so an attacker can put the valid signature elsewhere in a different URL and have it validate."
+ },
+ "GHSA-rmxw-pq4x-3fvh": {
+  "class": "access",
+  "hole_file": "httpserver/updown.go",
+  "pat": "// Validate each path and collect absolute paths; skip any traversal attempts",
+  "also": [],
+  "hole": "The bulk zip download checks only that each path stays in the web root, not the per-folder .goshs access rules, so files those rules protect or block can be downloaded without credentials."
+ },
+ "GHSA-v667-gc2r-2xm7": {
+  "class": "signin",
+  "hole_file": "back/loaders/express.ts",
+  "pat": "if \\(!\\['/api/user/init', '/api/user/notification/init'\\]",
+  "also": [],
+  "hole": "The guard that blocks re-running first-time setup checks only /api/user/init, while /open/user/init skips sign-in and is rewritten to the same handler, so anyone can reset the admin login."
+ },
+ "GHSA-vx32-xf7g-9ghr": {
+  "class": "traversal",
+  "hole_file": "app/utils/tar.go",
+  "pat": "if !strings.HasPrefix\\(targetPath, destdirClean\\)",
+  "also": [
+   [
+    "app/utils/tar.go",
+    "targetPath := filepath.Clean\\(filepath.Join\\(destPath, header.Name\\)\\)"
+   ]
+  ],
+  "hole": "Tar extraction checks the target path with a plain string prefix, so an entry like ../context-evil/x (a sibling folder sharing the prefix) is written outside the destination."
+ },
+ "GHSA-xgjr-7j9q-2h4r": {
+  "class": "injection",
+  "hole_file": "internal/core/subscribers.go",
+  "pat": "stmt := strings.ReplaceAll\\(c.q.QuerySubscribersForExport",
+  "also": [],
+  "hole": "The subscriber export runs the caller's SQL filter without the table allowlist check the search path applies, so a user allowed to filter by SQL can read any table, including admin password hashes and mail settings."
+ },
+ "GHSA-xgm2-5f3f-mvvc": {
+  "class": "webhook-header",
+  "hole_file": "src/adapter/aws-lambda/handler.ts",
+  "pat": "const foundK = headers.get\\(k\\)",
+  "pat_nth": 1,
+  "also": [
+   [
+    "src/adapter/aws-lambda/handler.ts",
+    "const foundK = headers.get\\(k\\)",
+    2
+   ]
+  ],
+  "hole": "The API Gateway v1 adapter drops a repeated header value when it is a substring of a value already set, so the app sees a different header list than the gateway forwarded."
+ },
+ "GHSA-xvq9-wjp8-hwqf": {
+  "class": "ssrf",
+  "hole_file": "lib/utils.js",
+  "pat": "if \\(/\\[\\?#%\\\\s\\]/.test\\(v\\)\\) return false",
+  "also": [
+   [
+    "lib/utils.js",
+    "^export function isSafeNsUrlSegment"
+   ]
+  ],
+  "hole": "The language and namespace checks allow ':' and '//', so when the load path starts with the placeholder a value like http:127.0.0.1:8080 turns the request URL into one on another host."
+ }
+}

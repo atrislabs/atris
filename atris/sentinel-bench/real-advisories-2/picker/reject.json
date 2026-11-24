@@ -1,0 +1,1 @@
+{"GHSA-xqq2-4j46-vwp7":"the linked fix commit changes Docker flag parsing only; the callbackUrl check is not in it, so the hole cannot be pinned from the fix"}
