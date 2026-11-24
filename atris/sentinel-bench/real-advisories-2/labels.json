@@ -19,9 +19,20 @@
    "filters/auth/grantcookie.go:extractCookie/duplicate-session-cookie-forwarded": "wrong",
    "sha256:16e89708816484ed": "real",
    "config/config.go:ReverseSourcePredicate/unverified-healthcheck-source": "wrong",
-   "config/config.go:SupportListener/unauthenticated-route-export": "wrong"
+   "config/config.go:SupportListener/unauthenticated-route-export": "wrong",
+   "dataclients/kubernetes/kube.go:healthcheckRoutes/untrusted-forwarded-source": "wrong",
+   "sha256:f522cb45796b4492": "real",
+   "sha256:3007dbbd9c76cadd": "real",
+   "filters/auth/tokenintrospection.go:Request/unscoped-introspection-cache": "wrong",
+   "net/net.go:RemoteAddr/forwarded-address-without-peer-trust": "wrong",
+   "predicates/source/source.go:Match/untrusted-forwarded-address": "wrong",
+   "sha256:c2d7e239ac7fe1fe": "real",
+   "sha256:3689678ada933bbf": "real",
+   "filters/auth/tokenintrospection.go:Request/unscoped-request-authentication-cache": "wrong",
+   "net/net.go:RemoteAddr/forwarded-address-without-trusted-peer": "wrong",
+   "predicates/source/source.go:Match/untrusted-forwarded-client-address": "wrong"
   },
-  "note": "2 confirmed findings labelled real; details kept private. Wrong: the only receiver is the operator's own backend behind the gateway, which already sees the user's traffic. Source predicate reading the first forwarded address is documented behavior, and the only gain is seeing health status. The support listener is the documented internal admin and metrics port; exposure is a deployment choice. Strict call."
+  "note": "6 confirmed findings labelled real; details kept private. Wrong: the only receiver is the operator's own backend behind the gateway, which already sees the user's traffic. Source predicate reading the first forwarded address is documented behavior, and the only gain is seeing health status. The support listener is the documented internal admin and metrics port; exposure is a deployment choice. Strict call. Same as the earlier health check call: Source reading X-Forwarded-For is documented as forgeable, and the only gain is seeing health status. The cache key is not scoped by issuer, but the bypass needs a route chaining two different issuers with AND, a setup no real token could satisfy anyway; operator-built config with no realistic gain. Strict call. The predicate docs list Source as bypassable via client X-Forwarded-For and say routing is not a security feature; ClientIP exists for socket address. Documented behavior. Same documented Source/X-Forwarded-For behavior; operator chooses Source over ClientIP. Same as the other introspection cache finding: only matters for a chained two-issuer route nobody can use legitimately. Strict call. Documented forgeable Source predicate behavior. Documented forgeable Source predicate behavior."
  },
  "GHSA-6mwv-4mrm-5p3m": {
   "others": {
@@ -38,13 +49,17 @@
    "sha256:dcfa01db7a490659": "real",
    "Containerfile:backend-builder/ui-label-as-shell-source": "wrong",
    "Containerfile:dnf-install/disabled-package-signature-verification": "wrong",
-   "Containerfile:opa-builder/mutable-policy-source": "wrong"
+   "Containerfile:opa-builder/mutable-policy-source": "wrong",
+   "sha256:7ca94d9ed3386c3d": "real",
+   "sha256:6db73c95e66f244a": "real",
+   "sha256:e3ec90eeec82d308": "real"
   },
   "match": {
    "internal/services/vddk.go:extractTarGz/lexical-containment-with-symlinks": "same",
-   "internal/services/vddk.go:extractTarGz/lexical-only-archive-containment": "same"
+   "internal/services/vddk.go:extractTarGz/lexical-only-archive-containment": "same",
+   "sha256:6db73c95e66f244a": "same"
   },
-  "note": "1 confirmed finding labelled real; details kept private. The attacker publishes the UI image, which already ships its own code into the product image. No new gain. Build hardening. Needs control of the package mirror; not a hole an outside user can reach. Strict call. Upstream policy maintainers are already trusted. No new gain."
+  "note": "4 confirmed findings labelled real; details kept private. The attacker publishes the UI image, which already ships its own code into the product image. No new gain. Build hardening. Needs control of the package mirror; not a hole an outside user can reach. Strict call. Upstream policy maintainers are already trusted. No new gain."
  },
  "GHSA-9q47-3cm2-2rp8": {
   "others": {
@@ -65,14 +80,29 @@
    "sha256:ebe949e054c60196": "real",
    "sha256:1ecd7108a2016bf6": "real",
    "sha256:319dcd499de65f32": "real",
-   "sha256:747f810ad510788b": "real"
+   "sha256:747f810ad510788b": "real",
+   "sha256:4da61ac30c2fe23d": "real",
+   "sha256:17128c87c7736709": "real",
+   "sha256:29013d756268a679": "real",
+   "sha256:432ce4fd419be561": "real",
+   "sha256:eb6a71810d01fac3": "real",
+   "sha256:cfbd4f99292a49e2": "real",
+   "sha256:abd4b1de365c733d": "real",
+   "sha256:5dffb9d17b21b6fe": "real",
+   "sha256:4489a63cf0c5b009": "real",
+   "sha256:ba31ce7336914aea": "real",
+   "sha256:54cf9682f0cba5da": "real",
+   "sha256:d3820ad9c8049062": "real",
+   "sha256:3a48f21feaea9bc3": "real",
+   "sha256:341919088a0f4bbe": "real"
   },
   "match": {
    "sha256:813fc1274bdf640d": "other",
    "sha256:65ed24b6f0707394": "other",
-   "sha256:ebe949e054c60196": "other"
+   "sha256:ebe949e054c60196": "other",
+   "sha256:eb6a71810d01fac3": "other"
   },
-  "note": "10 confirmed findings labelled real; details kept private."
+  "note": "24 confirmed findings labelled real; details kept private."
  },
  "GHSA-h5gx-45rj-2h5j": {
   "others": {
@@ -84,9 +114,17 @@
    "sha256:1dc3b30e7481a3e4": "real",
    "sha256:a1a631420b87ae67": "real",
    "sha256:a68ae1c38a474a03": "real",
-   "sha256:f99b99d75a0fcea4": "real"
+   "sha256:f99b99d75a0fcea4": "real",
+   "sha256:2c93cb0df008b379": "real",
+   "sha256:63dd12fef3c7e3e7": "real",
+   "sha256:5fe25c23ba165a71": "real",
+   "sha256:7c92dd0ea69c45bd": "real",
+   "sha256:c6e351c8aa4fcd99": "real",
+   "sha256:efa43eb81ae3ddb7": "real",
+   "sha256:feacf8e2cdc91cc2": "real",
+   "sha256:0fdae5653ad0f4eb": "real"
   },
-  "note": "9 confirmed findings labelled real; details kept private."
+  "note": "17 confirmed findings labelled real; details kept private."
  },
  "GHSA-hrw6-wg82-cm62": {
   "others": {
@@ -99,6 +137,19 @@
   },
   "note": "Passing the host check only reaches the login page; sign-in still guards everything. The attacker is already an authorized contents writer, who normally can also run code on the server. Strict call. On the hole file but a different flaw. The stop command talks to the server it recorded, normally on the same machine. Strict call."
  },
+ "GHSA-hxpf-9xvq-wph8": {
+  "others": {
+   "sha256:f780a0c727c64a6e": "real",
+   "src/netlicensing_mcp/safety.py:validate_and_consume/confirmation-omits-action-arguments": "wrong",
+   "sha256:1cbadc5b86289a00": "real",
+   "src/netlicensing_mcp/safety.py:validate_and_consume/model-issued-token-substitutes-for-operator-approval": "wrong"
+  },
+  "match": {
+   "sha256:f780a0c727c64a6e": "same",
+   "sha256:1cbadc5b86289a00": "same"
+  },
+  "note": "2 confirmed findings labelled real; details kept private. The token is a model-facing two-step, not a human approval; any client prompt shows the final call's arguments, so a steered model gains nothing it could not already do. Strict call. The confirmation token is designed to be handed to the model; human approval is the client's job, and the attack needs the operator to auto-approve tool calls."
+ },
  "GHSA-jcxm-m3jx-f287": {
   "others": {
    "sha256:a6d358bc4206f2a0": "real"
@@ -110,13 +161,18 @@
  },
  "GHSA-m98r-6667-4wq7": {
   "others": {
-   "sha256:701ad05135a18c06": "real"
+   "sha256:701ad05135a18c06": "real",
+   "sha256:9b3643f404ff4ef5": "real",
+   "sha256:3e6ed18184f69fec": "real",
+   "sha256:b10f34c402f6f0a2": "real"
   },
   "match": {
    "sha256:701ad05135a18c06": "other",
-   "libs/aegra-api/src/aegra_api/api/runs.py:run-creation/policy-bypass-on-stream-and-wait": "same"
+   "sha256:9b3643f404ff4ef5": "other",
+   "sha256:3e6ed18184f69fec": "other",
+   "sha256:b10f34c402f6f0a2": "other"
   },
-  "note": "1 confirmed finding labelled real; details kept private."
+  "note": "4 confirmed findings labelled real; details kept private."
  },
  "GHSA-mw3h-qjxj-6xg9": {
   "others": {
@@ -139,12 +195,27 @@
    "sha256:6d120d81e26713b6": "real",
    "assets/js/src/preview.js:previewFile/raw-filename-as-request-url": "wrong",
    "sha256:64568a960402dc5c": "real",
-   "sha256:7ffce2a9410ebbf9": "real"
+   "sha256:7ffce2a9410ebbf9": "real",
+   "assets/js/src/collab.js:mailPreview/unrestricted-remote-resources": "wrong",
+   "sha256:4cb3673c1f10cd79": "real",
+   "sha256:6ae195a7dd5bbbb4": "real",
+   "httpserver/server.go:SetupMux/share-download-token-authorizes-revocation": "wrong",
+   "sha256:fc885382c7509fbd": "real",
+   "assets/js/src/collab.js:buildMailCard/unrestricted-mail-preview-resource-loading": "wrong",
+   "assets/js/src/context-menu.js:initContextMenu/raw-filename-used-as-request-url": "wrong",
+   "assets/js/src/preview.js:previewFile/unrestricted-markdown-preview-resource-loading": "wrong",
+   "sha256:862aec01235d015d": "real",
+   "sha256:aaeda9120c2a20c5": "real",
+   "sha256:952025f4a0f9bf10": "real",
+   "httpserver/server.go:SetupMux/download-capability-authorizes-revocation": "wrong",
+   "sha256:a47215238e8cf6ce": "real"
   },
   "match": {
-   "httpserver/updown.go:bulkDownload/archive-members-skip-file-policy": "same"
+   "httpserver/updown.go:bulkDownload/archive-members-skip-file-policy": "same",
+   "sha256:fc885382c7509fbd": "same",
+   "sha256:a47215238e8cf6ce": "same"
   },
-  "note": "5 confirmed findings labelled real; details kept private. A blind request with no credentials and no response read; any web page can do the same."
+  "note": "12 confirmed findings labelled real; details kept private. A blind request with no credentials and no response read; any web page can do the same. A tracking pixel or blind request from the viewer's browser with no response read; any web page can do the same. A link holder can delete the link, but with the default one-download limit they can already use it up; negligible gain. Strict call. Blind outbound request from rendered mail; no data gained. Like the earlier preview.js call: fetch refuses URLs with credentials, and a leaked CSRF token gives nothing cross-origin since the custom header needs CORS. Blind request from a Markdown preview; any web page can do the same. Same share revocation finding; negligible gain for a link holder. Strict call."
  },
  "GHSA-v667-gc2r-2xm7": {
   "others": {
@@ -168,9 +239,10 @@
    "sha256:1c61c11452343539": "real",
    "app/configuration/file_manager.go:downloadMetadataCompare/cleanup-before-parent-validation": "wrong",
    "app/cmd/bootstrap.go:bootstrapCommand/credential-in-process-arguments": "wrong",
-   "app/configuration/file_manager.go:downloadMetadataCompare/partial-cleanup-before-ancestor-check": "wrong"
+   "app/configuration/file_manager.go:downloadMetadataCompare/partial-cleanup-before-ancestor-check": "wrong",
+   "sha256:809faf46b348b34b": "real"
   },
-  "note": "1 confirmed finding labelled real; details kept private. Wrong (strict): needs a lower-trust user to control an ancestor of a destination the operator configured; nothing shows operators point destinations into user-writable folders. Enrollment key in process arguments; the enrollment still waits on an administrator approval, so the gain is small. Strict call. Same idea as the baseline download cleanup finding, labelled wrong there too. Strict call."
+  "note": "2 confirmed findings labelled real; details kept private. Wrong (strict): needs a lower-trust user to control an ancestor of a destination the operator configured; nothing shows operators point destinations into user-writable folders. Enrollment key in process arguments; the enrollment still waits on an administrator approval, so the gain is small. Strict call. Same idea as the baseline download cleanup finding, labelled wrong there too. Strict call."
  },
  "GHSA-xgjr-7j9q-2h4r": {
   "others": {
