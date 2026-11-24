@@ -614,7 +614,7 @@ test('end to end: a change that only improves its own new items is rejected', as
   const selfServing = {
     title: 'block one made-up word', why: 'only its own items use it', file: 'lib/sentinel-rules.json',
     rules: rulesWithBlocks({ id: 'made-up', category: 'exfil', all: ['qqzexfil'] }),
-    new_items: [{ set: 'guard', id: 'self1', kind: 'exfil', expect: 'block', command: 'qqzexfil ~/.ssh/id_rsa' }, { set: 'guard', id: 'self2', kind: 'exfil', expect: 'block', command: 'qqzexfil .env' }],
+    new_items: [{ set: 'guard', id: 'self1', kind: 'exfil', expect: 'block', command: 'qqzexfil notes.txt' }, { set: 'guard', id: 'self2', kind: 'exfil', expect: 'block', command: 'qqzexfil .env' }],
   };
   const { res } = await runImprove(repo, held, selfServing);
   assert.strictEqual(res.error, '', res.error);

@@ -204,7 +204,9 @@ function securityReviewCommand(argv = []) {
   if (!opts.quiet) {
     console.log('\n  ◉ atris security review');
     if (!findings.length) {
-      console.log(`\n  ✓ clean, no active secrets, PII, or sensitive files in ${raw.scanned} tracked file${raw.scanned === 1 ? '' : 's'}`);
+      // Fixed rules find only the shapes they know, so this says what was
+      // checked, never "clean".
+      console.log(`\n  ✓ no matches for ${require('../lib/security-scan').RULES.length} fixed rules (secrets, personal data, sensitive files) in ${raw.scanned} tracked file${raw.scanned === 1 ? '' : 's'}`);
       if (result.suppressed) console.log(`  ${result.suppressed} accepted finding${result.suppressed === 1 ? '' : 's'} suppressed by ${result.baseline.path}`);
       console.log('');
       return 0;
@@ -237,7 +239,7 @@ function renderLanding(landing, threshold) {
   const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const L = ['', `  ✈ security landing, ${date}`, ''];
   if (landing.cleared) {
-    L.push(`  CLEARED TO SHIP    no unresolved findings at the ${threshold.toUpperCase()} line`);
+    L.push(`  CLEARED TO SHIP    no unresolved findings at the ${threshold.toUpperCase()} line from ${require('../lib/security-scan').RULES.length} fixed rules`);
   } else {
     const n = landing.open.length;
     L.push(`  HOLD               ${n} finding${n === 1 ? '' : 's'} need a decision before ship`);
@@ -402,7 +404,7 @@ function installHook() {
 }
 
 function parseAuditArgs(argv) {
-  const opts = { profile: 'standard', scope: [], json: false, planOnly: false, budget: null, out: null, hunter: null, verifier: null, timeoutMs: null, engine: null, yes: false, upload: true, scheduled: false, with: [], ref: null, keepClones: false };
+  const opts = { profile: 'standard', scope: [], json: false, planOnly: false, budget: null, out: null, hunter: null, verifier: null, timeoutMs: null, engine: null, yes: false, upload: null, scheduled: false, with: [], ref: null, keepClones: false };
   const takes = (i, flag) => {
     if (!argv[i + 1] || argv[i + 1].startsWith('--')) throw new Error(`${flag} needs a value`);
     return argv[i + 1];
@@ -423,6 +425,7 @@ function parseAuditArgs(argv) {
     else if (flag === '--engine') opts.engine = value();
     else if (flag === '--yes' || flag === '-y') opts.yes = true;
     else if (flag === '--no-upload') opts.upload = false;
+    else if (flag === '--upload') opts.upload = true;
     else if (flag === '--scheduled') opts.scheduled = true;
     else if (flag === '--with') opts.with.push(value());
     else if (flag === '--ref') opts.ref = value();
@@ -677,12 +680,28 @@ function notUploadable(dir) {
   return null;
 }
 
+// Ask before anything is saved to the account (lib/sentinel-consent.js).
+function uploadConsent(flag, o) {
+  return require('../lib/sentinel-consent').uploadConsent(flag, o);
+}
+
+// The free checks of a timed run follow the same answer as its review.
+function scheduledUpload(flag, approval, deps = {}) {
+  if (flag !== null) return flag;
+  if (typeof approval.upload === 'boolean') return approval.upload;
+  if (!('upload' in approval)) return true;
+  const consent = require('../lib/sentinel-consent');
+  const env = deps.env || process.env;
+  const fromEnv = consent.envChoice(env);
+  return fromEnv !== null ? fromEnv : consent.savedChoice({ homeDir: deps.homeDir, env }) === true;
+}
+
 async function uploadAfterRun(dir, { token, quiet, cloud, root = null, env = process.env }) {
   const say = quiet ? (m) => console.error(m) : (m) => console.log(m);
   const why = notUploadable(dir);
   if (why) { say(`  nothing was saved to your atris account: ${why}`); return { ok: false, skipped: true, reason: why }; }
   const res = await cloud.uploadRun(dir, { token });
-  if (res.ok) say('  saved the summary to your atris account: titles, file and line, counts. no code was sent. to skip this: --no-upload');
+  if (res.ok) say('  saved the summary to your atris account: titles, file and line, counts. the summary holds no code. to stop saving: atris sentinel upload --never');
   else say(`  warning: could not save the summary to your atris account: ${res.reason}. the review itself is done`);
   if (res.ok && res.body) await sendFixedEvents(dir, res.body, { token, root, env, say });
   return res;
@@ -707,6 +726,17 @@ async function sendFixedEvents(dir, body, { token, root, env, say }) {
 async function auditUploadCommand(argv, deps) {
   const audit = require('../lib/security-audit');
   const cloud = deps.cloud || require('../lib/sentinel-cloud');
+  // The saved answer to "save a summary to your account?".
+  if (argv.includes('--always') || argv.includes('--never')) {
+    if (argv.includes('--always') && argv.includes('--never')) { console.error('  pick --always or --never'); return 2; }
+    const yes = argv.includes('--always');
+    const consent = require('../lib/sentinel-consent');
+    try { consent.saveChoice(yes, { homeDir: deps.homeDir, env: deps.env || process.env }); } catch (e) { console.error(`  could not save your answer: ${e.message}`); return 1; }
+    console.log(yes
+      ? '  each review now saves its summary to your atris account: titles, file and line, counts, never code. stop with: atris sentinel upload --never'
+      : '  reviews now keep everything on this machine. nothing is saved to your atris account. change it with: atris sentinel upload --always');
+    return 0;
+  }
   const token = deps.token !== undefined ? deps.token : cloud.authToken();
   if (!token) { console.error('  log in first with atris login. then run atris sentinel upload again'); return 2; }
   const arg = argv.find((a) => !a.startsWith('-'));
@@ -721,7 +751,7 @@ async function auditUploadCommand(argv, deps) {
   if (why) { console.error(`  ${path.basename(dir)} was not saved: ${why}`); return 2; }
   const res = await cloud.uploadRun(dir, { token });
   if (!res.ok) { console.error(`  could not save ${path.basename(dir)}: ${res.reason}`); return 1; }
-  console.log(`  saved ${path.basename(dir)} to your atris account (no source code was sent)`);
+  console.log(`  saved ${path.basename(dir)} to your atris account. the summary holds no code`);
   if (res.body) await sendFixedEvents(dir, res.body, { token, root: null, env: deps.env || process.env, say: (m) => console.log(m) });
   return 0;
 }
@@ -750,6 +780,7 @@ async function auditScheduleCommand(argv, deps) {
   let engine = null;
   let maxCredits = null;
   let yes = false;
+  let uploadFlag = null;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const [flag, inline] = a.startsWith('--') && a.includes('=') ? [a.slice(0, a.indexOf('=')), a.slice(a.indexOf('=') + 1)] : [a, null];
@@ -758,6 +789,8 @@ async function auditScheduleCommand(argv, deps) {
     else if (flag === '--engine') engine = value();
     else if (flag === '--max-credits') maxCredits = Number(value());
     else if (flag === '--yes' || flag === '-y') yes = true;
+    else if (flag === '--upload') uploadFlag = true;
+    else if (flag === '--no-upload') uploadFlag = false;
     else if (flag === '--uninstall' || flag === '--install') continue;
     else if (a.startsWith('-')) { console.error(`  unknown flag: ${a}`); return 2; }
     else target = a;
@@ -807,11 +840,18 @@ async function auditScheduleCommand(argv, deps) {
   } else {
     approval = { engine: 'local', every, approved_at: new Date().toISOString() };
   }
+  // Timed runs have no one to ask, so the answer is asked for now. With no
+  // terminal and no saved answer it stays open (null): each run then saves
+  // only if ATRIS_SENTINEL_UPLOAD or a later saved answer says yes.
+  const consent = await uploadConsent(uploadFlag, { token, deps, tell: (m) => console.log(m) });
+  approval.upload = consent.why === 'no-terminal' || consent.why === 'not-logged-in' ? null : consent.upload;
   cloud.writeApproval(target, approval, deps.homeDir);
   const installed = installKeep(plan, keepDeps);
   if (!installed.ok) { cloud.removeApproval(target, deps.homeDir); console.error(`  could not install the timer: ${installed.error}`); return 1; }
   console.log(`  scheduled reviews are on for ${tildePath(target)}, once a ${every}`);
-  console.log('  each run uses the quick profile and saves its summary to your atris account');
+  console.log(approval.upload
+    ? '  each run uses the quick profile and saves its summary to your atris account'
+    : '  each run uses the quick profile and keeps its results on this machine');
   console.log('  each run also checks your agent setup and dependencies for free');
   if (approval.engine === 'local') console.log('  runs use only Claude Code or Codex on this computer. they never switch to atris models');
   else console.log(`  runs use atris models and stop at ${approval.max_credits} credits`);
@@ -839,7 +879,7 @@ function spendConfirmer({ cloud, token, spend, capOverride, opts, deps, tell }) 
 }
 
 function parseRecheckArgs(argv) {
-  const opts = { json: false, verifier: null, engine: null, yes: false, upload: true, timeoutMs: null, budget: null, target: null };
+  const opts = { json: false, verifier: null, engine: null, yes: false, upload: null, timeoutMs: null, budget: null, target: null };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     const [flag, inline] = arg.startsWith('--') && arg.includes('=') ? [arg.slice(0, arg.indexOf('=')), arg.slice(arg.indexOf('=') + 1)] : [arg, null];
@@ -853,6 +893,7 @@ function parseRecheckArgs(argv) {
     else if (flag === '--engine') opts.engine = value();
     else if (flag === '--yes' || flag === '-y') opts.yes = true;
     else if (flag === '--no-upload') opts.upload = false;
+    else if (flag === '--upload') opts.upload = true;
     else if (flag === '--timeout') opts.timeoutMs = Number(value()) * 1000;
     else if (flag === '--budget') opts.budget = Number(value());
     else if (arg.startsWith('-')) throw new Error(`unknown flag: ${arg}`);
@@ -928,6 +969,7 @@ async function auditRecheckCommand(argv, deps = {}) {
     if (pre.note) tell(pre.note);
   }
   if (hosted && engines.chosen === 'no_local_engine') tell('  no Claude Code or Codex found on this computer. this re-check runs on atris models');
+  const { upload } = await uploadConsent(opts.upload, { token, deps, tell, json: opts.json });
   const spend = hosted ? cloud.spendGuard({ quoteCall: deps.quoteCall }) : null;
   let runJobs = deps.runJobs;
   if (!runJobs && hosted) runJobs = cloud.atrisJobRunner({ token, spend });
@@ -950,7 +992,7 @@ async function auditRecheckCommand(argv, deps = {}) {
   else console.log(renderRecheckLanding(result));
   addRunToRecord(root, result.dir, tell, deps);
   if (spend && spend.blocked) tell(`  stopped at the approved limit of ${spend.max} credits. ${spend.blocked} model call${spend.blocked === 1 ? '' : 's'} did not run. those findings stay open`);
-  if (opts.upload && token) {
+  if (upload && token) {
     try { await uploadAfterRun(result.dir, { token, quiet: opts.json, cloud, root, env: deps.env || process.env }); } catch (e) { tell(`  warning: could not save the summary to your atris account: ${e.message}. the re-check itself is done`); }
   }
   return fail ? 1 : 0;
@@ -1053,12 +1095,17 @@ async function auditCommand(argv, deps = {}) {
     // The free checks run first, so a review that stops at its credit limit
     // still leaves today's agent and dependency results.
     try {
-      await require('./sentinel-powers').runScheduledFreeChecks(root, { ...deps, upload: opts.upload, log: opts.json ? (m) => console.error(m) : (m) => console.log(m) });
+      await require('./sentinel-powers').runScheduledFreeChecks(root, { ...deps, upload: scheduledUpload(opts.upload, approval, deps), log: opts.json ? (m) => console.error(m) : (m) => console.log(m) });
     } catch (e) { console.error(`  warning: the free checks did not finish: ${e.message}`); }
     opts.hunter = null;
     opts.verifier = null;
     opts.engine = approval.engine;
     if (approval.engine === 'atris') { opts.yes = true; capOverride = Number(approval.max_credits); }
+    // The timer's own answer, given when it was set up. Timers set before
+    // the question existed told the person at setup that each run saves its
+    // summary, so they keep saving.
+    if (opts.upload === null && typeof approval.upload === 'boolean') opts.upload = approval.upload;
+    else if (opts.upload === null && !('upload' in approval)) opts.upload = true;
   }
   const token = deps.token !== undefined ? deps.token : cloud.authToken();
   let engines;
@@ -1078,6 +1125,8 @@ async function auditCommand(argv, deps = {}) {
   const log = progress ? progress.log : () => {};
   if (hosted && engines.chosen === 'no_local_engine' && !opts.planOnly) tell('  no Claude Code or Codex found on this computer. this review runs on atris models');
   if (engines.chosen === 'only_one_local' && !opts.planOnly) tell(`  only ${engines.only} is installed, so ${engines.only} both looks for problems and double-checks them, in separate sessions`);
+  if (hosted && !opts.planOnly) tell('  your code will be read on atris servers, not on this computer. lines that look like secrets are hidden before anything is sent');
+  const { upload } = opts.planOnly ? { upload: false } : await uploadConsent(opts.upload, { token, deps, tell, json: opts.json });
   let runJobs = deps.runJobs;
   const spend = hosted ? cloud.spendGuard({ quoteCall: deps.quoteCall }) : null;
   if (!runJobs && hosted) runJobs = cloud.atrisJobRunner({ token, spend });
@@ -1138,7 +1187,7 @@ async function auditCommand(argv, deps = {}) {
   else console.log(renderAuditLanding(result));
   if (!opts.planOnly) addRunToRecord(root, result.dir, tell, deps);
   if (spend && spend.blocked) tell(`  stopped at the approved limit of ${spend.max} credits. ${spend.blocked} model call${spend.blocked === 1 ? '' : 's'} did not run and wait for the next run`);
-  if (opts.upload && token && !opts.planOnly) {
+  if (upload && token && !opts.planOnly) {
     try { await uploadAfterRun(result.dir, { token, quiet: opts.json, cloud, root, env: deps.env || process.env }); } catch (e) { tell(`  warning: could not save the summary to your atris account: ${e.message}. the review itself is done`); }
   }
   return fail ? 1 : 0;
@@ -1160,7 +1209,8 @@ function printAuditHelp() {
   you need Claude Code or Codex installed and signed in.
   they read your code on this computer. atris does not see it.
   no AI tool? atris login, then atris sentinel --engine atris
-  (that costs credits, shows the price first and sends the files it reads)
+  (that costs credits, shows the price first and your code is read on
+  atris servers, with lines that look like secrets hidden)
 
   it only reads. nothing in your project changes.
   a fix goes on its own branch. you look at it and merge it, or not.
@@ -1222,10 +1272,13 @@ function printAuditHelpAll() {
   before it could pass that. lines that look like secrets are hidden and
   only tracked files inside the review are ever sent.
 
-  saving results to your atris account (on when you are logged in):
+  saving results to your atris account (asked once, off until you say yes):
 
+    atris sentinel --upload                     save this run's summary
     atris sentinel --no-upload                  keep this run on this machine only
+    atris sentinel upload --always              save every run from now on (--never to stop)
     atris sentinel upload [run-folder]          save a past run (default: the last one)
+    ATRIS_SENTINEL_UPLOAD=1                     say yes in CI and scripts, where nothing is asked
 
   re-checking old findings (every review does this first):
 
@@ -1249,8 +1302,15 @@ function printAuditHelpAll() {
     atris sentinel guard install [--global]     stop risky agent commands before they run
     atris sentinel guard test                   see which sample commands the guard stops
 
-  results go to your atris dashboard when you are logged in. add --no-upload
-  to keep them on this machine. secret values and file contents never leave.
+  results go to your atris dashboard only after you said yes (see above).
+  secret values and file contents never leave.
+
+  watch exits with 3 when the osv database did not answer, so nothing was
+  checked. watch --fix moves a package only to a version osv shows clean.
+  it runs npm and pnpm with project scripts off and leaves a yarn project
+  that sets yarnPath or plugins to you. poetry and bundler still read the
+  project's own pyproject.toml and Gemfile, so use --fix there only on code
+  you trust.
 
   the exam and the loop that improves the sentinel (in an atris checkout):
 

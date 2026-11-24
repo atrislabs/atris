@@ -307,7 +307,7 @@ test('gap 4: the npm and the pnpm lockfile are each fixed by their own tool, sco
   const pkgs = {};
   const run = fakeTools({
     npm(args, cwd) { pkgs.npm = readJson(path.join(cwd, 'package.json')); write(cwd, 'package-lock.json', NPM_LOCK('3.22.3', '5.28.4')); },
-    pnpm(args, cwd) { assert.deepStrictEqual(args, ['install', '--lockfile-only', '--ignore-scripts']); pkgs.pnpm = readJson(path.join(cwd, 'package.json')); write(cwd, 'pnpm-lock.yaml', PNPM_LOCK('3.22.3', '5.28.4')); },
+    pnpm(args, cwd) { assert.deepStrictEqual(args, ['install', '--lockfile-only', '--ignore-scripts', '--ignore-pnpmfile']); pkgs.pnpm = readJson(path.join(cwd, 'package.json')); write(cwd, 'pnpm-lock.yaml', PNPM_LOCK('3.22.3', '5.28.4')); },
   }, calls);
   try {
     const r = await capture(() => powers.watchCommand([root, '--fix', '--no-upload'], { osvBase: srv.base, run, env: { ...process.env, HOME: tmp('swg-h-') } }));
@@ -466,7 +466,7 @@ test('gap 7: a fix that jumps a major version is flagged and needs --allow-major
 
 test('gap 8: a fix on a side branch is not sent as resolved until it reaches the default branch', async () => {
   const srv = await fakeOsv({ vulns: { 'PYSEC-2026-0002': vuln('PYSEC-2026-0002', 'requests', '2.20.0', 'PyPI') }, byPackage: { 'PyPI:requests@2.19.0': ['PYSEC-2026-0002'] } });
-  const env = { ...process.env, HOME: tmp('swg-h-') };
+  const env = { ...process.env, HOME: tmp('swg-h-'), ATRIS_SENTINEL_UPLOAD: '1' };
   const root = gitRepo({ 'requirements.txt': 'requests==2.19.0\n' });
   const deps = { token: 'tok', base: srv.api, osvBase: srv.base, env };
   try {
@@ -503,7 +503,7 @@ test('gap 8: a fix on a side branch is not sent as resolved until it reaches the
 
 test('gap 8: on the default branch a fix resolves right away', async () => {
   const srv = await fakeOsv({ vulns: { 'PYSEC-2026-0002': vuln('PYSEC-2026-0002', 'requests', '2.20.0', 'PyPI') }, byPackage: { 'PyPI:requests@2.19.0': ['PYSEC-2026-0002'] } });
-  const env = { ...process.env, HOME: tmp('swg-h-') };
+  const env = { ...process.env, HOME: tmp('swg-h-'), ATRIS_SENTINEL_UPLOAD: '1' };
   const root = gitRepo({ 'requirements.txt': 'requests==2.19.0\n' });
   const deps = { token: 'tok', base: srv.api, osvBase: srv.base, env };
   try {
@@ -579,7 +579,7 @@ test('review 1: a workspace behind a symlink is refused and a stray file the too
 test('review 2 + 5: a vulnerable lockfile pushed past the cap or over the size limit stays open', async () => {
   const osv = { vulns: { 'PYSEC-2026-0002': vuln('PYSEC-2026-0002', 'requests', '2.20.0', 'PyPI', 'MODERATE') }, byPackage: { 'PyPI:requests@2.19.0': ['PYSEC-2026-0002'] } };
   const srv = await fakeOsv(osv);
-  const env = { ...process.env, HOME: tmp('swg-h-') };
+  const env = { ...process.env, HOME: tmp('swg-h-'), ATRIS_SENTINEL_UPLOAD: '1' };
   const root = tmp('swg-cap-');
   write(root, 'zz/requirements.txt', 'requests==2.19.0\n');
   const deps = { token: 'tok', base: srv.api, osvBase: srv.base, env };
@@ -699,7 +699,7 @@ test('round 3: a package.json symlinked to an outside file is never written', as
 test('round 3: a reported lockfile moved below the depth limit stays open', async () => {
   const osv = { vulns: { 'PYSEC-2026-0002': vuln('PYSEC-2026-0002', 'requests', '2.20.0', 'PyPI', 'MODERATE') }, byPackage: { 'PyPI:requests@2.19.0': ['PYSEC-2026-0002'] } };
   const srv = await fakeOsv(osv);
-  const env = { ...process.env, HOME: tmp('swg-h-') };
+  const env = { ...process.env, HOME: tmp('swg-h-'), ATRIS_SENTINEL_UPLOAD: '1' };
   const root = tmp('swg-depth-');
   write(root, 'svc/requirements.txt', 'requests==2.19.0\n');
   write(root, 'other/requirements.txt', 'flask==2.0.0\n');
@@ -733,7 +733,7 @@ test('round 3: a reported lockfile moved below the depth limit stays open', asyn
 test('final round: a threat in lockfiles A and B stays open until both were read and fixed', async () => {
   const osv = { vulns: { 'PYSEC-2026-0002': vuln('PYSEC-2026-0002', 'requests', '2.20.0', 'PyPI', 'MODERATE') }, byPackage: { 'PyPI:requests@2.19.0': ['PYSEC-2026-0002'] } };
   const srv = await fakeOsv(osv);
-  const env = { ...process.env, HOME: tmp('swg-h-') };
+  const env = { ...process.env, HOME: tmp('swg-h-'), ATRIS_SENTINEL_UPLOAD: '1' };
   const root = tmp('swg-ab-');
   write(root, 'a/requirements.txt', 'requests==2.19.0\n');
   write(root, 'b/requirements.txt', 'requests==2.19.0\n');

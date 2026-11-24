@@ -186,7 +186,7 @@ test('happy path: real codex and claude processes, commit on the new branch with
   const srv = await fakeEventsServer();
   try {
     const deps = baseDeps(root, { token: 'test-token', base: srv.base });
-    deps.env = { ...deps.env, PATH: `${engines.bin}${path.delimiter}${process.env.PATH}`, FAKE_FIX_PLAN: engines.plan };
+    deps.env = { ...deps.env, PATH: `${engines.bin}${path.delimiter}${process.env.PATH}`, FAKE_FIX_PLAN: engines.plan, ATRIS_SENTINEL_UPLOAD: "1" };
     delete deps.available;
     const r = await capture(() => auditCommand(['fix', short], deps));
     assert.strictEqual(r.code, 0, r.out + r.err);

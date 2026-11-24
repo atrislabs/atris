@@ -242,7 +242,8 @@ test('a review that read nothing uploads nothing, and an old empty run cannot be
   const root = makeRepo();
   const uploads = [];
   const failing = async (jobs) => jobs.map(() => ({ ok: false, stdout: '', reason: 'spawn_error' }));
-  const r = await capture(() => auditCommand(['--quick'], deps(root, home, { token: 'tok', cloud: cloudCatching(uploads), runJobs: failing })));
+  // --upload: the person said yes, and an empty review is still not saved.
+  const r = await capture(() => auditCommand(['--quick', '--upload'], deps(root, home, { token: 'tok', cloud: cloudCatching(uploads), runJobs: failing })));
   assert.strictEqual(r.code, 1, r.out);
   assert.match(r.out, /nothing was saved to your atris account: that review read nothing/);
   assert.deepStrictEqual(uploads, []);
