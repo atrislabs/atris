@@ -523,11 +523,41 @@ function reviewProgress({ say = console.log, planOnly = false, everyMs = 60000, 
   };
 }
 
-// True when a finished review read no code at all, fresh or carried over.
-// Such a run says nothing about the code and must never look like a clean one.
+// True when a finished review read no code at all, fresh or carried over,
+// including one that had nothing to read. Such a run says nothing about
+// the code and must never look like a clean one.
 function readNothing(meta) {
   const cov = (meta && meta.coverage) || {};
-  return (cov.in_scope || 0) > 0 && !(cov.fresh || 0) && !(cov.carried || 0);
+  return !(cov.fresh || 0) && !(cov.carried || 0);
+}
+
+const LANGUAGE_NAMES = {
+  '.js': 'JavaScript', '.mjs': 'JavaScript', '.cjs': 'JavaScript', '.jsx': 'JavaScript',
+  '.ts': 'TypeScript', '.tsx': 'TypeScript', '.py': 'Python', '.rb': 'Ruby', '.erb': 'Ruby',
+  '.go': 'Go', '.java': 'Java', '.php': 'PHP', '.rs': 'Rust',
+  '.sh': 'shell scripts', '.bash': 'shell scripts', '.zsh': 'shell scripts',
+  '.html': 'web pages', '.vue': 'Vue', '.svelte': 'Svelte',
+};
+
+function joinWords(words) {
+  return words.length < 2 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
+}
+
+// Said when a review had nothing to read: before any call, any run folder
+// and any upload. It is not a pass.
+function nothingToReadText(nothing, where) {
+  const exts = new Set(nothing.extensions || []);
+  const known = Object.keys(LANGUAGE_NAMES).filter((e) => exts.has(e)).map((e) => LANGUAGE_NAMES[e]);
+  const langs = [...new Set([...known, ...[...exts].filter((e) => !LANGUAGE_NAMES[e]).sort()])];
+  const lines = [''];
+  if (nothing.readable_files) {
+    lines.push(`  nothing was reviewed at ${where}. none of its ${nothing.readable_files} code file${nothing.readable_files === 1 ? '' : 's'} has a place Sentinel checks for ways in (input, files, commands, logins, secrets, settings).`);
+  } else {
+    lines.push(`  nothing was reviewed: there is no code Sentinel can read at ${where}.`);
+    lines.push(`  it reads ${joinWords(langs)}, plus GitHub workflows, Dockerfiles and settings files.`);
+  }
+  lines.push('  this is not a clean result. no AI tool was called and nothing was saved.', '');
+  return lines.join('\n');
 }
 
 const INCOMPLETE_WORDS = {
@@ -577,11 +607,15 @@ function renderAuditLanding({ dir, meta, records }) {
   const nothing = readNothing(meta);
   if (nothing) {
     L.push('  nothing was read, so this review says nothing about your code.');
-    L.push(`  ${meta.engines.hunter} did not answer. check that it works and is signed in, then run atris sentinel again.`);
-  } else if (open) {
+    if (!(cov.in_scope || 0)) L.push(open ? '  none of the code here is in what this review checks. the open findings below carry over from the last review.' : '  there was no code here Sentinel can read.');
+    else L.push(`  ${meta.engines.hunter} did not answer. check that it works and is signed in, then run atris sentinel again.`);
+  }
+  if (open) {
     const sev = meta.counts && meta.counts.severity ? meta.counts.severity : {};
     const sevText = ['critical', 'high', 'medium', 'low', 'informational'].filter((s) => sev[s]).map((s) => `${sev[s]} ${s}`).join(', ');
     L.push(`  ${open} confirmed${sevText ? ` (${sevText})` : ''}. each one was found, then double-checked by reading the code again:`);
+  } else if (nothing) {
+    // Said above: nothing was read, so there is no result to give.
   } else if (unchecked.length) {
     L.push('  no problem is double-checked yet. possible problems were found, listed below.');
   } else {
@@ -597,8 +631,10 @@ function renderAuditLanding({ dir, meta, records }) {
   if (open > shown) L.push(`    and ${open - shown} more in the report`);
   if (unchecked.length) {
     L.push(`  ${unchecked.length} lead${unchecked.length === 1 ? '' : 's'} not checked yet. ${unchecked.length === 1 ? 'it is' : 'they are'} not disproved; the next run checks ${unchecked.length === 1 ? 'it' : 'them'} first`);
-    for (const u of unchecked.slice(0, 6)) L.push(`    unchecked ${u.title}${u.location ? ` (${u.location})` : ''}`);
+    for (const u of unchecked.slice(0, 6)) L.push(`    unchecked ${u.title}${u.location ? ` (${u.location})` : ''}${u.severity ? `, ${u.severity} if real` : ''}`);
     if (unchecked.length > 6) L.push(`    and ${unchecked.length - 6} more in the report`);
+    const serious = require('../lib/security-audit').seriousUnchecked(meta).length;
+    if (serious) L.push(`  this review is not a pass: ${serious === unchecked.length ? (serious === 1 ? 'that lead' : `all ${serious}`) : serious} could be high or critical and ${serious === 1 ? 'was' : 'were'} never checked`);
   }
   if (needs.length) L.push(`  ${plural(needs.length, 'lead needs a fact only you know', 'leads need a fact only you know')}. ${needs.length === 1 ? 'it is' : 'they are'} in the report`);
   if (rejected.length) L.push(`  ${plural(rejected.length, 'possible problem was', 'possible problems were')} checked and ruled out`);
@@ -628,9 +664,24 @@ function askYesNo(question, { input = process.stdin, output = process.stdout } =
   });
 }
 
+// A plan, a run that never finished, or a review that read nothing would
+// show on the dashboard as an all-clear. None of them is saved.
+function notUploadable(dir) {
+  let meta = null;
+  try { meta = JSON.parse(fs.readFileSync(path.join(dir, 'run-metadata.json'), 'utf8')); } catch {}
+  if (!meta) return 'it has no readable summary';
+  if (meta.incomplete_reason === 'plan_only') return 'it is a plan. nothing was read';
+  if (!['complete', 'incomplete'].includes(meta.run_status) || !meta.finished_at) return 'that review never finished';
+  const stillOpen = meta.counts && Number(meta.counts.confirmed) > 0;
+  if (meta.mode !== 'recheck' && readNothing(meta) && !stillOpen) return 'that review read nothing, so it says nothing about your code';
+  return null;
+}
+
 async function uploadAfterRun(dir, { token, quiet, cloud, root = null, env = process.env }) {
-  const res = await cloud.uploadRun(dir, { token });
   const say = quiet ? (m) => console.error(m) : (m) => console.log(m);
+  const why = notUploadable(dir);
+  if (why) { say(`  nothing was saved to your atris account: ${why}`); return { ok: false, skipped: true, reason: why }; }
+  const res = await cloud.uploadRun(dir, { token });
   if (res.ok) say('  saved the summary to your atris account: titles, file and line, counts. no code was sent. to skip this: --no-upload');
   else say(`  warning: could not save the summary to your atris account: ${res.reason}. the review itself is done`);
   if (res.ok && res.body) await sendFixedEvents(dir, res.body, { token, root, env, say });
@@ -666,6 +717,8 @@ async function auditUploadCommand(argv, deps) {
     dir = last.dir;
   }
   if (!fs.existsSync(path.join(dir, 'run-metadata.json'))) { console.error(`  ${tildePath(dir)} is not a sentinel run folder`); return 2; }
+  const why = notUploadable(dir);
+  if (why) { console.error(`  ${path.basename(dir)} was not saved: ${why}`); return 2; }
   const res = await cloud.uploadRun(dir, { token });
   if (!res.ok) { console.error(`  could not save ${path.basename(dir)}: ${res.reason}`); return 1; }
   console.log(`  saved ${path.basename(dir)} to your atris account (no source code was sent)`);
@@ -678,11 +731,12 @@ async function auditUploadCommand(argv, deps) {
 async function quoteQuickRun(target, { hunter, verifier, token, cloud }) {
   const audit = require('../lib/security-audit');
   let estimate = null;
-  await audit.runAudit({
+  const res = await audit.runAudit({
     root: target, profile: 'quick', hunter, verifier,
     runJobs: async () => { throw new Error('no model call while pricing a schedule'); },
     confirmSpend: async (est) => { estimate = est; return false; },
   });
+  if (res && res.nothing_to_read) throw new Error(`there is no code Sentinel can review in ${tildePath(target)}`);
   if (!estimate) throw new Error('could not plan a review for this folder');
   return cloud.quoteEstimate(estimate, { token });
 }
@@ -951,8 +1005,10 @@ async function auditCommand(argv, deps = {}) {
   if (argv[0] === 'status' || argv[0] === 'last') {
     // The newest review of this folder, alone or as one of several places.
     const last = audit.latestReview(root);
-    if (!last || !last.meta) { console.log('\n  no sentinel audit has run for this repo yet\n'); return 0; }
-    if (argv.includes('--json')) { console.log(JSON.stringify({ dir: last.dir, meta: last.meta, findings: last.records, system: last.system || null }, null, 2)); return 0; }
+    if (!last || !last.meta) { console.log('\n  no finished sentinel review of this folder yet\n'); return 0; }
+    if (argv.includes('--json')) { console.log(JSON.stringify({ dir: last.dir, meta: last.meta, findings: last.records, system: last.system || null, skipped: (last.skipped || []).map((s) => ({ run: path.basename(s.dir), why: s.why })) }, null, 2)); return 0; }
+    const unfinished = (last.skipped || []).filter((s) => s.why === 'unfinished').length;
+    if (unfinished) console.log(`\n  the newest review${unfinished === 1 ? '' : 's'} of this folder did not finish, so ${unfinished === 1 ? 'it changes' : 'they change'} nothing. this is the last one that did:`);
     console.log(renderAuditLanding({ dir: last.dir, meta: last.meta, records: last.records }));
     if (last.system) console.log(`${systemReviewNote(last, 'status shows it here. recheck and fix work on a review of one folder for now')}\n`);
     return 0;
@@ -979,6 +1035,15 @@ async function auditCommand(argv, deps = {}) {
     if ((opts.ref || opts.keepClones) && !places.places.some((p) => p.kind === 'url')) throw new Error(`${opts.ref ? '--ref' : '--keep-clones'} only applies to a git URL place`);
     if (places.multi && opts.scheduled) throw new Error('a timed review covers one folder; run reviews of several places by hand');
   } catch (e) { console.error(`security-review audit: ${e.message}`); return 2; }
+  // A word that is no file or folder here (a typo, or a command that does
+  // not exist) is never read as an empty part of the project to review.
+  if (!places.multi) {
+    const missing = places.scope.find((w) => !fs.existsSync(path.resolve(root, w)));
+    if (missing !== undefined) {
+      console.error(`\n  nothing was reviewed: there is no file or folder called ${missing} here, and it is not a sentinel command.\n  every command: atris sentinel help all\n`);
+      return 2;
+    }
+  }
   const cloud = deps.cloud || require('../lib/sentinel-cloud');
   // A timer run does only what the owner approved at install.
   let capOverride = null;
@@ -1059,6 +1124,14 @@ async function auditCommand(argv, deps = {}) {
     if (system) finishSystem(system, tell);
   }
   if (result.declined) return 1;
+  if (result.nothing_to_read) {
+    const where = places.multi
+      ? (scope.length ? scope.join(', ') : places.places.map((p) => (p.path ? tildePath(p.path) : p.url)).join(', '))
+      : tildePath(scope.length ? scope.map((s) => path.join(root, s)).join(', ') : root);
+    if (opts.json) console.log(JSON.stringify({ ok: false, nothing_reviewed: true, reason: result.nothing_to_read.readable_files ? 'no_place_to_check' : 'no_readable_code', readable_files: result.nothing_to_read.readable_files, dir: null }, null, 2));
+    else console.log(nothingToReadText(result.nothing_to_read, where));
+    return 2;
+  }
   const nothingRead = !opts.planOnly && readNothing(result.meta);
   const fail = !opts.planOnly && (audit.shouldFailRun(result.dir, result.records) || nothingRead);
   if (opts.json) console.log(JSON.stringify({ ok: !fail, dir: result.dir, meta: result.meta, findings: result.records }, null, 2));

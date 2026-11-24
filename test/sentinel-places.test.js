@@ -74,6 +74,26 @@ function withHome(fn) {
 
 const LOCAL = ['--hunter', 'codex', '--verifier', 'claude', '--no-upload'];
 
+// Run history lives in <label>-<hash of the project's identity>.
+function historyDir(home, label) {
+  const name = fs.readdirSync(home).find((n) => n.startsWith(`${label}-`) && /-[0-9a-f]{12}$/.test(n));
+  assert.ok(name, `a history folder for ${label}`);
+  return path.join(home, name);
+}
+
+// Engines that read every area they are given and find nothing.
+async function readsAllCleanJobs(jobs) {
+  return jobs.map((job) => {
+    if (job.prompt.includes('security hunter')) {
+      const ids = [...job.prompt.matchAll(/coverage_id: (\S+)/g)].map((m) => m[1]);
+      const paths = [...job.prompt.matchAll(/starting paths: ([^,\s]+)/g)].map((m) => m[1]);
+      return { ok: true, stdout: JSON.stringify({ units: ids.map((id, i) => ({ coverage_id: id, disposition: 'covered', reviewed_paths: [paths[i] || paths[0]], checks: [{ invariant: 'input never becomes shell text', method: 'source', result: 'read it', reviewed_paths: [paths[i] || paths[0]] }], candidate_fingerprints: [], unresolved: [] })), candidates: [], hardening: [], uncovered: [] }) };
+    }
+    if (job.prompt.includes('coverage critic')) return { ok: true, stdout: JSON.stringify({ missing_units: [], reassign_ids: [], stop: true }) };
+    return { ok: true, stdout: '{"ok": true}' };
+  });
+}
+
 // A review that gets past planning first checks that codex and claude are
 // installed and signed in. Stand-ins on PATH, marked signed in, so the test
 // does not depend on the tools being on this computer.
@@ -227,7 +247,7 @@ test('the plan shows the parts and one shared budget; the report and saved resul
       assert.match(text, /one system in 3 parts/);
       assert.match(text, /up to 20 AI tool calls in total, shared by all 3 places/);
       assert.match(text, /parts per place: api \d+, web \d+, mobile \d+/);
-      const runDir = path.join(home, 'api+mobile+web', 'run-1');
+      const runDir = path.join(historyDir(home, 'api+mobile+web'), 'run-1');
       const meta = JSON.parse(fs.readFileSync(path.join(runDir, 'run-metadata.json'), 'utf8'));
       assert.strictEqual(meta.budget, 20, 'never multiplied by the number of parts');
       assert.deepStrictEqual(meta.parts.map((p) => [p.name, p.source]), [['api', 'folder'], ['web', 'folder'], ['mobile', 'folder']]);
@@ -346,9 +366,9 @@ test('a review with a URL cleans the clone and the review copy, on success and o
       const ok = await auditCommand(['--with', url, '--plan', ...LOCAL], { root: c.api, token: null, spawn: stubSpawn(calls), tmpBase: base });
       assert.strictEqual(ok, 0, out.join('\n'));
       assert.deepStrictEqual(fs.readdirSync(base), [], 'clone and review copy removed after success');
-      const meta = JSON.parse(fs.readFileSync(path.join(home, 'api+server', 'run-1', 'run-metadata.json'), 'utf8'));
+      const meta = JSON.parse(fs.readFileSync(path.join(historyDir(home, 'api+server'), 'run-1', 'run-metadata.json'), 'utf8'));
       assert.deepStrictEqual(meta.parts[1], { name: 'server', source: 'git', url, commit: 'abcdef1234567890abcdef1234567890abcdef12' });
-      const ledger = JSON.parse(fs.readFileSync(path.join(home, 'api+server', 'run-1', 'coverage-ledger.json'), 'utf8'));
+      const ledger = JSON.parse(fs.readFileSync(path.join(historyDir(home, 'api+server'), 'run-1', 'coverage-ledger.json'), 'utf8'));
       assert.ok(ledger.some((u) => u.surface === 'server/server/app.js'));
 
       const bad = await auditCommand(['--with', url, '--plan', ...LOCAL], { root: c.api, token: null, spawn: stubSpawn([], { fail: 'ERROR: Permission denied (publickey).' }), tmpBase: base });
@@ -395,7 +415,7 @@ test('a URL alone from a plain folder reviews that repo with its own paths; a pl
       };
       const code = await auditCommand(['https://git.example.com/acme/server.git', 'server', '--plan', ...LOCAL], { root: plain, token: null, spawn, tmpBase: base });
       assert.strictEqual(code, 0, out.join('\n'));
-      const runDir = path.join(home, 'server', 'run-1');
+      const runDir = path.join(historyDir(home, 'server'), 'run-1');
       const meta = JSON.parse(fs.readFileSync(path.join(runDir, 'run-metadata.json'), 'utf8'));
       assert.deepStrictEqual(meta.scope_paths, ['server']);
       assert.strictEqual(meta.source_ref.commit, 'abcdef1234567890abcdef1234567890abcdef12');
@@ -446,6 +466,10 @@ test('status, recheck and fix find a review of several places from any of its fo
   try {
     await withHome(async (home, out) => {
       assert.strictEqual(await auditCommand(['../web', '../mobile', '--plan', ...LOCAL], { root: c.api, token: null }), 0, out.join('\n'));
+      out.length = 0;
+      assert.strictEqual(await auditCommand(['status'], { root: c.web }), 0);
+      assert.match(out.join('\n'), /no finished sentinel review of this folder yet/, 'a plan is not a review');
+      assert.strictEqual(await auditCommand(['../web', '../mobile', '--quick', ...LOCAL], { root: c.api, token: null, runJobs: readsAllCleanJobs, quiet: true }), 0, out.join('\n'));
 
       out.length = 0;
       assert.strictEqual(await auditCommand(['status'], { root: c.web }), 0);
@@ -475,7 +499,7 @@ test('status, recheck and fix find a review of several places from any of its fo
       assert.strictEqual(await fixCommand(['abc123'], { root: c.api }), 2, 'asking to fix one names the limit and fails');
 
       // A newer review of the folder alone is the one status and fix use.
-      assert.strictEqual(await auditCommand(['--plan', ...LOCAL], { root: c.web, token: null }), 0);
+      assert.strictEqual(await auditCommand(['--quick', ...LOCAL], { root: c.web, token: null, runJobs: readsAllCleanJobs, quiet: true }), 0);
       out.length = 0;
       assert.strictEqual(await auditCommand(['status'], { root: c.web }), 0);
       text = out.join('\n');
@@ -497,7 +521,7 @@ test('a folder matches a git URL part by its origin in https or ssh form', async
     await withHome(async (home) => {
       const runDir = path.join(home, 'api+web', 'run-1');
       fs.mkdirSync(runDir, { recursive: true });
-      fs.writeFileSync(path.join(runDir, 'run-metadata.json'), JSON.stringify({ finished_at: '2026-11-23T00:00:00.000Z', parts: [{ name: 'api', source: 'folder', path: path.join(dir, 'elsewhere') }, { name: 'web', source: 'git', url: 'https://github.com/Org/Web.git', commit: 'a'.repeat(40) }] }));
+      fs.writeFileSync(path.join(runDir, 'run-metadata.json'), JSON.stringify({ run_status: 'complete', finished_at: '2026-11-23T00:00:00.000Z', parts: [{ name: 'api', source: 'folder', path: path.join(dir, 'elsewhere') }, { name: 'web', source: 'git', url: 'https://github.com/Org/Web.git', commit: 'a'.repeat(40) }] }));
       fs.writeFileSync(path.join(runDir, 'findings.json'), '[]');
       const found = audit.latestReview(repo);
       assert.ok(found && found.system, 'found by origin URL');

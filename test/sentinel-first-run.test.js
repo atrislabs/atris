@@ -233,9 +233,9 @@ test('a small python app with pytest in its requirements gets pytest; no test co
   execFileSync('git', ['add', '.'], { cwd: root });
   execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'pkg'], { cwd: root });
   const record = { verdict: 'confirmed', fingerprint: 'path-traversal/lib/files.js/read', title: 'Any file can be read', severity: { overall: 'high' }, trace: [{ file: 'lib/files.js', line: 2 }] };
-  const dir = path.join(auditHome, require('../lib/security-audit').repoName(root), 'run-1');
+  const dir = path.join(auditHome, require('../lib/security-audit').historyFolder(root), 'run-1');
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'run-metadata.json'), JSON.stringify({ profile: 'quick' }));
+  fs.writeFileSync(path.join(dir, 'run-metadata.json'), JSON.stringify({ profile: 'quick', run_status: 'complete', finished_at: '2026-11-24T00:00:00.000Z' }));
   fs.writeFileSync(path.join(dir, 'findings.json'), JSON.stringify([record]));
   const r = await capture(() => fixCommand([fix.shortId(record.fingerprint)], { root, env: process.env, available: () => true }));
   assert.strictEqual(r.code, 2);
@@ -247,9 +247,9 @@ test('the fix list puts the worst problem first and says nothing changes until y
   const { fixCommand } = require('../commands/sentinel-fix');
   const root = makeRepo();
   const rec = (sev, name) => ({ verdict: 'confirmed', fingerprint: `x/${name}`, title: `${sev} problem`, severity: { overall: sev }, trace: [{ file: 'lib/files.js', line: 2 }] });
-  const dir = path.join(auditHome, require('../lib/security-audit').repoName(root), 'run-1');
+  const dir = path.join(auditHome, require('../lib/security-audit').historyFolder(root), 'run-1');
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'run-metadata.json'), JSON.stringify({ profile: 'quick' }));
+  fs.writeFileSync(path.join(dir, 'run-metadata.json'), JSON.stringify({ profile: 'quick', run_status: 'complete', finished_at: '2026-11-24T00:00:00.000Z' }));
   fs.writeFileSync(path.join(dir, 'findings.json'), JSON.stringify([rec('medium', 'a'), rec('critical', 'b'), rec('high', 'c')]));
   const r = await capture(() => fixCommand([], { root, env: process.env }));
   const order = r.out.split('\n').filter((l) => / problem$/.test(l)).map((l) => l.trim().split(/\s+/)[1]);
@@ -296,9 +296,9 @@ test('fix with nothing confirmed says why, instead of asking for a review that a
   const root = makeRepo();
   const none = await capture(() => fixCommand([], { root, env: process.env }));
   assert.match(none.out, /no review of this project yet\. run atris sentinel first/);
-  const dir = path.join(auditHome, require('../lib/security-audit').repoName(root), 'run-1');
+  const dir = path.join(auditHome, require('../lib/security-audit').historyFolder(root), 'run-1');
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'run-metadata.json'), JSON.stringify({ profile: 'quick' }));
+  fs.writeFileSync(path.join(dir, 'run-metadata.json'), JSON.stringify({ profile: 'quick', run_status: 'complete', finished_at: '2026-11-24T00:00:00.000Z' }));
   fs.writeFileSync(path.join(dir, 'findings.json'), '[]');
   const empty = await capture(() => fixCommand([], { root, env: process.env }));
   assert.match(empty.out, /the last review has no confirmed problems, so there is nothing to fix/);
