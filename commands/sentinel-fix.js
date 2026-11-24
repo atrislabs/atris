@@ -224,6 +224,7 @@ async function fixCommand(argv, deps = {}) {
     hostedRun,
     runBuilder: deps.runBuilder || fix.defaultRunBuilder,
     runChecker: deps.runChecker || fix.defaultRunChecker,
+    copyDependencies: deps.copyDependencies,
     timeouts: { build: opts.timeoutMs || 20 * 60 * 1000, check: opts.timeoutMs || 10 * 60 * 1000, test: 20 * 60 * 1000 },
     log,
   };

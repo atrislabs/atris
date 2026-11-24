@@ -532,17 +532,56 @@ test('a push from a generated test fails and the test sees no credentials', asyn
 
 // ---------------------------------------------------------------- first real fixes
 
-test('the temp copy gets your installed packages, and they never become part of the fix', async () => {
+// Whether this disk can make a copy-on-write clone (APFS on a Mac, btrfs or
+// xfs on Linux). Where it cannot, the clone tests are skipped and the
+// fallback tests below still run.
+function canClone() {
+  const dir = tmp('sentinel-fix-canclone-');
+  write(dir, 'src/a.txt', 'a');
+  const cmd = fix.cloneCommand(path.join(dir, 'src'), path.join(dir, 'dst'));
+  return Boolean(cmd) && spawnSync(cmd[0], cmd[1]).status === 0;
+}
+const CLONE = canClone();
+
+function repoWithPackages() {
   const { root } = makeRepo();
-  write(root, '.gitignore', 'node_modules/\n');
+  write(root, '.gitignore', 'node_modules/\n.venv/\n');
   sh(root, 'add', '.gitignore');
   sh(root, 'commit', '-q', '-m', 'ignore');
-  // An installed package the new test needs, as in any Express app.
   write(root, 'node_modules/name-rules/index.js', "module.exports = { separators: [';', '|', '&'] };\n");
+  write(root, 'node_modules/left-pad/index.js', 'module.exports = 1;\n');
+  write(root, '.venv/bin/pip', '#!/bin/sh\n');
+  return root;
+}
+
+// Every file under a folder with its content, to compare before and after.
+function tree(dir) {
+  const out = {};
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) walk(full);
+      else out[path.relative(dir, full)] = fs.readFileSync(full, 'utf8');
+    }
+  };
+  walk(dir);
+  return out;
+}
+
+test('the temp copy gets a private clone of your packages; an install there never reaches yours', { skip: !CLONE && 'this disk cannot make a copy-on-write clone' }, async () => {
+  const root = repoWithPackages();
+  const before = tree(path.join(root, 'node_modules'));
   const needsPackage = "const test = require('node:test');\nconst assert = require('node:assert');\nconst { separators } = require('name-rules');\nconst { safeName } = require('../lib/run');\ntest('every separator is refused', () => { for (const s of separators) assert.strictEqual(safeName(`x${s}rm`), false); });\n";
   let sawPackage = null;
+  let wasLink = null;
   const runBuilder = async (job) => {
-    sawPackage = fs.existsSync(path.join(job.root, 'node_modules', 'name-rules', 'index.js'));
+    const nm = path.join(job.root, 'node_modules');
+    sawPackage = fs.existsSync(path.join(nm, 'name-rules', 'index.js'));
+    wasLink = fs.lstatSync(nm).isSymbolicLink();
+    // What an npm install or npm ci in the temp copy does: remove, rewrite, add.
+    fs.rmSync(path.join(nm, 'left-pad'), { recursive: true, force: true });
+    fs.writeFileSync(path.join(nm, 'name-rules', 'index.js'), "module.exports = { separators: [';'] };\n");
+    write(job.root, 'node_modules/new-pkg/index.js', 'module.exports = 2;\n');
     write(job.root, 'lib/run.js', FIXED);
     write(job.root, 'test/fix.test.js', needsPackage);
     return { ok: true, stdout: JSON.stringify({ summary: 'Allow only plain characters', test_files: ['test/fix.test.js'] }) };
@@ -550,30 +589,72 @@ test('the temp copy gets your installed packages, and they never become part of 
   const r = await capture(() => fixCommand([short], baseDeps(root, { runBuilder, runChecker: checkerSaying('fixed') })));
   assert.strictEqual(r.code, 0, r.out + r.err);
   assert.strictEqual(sawPackage, true, 'the fix writer can run tests that use installed packages');
+  assert.strictEqual(wasLink, false, 'the temp copy gets a clone, never a link to your folder');
+  assert.deepStrictEqual(tree(path.join(root, 'node_modules')), before, 'your node_modules is exactly as it was');
   const files = sh(root, 'diff', '--name-only', `main...${BRANCH}`).split('\n').sort();
-  assert.deepStrictEqual(files, ['lib/run.js', 'test/fix.test.js'], 'the package link is not part of the fix');
-  assert.ok(fs.existsSync(path.join(root, 'node_modules', 'name-rules', 'index.js')), 'your installed packages are left as they were');
+  assert.deepStrictEqual(files, ['lib/run.js', 'test/fix.test.js'], 'the packages are not part of the fix');
   assert.strictEqual(sh(root, 'status', '--porcelain'), '');
 });
 
-test('package links: only ignored folders are linked, hidden from changes, and removed cleanly', () => {
-  const { root } = makeRepo();
-  write(root, '.gitignore', 'node_modules/\n');
-  write(root, 'venv/keep.txt', 'tracked on purpose\n');
-  sh(root, 'add', '-A');
-  sh(root, 'commit', '-q', '-m', 'venv tracked');
-  write(root, 'node_modules/a/index.js', 'module.exports = 1;\n');
-  const wt = path.join(tmp('sentinel-fix-links-'), 'repo');
+test('package clone: an npm ci style wipe in the copy leaves yours alone, and the clone is removed after', { skip: !CLONE && 'this disk cannot make a copy-on-write clone' }, () => {
+  const root = repoWithPackages();
+  const before = tree(path.join(root, 'node_modules'));
+  const wt = path.join(tmp('sentinel-fix-clone-'), 'repo');
   sh(root, 'worktree', 'add', '-q', '--detach', wt, 'HEAD');
   try {
-    assert.deepStrictEqual(fix.linkDependencies(root, wt), ['node_modules'], 'a tracked folder is already in the copy and is not linked');
-    assert.ok(fs.lstatSync(path.join(wt, 'node_modules')).isSymbolicLink());
-    assert.deepStrictEqual(fix.changedPaths(wt), [], 'the link does not show up as a change');
-    fix.unlinkDependencies(wt);
+    const res = fix.copyDependencies(root, wt);
+    assert.deepStrictEqual(res.copied, ['node_modules']);
+    assert.ok(!fs.existsSync(path.join(wt, '.venv')), 'a virtual environment is never copied: its scripts point back at yours');
+    assert.ok(!fs.lstatSync(path.join(wt, 'node_modules')).isSymbolicLink());
+    assert.deepStrictEqual(fix.changedPaths(wt), [], 'the clone does not show up as a change');
+    // npm ci: delete the whole folder, then write a fresh one.
+    fs.rmSync(path.join(wt, 'node_modules'), { recursive: true, force: true });
+    write(wt, 'node_modules/fresh/index.js', 'module.exports = 3;\n');
+    assert.deepStrictEqual(tree(path.join(root, 'node_modules')), before, 'your node_modules is untouched');
+    fix.dropDependencies(wt);
     assert.ok(!fs.existsSync(path.join(wt, 'node_modules')));
-    assert.ok(fs.existsSync(path.join(root, 'node_modules', 'a', 'index.js')), 'removing the link keeps your packages');
+    assert.deepStrictEqual(tree(path.join(root, 'node_modules')), before);
   } finally {
     sh(root, 'worktree', 'remove', '--force', wt);
+  }
+});
+
+test('package clone: no clone means no packages and a plain note, never a link', async () => {
+  const root = repoWithPackages();
+  const wt = path.join(tmp('sentinel-fix-noclone-'), 'repo');
+  sh(root, 'worktree', 'add', '-q', '--detach', wt, 'HEAD');
+  try {
+    const failed = fix.copyDependencies(root, wt, { clone: () => ({ ok: false, why: 'this disk cannot make a copy-on-write copy' }) });
+    assert.deepStrictEqual(failed.copied, []);
+    assert.deepStrictEqual(failed.skipped, [{ name: 'node_modules', why: 'this disk cannot make a copy-on-write copy' }]);
+    assert.ok(!fs.existsSync(path.join(wt, 'node_modules')));
+    // A clone step that leaves a link behind is refused and the link removed.
+    const sneaky = fix.copyDependencies(root, wt, { clone: (src, dest) => { fs.symlinkSync(src, dest, 'dir'); return { ok: true }; } });
+    assert.deepStrictEqual(sneaky.copied, []);
+    assert.ok(!fs.existsSync(path.join(wt, 'node_modules')), 'the link was removed');
+    assert.ok(fs.existsSync(path.join(root, 'node_modules', 'left-pad', 'index.js')), 'removing the link kept your packages');
+  } finally {
+    sh(root, 'worktree', 'remove', '--force', wt);
+  }
+  // The run says so in plain words and still goes on.
+  const logs = [];
+  const runBuilder = builderWriting({ 'lib/run.js': FIXED, 'test/fix.test.js': REGRESSION });
+  const r = await capture(() => fixCommand([short], baseDeps(root, { runBuilder, runChecker: checkerSaying('fixed'), log: (m) => logs.push(m), copyDependencies: (a, b) => fix.copyDependencies(a, b, { clone: () => ({ ok: false, why: 'this disk cannot make a copy-on-write copy' }) }) })));
+  assert.strictEqual(r.code, 0, r.out + r.err);
+  assert.ok(logs.some((l) => /your node_modules is not used for this fix: this disk cannot make a copy-on-write copy, and sharing your own folder could change it/.test(l)), logs.join('\n'));
+});
+
+test('clone commands: copy-on-write on a Mac and on Linux, none elsewhere', () => {
+  assert.deepStrictEqual(fix.cloneCommand('/a', '/b', 'darwin'), ['cp', ['-c', '-R', '/a', '/b']]);
+  assert.deepStrictEqual(fix.cloneCommand('/a', '/b', 'linux'), ['cp', ['-R', '--reflink=always', '/a', '/b']], 'always, not auto: auto quietly makes a full copy');
+  assert.strictEqual(fix.cloneCommand('/a', '/b', 'win32'), null);
+});
+
+test('the fix writer is told never to install, update or remove packages', () => {
+  for (const canRun of [true, false]) {
+    const p = fix.builderPrompt(RECORD, { testCommand: 'npm test', canRun });
+    assert.match(p, /Never install, update or remove packages: no npm install, npm ci/);
+    assert.match(p, /If the test needs a package that is missing, do not add it: say which one in your summary/);
   }
 });
 
