@@ -74,6 +74,18 @@ function withHome(fn) {
 
 const LOCAL = ['--hunter', 'codex', '--verifier', 'claude', '--no-upload'];
 
+// A review that gets past planning first checks that codex and claude are
+// installed and signed in. Stand-ins on PATH, marked signed in, so the test
+// does not depend on the tools being on this computer.
+function enginesReady() {
+  const bin = tmp('sentinel-places-bin-');
+  for (const n of ['codex', 'claude']) {
+    fs.writeFileSync(path.join(bin, n), '#!/bin/sh\nexit 0\n');
+    fs.chmodSync(path.join(bin, n), 0o755);
+  }
+  return { env: { ...process.env, PATH: bin + path.delimiter + (process.env.PATH || '') }, signedIn: () => true, bin };
+}
+
 // ---------------------------------------------------------------- words
 
 test('git URLs on any host are places; file, ext and option-looking URLs are not', () => {
@@ -345,7 +357,9 @@ test('a review with a URL cleans the clone and the review copy, on success and o
       assert.deepStrictEqual(fs.readdirSync(base), [], 'nothing left after a failed clone');
 
       // A review that fails after the clone (its --out folder is not empty) still cleans up.
-      const boom = await auditCommand(['--with', url, '--out', home, ...LOCAL], { root: c.api, token: null, spawn: stubSpawn([]), tmpBase: base });
+      const ready = enginesReady();
+      const boom = await auditCommand(['--with', url, '--out', home, ...LOCAL], { root: c.api, token: null, spawn: stubSpawn([]), tmpBase: base, env: ready.env, signedIn: ready.signedIn });
+      fs.rmSync(ready.bin, { recursive: true, force: true });
       assert.strictEqual(boom, 2);
       assert.match(out.join('\n'), /already has files/);
       assert.deepStrictEqual(fs.readdirSync(base), [], 'nothing left after a failed review');
