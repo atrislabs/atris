@@ -5,7 +5,11 @@
       "sha256:f3089e4e71423953": "real",
       "sha256:cbcc7ac5a7661058": "real",
       "sha256:ee41e44495dadeae": "real",
-      "sha256:c450573cc82c9e60": "real"
+      "sha256:c450573cc82c9e60": "real",
+      "sha256:8fd9998ba3e43c5e": "real",
+      "sha256:e5eea6f7339329ec": "real",
+      "sha256:30b7139f5d1ef94d": "real",
+      "sha256:1658fee99d12770a": "real"
     },
     "note": "The token-in-arguments finding is in a developer-only inspector launcher run on the developer's own machine; not a hole in the shipped tool.",
     "match": {
@@ -14,10 +18,15 @@
       "sha256:f3089e4e71423953": "same",
       "sha256:cbcc7ac5a7661058": "same",
       "sha256:ee41e44495dadeae": "same",
-      "sha256:c450573cc82c9e60": "same"
+      "sha256:c450573cc82c9e60": "same",
+      "sha256:8fd9998ba3e43c5e": "same",
+      "sha256:e5eea6f7339329ec": "same",
+      "sha256:30b7139f5d1ef94d": "same",
+      "sha256:1658fee99d12770a": "same"
     },
     "note3": "Run of 2026-11-24 (after, final): the finding on the hole is the advisory (reported twice).",
-    "note_pass2": "Runs of pass2: 4 findings on the hole labelled the advisory; 4 confirmed findings labelled real; details kept private."
+    "note_pass2": "Runs of pass2: 4 findings on the hole labelled the advisory; 4 confirmed findings labelled real; details kept private.",
+    "note_pass3": "Runs of pass3: 4 findings on the hole labelled the advisory; 4 confirmed findings labelled real; details kept private."
   },
   "GHSA-45gf-fjxp-cjpq": {
     "others": {
@@ -32,16 +41,23 @@
       "sha256:dd85176a00372c4a": "real",
       "meta_ads_mcp/core/authentication.py:get_login_link/operator-token-preview": "wrong",
       "sha256:1be99871d1c4e07b": "real",
-      "sha256:9623bc2a9b054d90": "real"
+      "sha256:9623bc2a9b054d90": "real",
+      "sha256:d38289f413f82c7b": "real",
+      "sha256:5762a7b909069622": "real",
+      "sha256:a614906961935758": "real",
+      "sha256:9180b78f3ced9900": "real"
     },
     "note": "One confirmed finding elsewhere is a real new hole; details kept private.",
     "match": {
       "meta_ads_mcp/core/utils.py:download_image/unrestricted-image-destination": "same",
       "meta_ads_mcp/core/utils.py:download_image/unchecked-image-fetch-destination": "same",
-      "sha256:9623bc2a9b054d90": "same"
+      "sha256:9623bc2a9b054d90": "same",
+      "sha256:5762a7b909069622": "same",
+      "sha256:9180b78f3ced9900": "same"
     },
     "note3": "Run of 2026-11-24 (after, final): the finding on the hole is the advisory; 2 other confirmed findings labelled real; details kept private.",
-    "note_pass2": "Runs of pass2: 1 finding on the hole labelled the advisory; 5 confirmed findings labelled real; details kept private; 2 labelled wrong."
+    "note_pass2": "Runs of pass2: 1 finding on the hole labelled the advisory; 5 confirmed findings labelled real; details kept private; 2 labelled wrong.",
+    "note_pass3": "Runs of pass3: 2 findings on the hole labelled the advisory; 4 confirmed findings labelled real; details kept private."
   },
   "GHSA-4g5x-hcwm-82jw": {
     "others": {
@@ -77,7 +93,14 @@
       "cli/src/utils.ts:zipFileWindows/unconfined-bundle-input": "wrong",
       "sha256:3b37ccb15d8197a7": "real",
       "sha256:0eb1e2728577c51e": "real",
-      "sha256:2b47fc4355806744": "real"
+      "sha256:2b47fc4355806744": "real",
+      "cli/src/init/mcp/live-update-tools.ts:getMainFile/unconfined-discovered-entry-file": "wrong",
+      "sha256:05d6c9ec83f5230d": "real",
+      "sha256:6c855b0dd69daa5f": "real",
+      "cli/src/init/mcp/live-update-tools.ts:buildDeps/discovered-entrypoint-skips-realpath-confinement": "wrong",
+      "cli/src/utils.ts:getRemoteConfig/project-config-controls-saved-key-recipient": "wrong",
+      "sha256:e0ccfa6a7c5c2e18": "real",
+      "sha256:69c34488ac0e6a77": "real"
     },
     "note": "Wrong: the localApi/localApiFiles settings (cli/src/utils.ts:702-705) are the documented self-host switch, and the attacker it needs already commits to the operator's own app project, whose capacitor.config.ts is code the CLI loads anyway.",
     "match": {
@@ -85,11 +108,16 @@
       "sha256:ec013472b02877ad": "other",
       "sha256:16ee909e5ca8412f": "other",
       "sha256:3b37ccb15d8197a7": "other",
-      "sha256:2b47fc4355806744": "same"
+      "sha256:2b47fc4355806744": "same",
+      "sha256:05d6c9ec83f5230d": "other",
+      "sha256:6c855b0dd69daa5f": "same",
+      "sha256:e0ccfa6a7c5c2e18": "other",
+      "sha256:69c34488ac0e6a77": "same"
     },
     "note2": "Run of 2026-11-23 (after): the confirmed finding on the hole file is a different flaw, a real new hole kept private. The CLI finding is wrong for the same reason as before.",
     "note3": "Run of 2026-11-24 (after, final): 1 other confirmed finding labelled real; details kept private.",
-    "note_pass2": "Runs of pass2: 1 finding on the hole labelled the advisory; 4 confirmed findings labelled real; details kept private; 5 labelled wrong."
+    "note_pass2": "Runs of pass2: 1 finding on the hole labelled the advisory; 4 confirmed findings labelled real; details kept private; 5 labelled wrong.",
+    "note_pass3": "Runs of pass3: 2 findings on the hole labelled the advisory; 4 confirmed findings labelled real; details kept private; 3 labelled wrong."
   },
   "GHSA-8cfq-jgf7-8m27": {
     "match": {
@@ -121,16 +149,26 @@
       "sha256:031a069fe3967656": "real",
       "sha256:5a221c9e567a6e83": "real",
       "sha256:94fbf0a14f509b7f": "real",
-      "sha256:085721b3d33dcea3": "real"
+      "sha256:085721b3d33dcea3": "real",
+      "sha256:f7c9417503b046b7": "real",
+      "sha256:d2610b0e25a1758c": "real",
+      "sha256:326648a56d511e54": "real",
+      "sha256:9c7be332d632e060": "real",
+      "sha256:be7af19fdb8f9bad": "real",
+      "sha256:91377367cebefdd0": "real",
+      "sha256:8c35be6784a6efad": "real"
     },
     "note": "The advisory spot was spotted as a lead but the run ran out of budget to check it. One confirmed finding elsewhere is a real new hole; details kept private.",
     "match": {
       "src/coordinator/handlers/statistics_v4.go:V4StatisticsQuery/unrestricted-statistics-sql": "same",
       "src/coordinator/handlers/statistics_v4.go:V4StatisticsQuery/unrestricted-writer-query": "same",
-      "sha256:3bfb42d8a42de702": "same"
+      "sha256:3bfb42d8a42de702": "same",
+      "sha256:9c7be332d632e060": "same",
+      "sha256:8c35be6784a6efad": "same"
     },
     "note3": "Run of 2026-11-24 (after, final): the finding on the hole is the advisory; 4 other confirmed findings labelled real; details kept private.",
-    "note_pass2": "Runs of pass2: 1 finding on the hole labelled the advisory; 8 confirmed findings labelled real; details kept private; 2 labelled wrong."
+    "note_pass2": "Runs of pass2: 1 finding on the hole labelled the advisory; 8 confirmed findings labelled real; details kept private; 2 labelled wrong.",
+    "note_pass3": "Runs of pass3: 2 findings on the hole labelled the advisory; 7 confirmed findings labelled real; details kept private."
   },
   "GHSA-pfvc-3p5h-x7h6": {
     "others": {
@@ -144,12 +182,14 @@
       "sha256:c21ad97ce6a2673a": "real",
       "server/mounts.go:customMounts/incomplete-host-path-containment": "wrong",
       "sha256:b75732f855ddbe69": "real",
-      "sha256:a27df994793b2ec4": "real"
+      "sha256:a27df994793b2ec4": "real",
+      "server/filesystem/archive.go:addToArchive/readlink-uses-basename-in-process-cwd": "wrong"
     },
     "note": "The account-name finding is wrong: only the panel holding the node token can set that name, and it already controls the node. The other two confirmed findings are real new holes (both low); details kept private.",
     "match": {},
     "note3": "Run of 2026-11-24 (after, final): 3 other confirmed findings labelled real; details kept private.",
-    "note_pass2": "Runs of pass2: 3 confirmed findings labelled real; details kept private; 1 labelled wrong."
+    "note_pass2": "Runs of pass2: 3 confirmed findings labelled real; details kept private; 1 labelled wrong.",
+    "note_pass3": "Runs of pass3: 1 labelled wrong."
   },
   "GHSA-q4gh-4ffp-5cg8": {
     "match": {
@@ -167,14 +207,17 @@
       "oauthenticator/globus.py:pre_spawn_start/unfiltered-token-response-export": "wrong",
       "oauthenticator/globus.py:user_info_to_username/discarded-identity-namespace": "wrong",
       "oauthenticator/globus.py:GlobusOAuthenticator/unfiltered-token-response-in-spawn-environment": "wrong",
-      "sha256:89630f55283ea7be": "real"
+      "sha256:89630f55283ea7be": "real",
+      "oauthenticator/globus.py:pre_spawn_start/excluded-tokens-exported-through-raw-response": "wrong",
+      "oauthenticator/globus.py:pre_spawn_start/unfiltered-token-response-in-user-environment": "wrong"
     },
     "note": "Wrong as a security hole: the exclude_tokens filter is bypassed through token_response (globus.py:268), but the only receiver is the same user's own notebook getting that user's own tokens. Nobody gains access they did not already have.",
     "match": {
       "oauthenticator/auth0.py:Auth0OAuthenticator/unverified-email-account-key": "same"
     },
     "note3": "Run of 2026-11-24 (after, final): the finding on the hole is the advisory.",
-    "note_pass2": "Runs of pass2: 1 confirmed finding labelled real; details kept private."
+    "note_pass2": "Runs of pass2: 1 confirmed finding labelled real; details kept private.",
+    "note_pass3": "Runs of pass3: 2 labelled wrong."
   },
   "GHSA-w89x-c962-c44g": {
     "others": {
@@ -201,17 +244,27 @@
       "sha256:906833eaebc0bc99": "real",
       "sha256:fe8e64974331dbc3": "real",
       "sha256:b931c827da269c31": "real",
-      "sha256:15db9e6a09ec5a49": "real"
+      "sha256:15db9e6a09ec5a49": "real",
+      "sha256:a0e7fc48a853c012": "real",
+      "sha256:f4bcfd45b68d2921": "real",
+      "sha256:1b774e901867150b": "real",
+      "sha256:e73d1c2be88e022d": "real",
+      "sha256:a4770a07c6f80e85": "real",
+      "sha256:81dd49a1d3d43cce": "real",
+      "sha256:fb3a1edf4d54a3e2": "real"
     },
     "note": "Same pattern as cloudreve: sign-in state and query tokens written to the operator's own logs (request_log.go:45, oauth2_authentications.go:58-186). No less trusted reader, so no one gains access.",
     "match": {
       "cmd/webserver.go:startWebServer/unrestricted-proxy-trust": "same",
       "cmd/webserver.go:startWebServer/default-proxy-trust-in-ip-allowlists": "same",
       "sha256:b9a0508702a256ec": "same",
-      "sha256:906833eaebc0bc99": "same"
+      "sha256:906833eaebc0bc99": "same",
+      "sha256:a0e7fc48a853c012": "same",
+      "sha256:a4770a07c6f80e85": "same"
     },
     "note3": "Run of 2026-11-24 (after, final): the finding on the hole is the advisory; 1 other confirmed finding labelled real; details kept private.",
-    "note_pass2": "Runs of pass2: 2 findings on the hole labelled the advisory; 9 confirmed findings labelled real; details kept private."
+    "note_pass2": "Runs of pass2: 2 findings on the hole labelled the advisory; 9 confirmed findings labelled real; details kept private.",
+    "note_pass3": "Runs of pass3: 2 findings on the hole labelled the advisory; 7 confirmed findings labelled real; details kept private."
   },
   "GHSA-jq3q-62jc-fqq9": {
     "match": {
@@ -231,7 +284,10 @@
       "backend/services/notes.go:GetNotesByBookID/public-visibility-in-deleted-mode": "same",
       "backend/services/notes.go:GetNotesByBookID/public-access-to-trash": "same",
       "sha256:e99bd840b6d94e08": "same",
-      "sha256:89e036219922c4c7": "same"
+      "sha256:89e036219922c4c7": "same",
+      "sha256:fa04556f2947bb3a": "same",
+      "sha256:57464d4454f06a12": "near",
+      "sha256:56b54b63723ae8c9": "same"
     },
     "others": {
       "sha256:57464d4454f06a12": "real",
@@ -240,30 +296,40 @@
       "sha256:e99bd840b6d94e08": "real",
       "backend/cli/serve.go:commandServe/cleartext-authentication-transport": "wrong",
       "sha256:1d43ac732a030adc": "real",
-      "sha256:89e036219922c4c7": "real"
+      "sha256:89e036219922c4c7": "real",
+      "sha256:fa04556f2947bb3a": "real",
+      "sha256:56b54b63723ae8c9": "real"
     },
     "note3": "Run of 2026-11-24 (after, final): the finding on the hole is the advisory; 1 other confirmed finding labelled real; details kept private.",
-    "note_pass2": "Runs of pass2: 2 findings on the hole labelled the advisory; 4 confirmed findings labelled real; details kept private; 1 labelled wrong."
+    "note_pass2": "Runs of pass2: 2 findings on the hole labelled the advisory; 4 confirmed findings labelled real; details kept private; 1 labelled wrong.",
+    "note_pass3": "Runs of pass3: 2 findings on the hole labelled the advisory; 3 confirmed findings labelled real; details kept private."
   },
   "GHSA-5p54-whvp-x327": {
     "match": {
       "pusher/http.go:Handler/missing-freshness-and-replay-check": "same",
       "pusher/http.go:RestAPI.Handler/unbound-request-body": "same",
-      "sha256:a62992b0089bdf0e": "near"
+      "sha256:a62992b0089bdf0e": "near",
+      "sha256:c510b055b72f9779": "same",
+      "sha256:19322fc91a6d4e4e": "near"
     },
     "others": {
-      "sha256:19322fc91a6d4e4e": "real",
+      "sha256:19322fc91a6d4e4e": "wrong",
       "pusher/verifier.go:Verifier.Verify/empty-signing-secret": "wrong",
       "sha256:a857936cdd49ecb9": "real",
-      "sha256:a62992b0089bdf0e": "wrong"
+      "sha256:a62992b0089bdf0e": "wrong",
+      "sha256:9a9eb08f2d55c3ec": "real",
+      "sha256:c510b055b72f9779": "real"
     },
     "note3": "Run of 2026-11-24 (after, final): the finding on the hole is the advisory.",
-    "note_pass2": "Runs of pass2: 1 confirmed finding labelled real; details kept private."
+    "note_pass2": "Runs of pass2: 1 confirmed finding labelled real; details kept private.",
+    "note_pass3": "Runs of pass3: 1 finding on the hole labelled the advisory; 2 confirmed findings labelled real; details kept private."
   },
   "GHSA-89vx-jh4q-vg3w": {
     "match": {
       "src/services/permission/valve/rules-map.ts:getRulesForMessage/unmapped-batch-record-write": "same",
-      "sha256:a774cda7eb479bbb": "same"
+      "sha256:a774cda7eb479bbb": "same",
+      "sha256:cc3abaea60b022ae": "near",
+      "sha256:3e625e0e127cff8a": "same"
     },
     "others": {
       "sha256:e7d3e72238589d0e": "real",
@@ -272,10 +338,20 @@
       "sha256:f0cda338c339fe93": "real",
       "sha256:b2058617e9b70c4a": "real",
       "sha256:a774cda7eb479bbb": "real",
-      "sha256:5d98eac4099c56f5": "real"
+      "sha256:5d98eac4099c56f5": "real",
+      "src/handlers/rpc/rpc-handler.ts:handle/provider-reply-sender-unbound": "wrong",
+      "sha256:b297463ecb7b4c4a": "real",
+      "sha256:cc3abaea60b022ae": "real",
+      "sha256:c81810d2cc56effc": "real",
+      "sha256:352b39a1f7a0495c": "real",
+      "sha256:230d274b5b3c18ab": "real",
+      "sha256:3e625e0e127cff8a": "real",
+      "sha256:c73226d7e753f1f4": "real",
+      "sha256:d4559e552beb4dd0": "real"
     },
     "note3": "Run of 2026-11-24 (after, final): 2 other confirmed findings labelled real; details kept private.",
-    "note_pass2": "Runs of pass2: 1 finding on the hole labelled the advisory; 2 confirmed findings labelled real; details kept private."
+    "note_pass2": "Runs of pass2: 1 finding on the hole labelled the advisory; 2 confirmed findings labelled real; details kept private.",
+    "note_pass3": "Runs of pass3: 1 finding on the hole labelled the advisory; 8 confirmed findings labelled real; details kept private; 1 labelled wrong."
   },
   "GHSA-ch3g-4xvr-674q": {
     "match": {},

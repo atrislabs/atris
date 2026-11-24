@@ -125,7 +125,7 @@ What changed in Sentinel:
 | | before | after |
 |---|---|---|
 | **this exam, seen half (10)** | | |
-| found | 2 | 2 |
+| found | 2 | 1 (first reported as 2; see below) |
 | near | 3 | 2 |
 | wrong alarms / confirmed | 2 / 18 (11%) | 8 / 29 (28%) |
 | new real holes (private) | 14 | 19 |
@@ -166,3 +166,84 @@ read matters. The exam 1 "before" numbers are the ones recorded for 3.92.1 in
 `../real-advisories/README.md`. Kept run copies are in
 `~/.atris/sentinel-real-scorecard/runs/` (`2026-11-23T23-22-baseline-3.92.1`,
 `2026-11-24T00-01-after2-seen`, `2026-11-24T00-17-after-heldout`).
+
+Correction, made during the second round: the after run's Aegra finding
+(stream and wait routes skip the create policy) was first labelled as the
+published hole. The published hole is the missing thread owner check, and
+the baseline label had already called this finding a different flaw on the
+same lines. It is now `match: other`, so the first round found 1, not 2.
+
+## Second round, 2026-11-24
+
+Same exam, seen halves only (this exam's seen 10 and exam 1's seen 10), two
+runs per repo (a and b), two repos at a time per exam. The held-out halves
+were not run again: the plan was to run each once only after the seen numbers
+beat 3.92.1 on both found and wrong alarms, and they do not yet.
+
+What changed in Sentinel:
+
+- A failed reading call now says why (the engine's own error line), gets one
+  retry right away, and a refused one is retried on the other installed
+  engine. An area still unread marks the run incomplete and is listed under
+  "Not read" in the report, so a clean result never covers unread code, even
+  when other parts were carried from an earlier run.
+- Retries never take the calls held for checking leads or for the critics.
+- Leads that claim code execution or account takeover are checked first.
+- A checker that waves a spotted hole off must quote the line of this repo
+  that shows it. A README, a doc or a comment saying the code is a training
+  app, intended or for trusted users only does not count. Without such a
+  line the check counts as passed.
+- Build and supply-chain hygiene (signature checks off in a build file, a
+  moving upstream download) and an admin, metrics or support listener on its
+  own port are hardening notes, unless outside input reaches a CI step or the
+  same routes answer on the public listener.
+- A product shipping a safe and an unsafe variant side by side, with the
+  operator picking one, is an operator setting. Making a victim's browser
+  load an image any web page could load is no gain.
+
+Why the reads failed: the hunter engine refused some requests with "This
+content was flagged for possible cybersecurity risk", not rate limits or
+timeouts. The refusals come and go between runs of the same repo.
+
+| | 3.92.1 | first round | round 2 (a / b) | round 3 (a / b) |
+|---|---|---|---|---|
+| **this exam, seen half (10)** | | | | |
+| found | 2 | 1 | 3 / 3 | 1 / 2 |
+| wrong alarms / confirmed | 2 / 18 (11%) | 8 / 29 (28%) | 8 / 32 (25%) / 10 / 34 (29%) | 3 / 24 (12%) / 4 / 27 (15%) |
+| failed area reads | 4 | 17 | 0 / 8 | 0 / 4 |
+| **exam 1, seen half (10)** | | | | |
+| found | 6 | 7 | 6 / 5 | 7 / 7 |
+| wrong alarms / confirmed | 2 / 20 (10%) | 1 / 23 (4%) | 7 / 29 (24%) / 6 / 28 (21%) | 6 / 29 (21%) / 3 / 20 (15%) |
+| failed area reads | n/a | 10 | 0 / 3 | 0 / 3 |
+
+Round 2 had the first five changes; round 3 added the last one and the retry
+on the other engine. Round 3 is the current branch.
+
+Reading it plainly: unread areas are mostly gone and are now always named.
+Wrong alarms fell back from the first round on this exam but are still a
+little above 3.92.1. Exam 1 finds one more hole than 3.92.1 in both runs.
+This exam's finds did not move. The seen bar is not met, so no held-out run.
+
+What is left, from the round 3 hand check:
+
+- Four published holes were spotted and then kept as notes on the "needs
+  insider access" check: an owner check missing on a thread looked up by a
+  random id (Aegra), a signed request that can be replayed once captured
+  (Pusher), and two archive escapes where the archive comes from the
+  product's own control service. The advisories count all of these as holes.
+  The check treats "needs another user's random id" and "needs a captured
+  request" as insider-only, a rule added earlier to stop a wrong alarm on a
+  payment card id only the victim's browser sees. Loosening it is a call
+  about what counts as a hole, so it is left for a person to make.
+- Most remaining wrong alarms are kinds the checker is already told to
+  dismiss (a user's own tokens in their own notebook, a forwarded-address
+  rule the docs call forgeable, a project's own config), and several are
+  close calls a looser reviewer would call real.
+
+Labels: rounds 2 and 3 were labelled by a separate reviewer reading the
+source, following the earlier labels as precedent. Exam 1's first-round
+labels were one reviewer's calls; later rounds were stricter on close calls,
+which is part of why exam 1's wrong alarm rate rose. Kept run copies:
+`2026-11-24T00-54-pass2-seen` and `2026-11-24T02-04-pass3-seen` in
+`~/.atris/sentinel-real-scorecard/runs/`. `2026-11-24T01-57-pass3-seen` was
+stopped early to fold in a change and is not a measurement.
