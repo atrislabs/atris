@@ -145,6 +145,35 @@ test('a failed check with no line of code to show it is ignored and the lead sta
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+// Published advisories count a hole behind another user's random id, or
+// behind a request captured from them, as a hole. It is kept, confirmed one
+// step lower, with the condition in plain words.
+test('a hole behind a random id or a captured request is confirmed lower, not dropped', () => {
+  const root = repo(FILES);
+  try {
+    const sev = (overall, impact = overall) => ({ likelihood: { score: 'medium', reason: 'r' }, impact: { score: impact, reason: 'r' }, overall });
+    for (const [from, to] of [['critical', 'medium'], ['high', 'medium'], ['medium', 'low'], ['low', 'low'], ['informational', 'informational']]) {
+      const rec = audit.decide(root, cand({ severity: sev(from) }), answer({ verdict: 'note', checks: { ...PASS, insider_only: 'yes' }, dismissal_evidence: evidence('insider_only'), secret_barrier: 'random_id' }), by);
+      assert.strictEqual(rec.verdict, 'confirmed', from);
+      assert.strictEqual(rec.severity.overall, to, from);
+      assert.strictEqual(rec.severity.likelihood.score, 'low');
+      assert.ok(rec.conditions.some((c) => /another user's id, which is random but can leak through links or logs/.test(c.description)));
+      assert.deepStrictEqual(audit.validateFindings([rec], { root }), []);
+    }
+    const replay = audit.decide(root, cand({ severity: sev('high') }), answer({ verdict: 'confirmed', checks: PASS, secret_barrier: 'captured request' }), by);
+    assert.strictEqual(replay.severity.overall, 'medium');
+    assert.ok(replay.conditions.some((c) => /captured from another user/.test(c.description)));
+    // Lowering twice (a re-check) keeps one condition and one step.
+    const again = audit.lowerForBarrier(replay, 'captured_request');
+    assert.strictEqual(again.severity.overall, 'medium');
+    assert.strictEqual(again.conditions.filter((c) => /captured from another user/.test(c.description)).length, 1);
+    // Real insider access, with no leaked-value barrier, is still a note.
+    assert.ok(audit.isNote(audit.decide(root, cand(), answer({ verdict: 'note', checks: { ...PASS, insider_only: 'yes' }, dismissal_evidence: evidence('insider_only'), secret_barrier: 'none' }), by)));
+    // A barrier never lets another failed check through.
+    assert.ok(audit.isNote(audit.decide(root, cand(), answer({ verdict: 'note', checks: { ...PASS, attacker_gain: 'no' }, dismissal_evidence: evidence('attacker_gain'), secret_barrier: 'random_id' }), by)));
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('the verifier is told a claim of intent is not a control, and to quote the line behind a dismissal', () => {
   const p = audit.verifierPrompt({ candidate: cand(), cls: CLASS_BY_ID.get('access-control') });
   assert.match(p, /dismissal_evidence/);
