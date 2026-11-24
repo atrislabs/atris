@@ -290,3 +290,16 @@ test('quick mode reads the header allowlist first, ahead of other classes', () =
     assert.deepStrictEqual(wave[0].starting_paths, ['internal/serve/middleware/api_keys_middleware.go']);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+// A developer tool run in the operator's own project folder: a settings file
+// or symlink committed there is the operator's own, so a hole that needs only
+// that is insider access. Tools that handle strangers' folders, and files that
+// arrive from outside, stay findings. Only the verifier makes this call.
+test('the project folder a developer tool runs in counts as the operator\'s own, with plain exceptions', () => {
+  const { CANDIDATE_GATE } = require('../lib/security-audit-classes');
+  const ask = CONFIRM_CHECKS.find((c) => c.key === 'insider_only').ask;
+  assert.match(ask, /project folder the operator runs a command-line or developer tool in/);
+  assert.match(ask, /code reviewer, a scanner, a bot or CI on outside pull requests/);
+  assert.match(ask, /arrives from outside/);
+  assert.ok(!CANDIDATE_GATE.some((l) => /project folder/.test(l)));
+});
