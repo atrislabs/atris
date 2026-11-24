@@ -84,6 +84,13 @@ the baseline, and once at the end on the changed Sentinel. Nobody looks at
 held-out findings or misses between those two runs, and nothing is re-tuned
 after the second.
 
+Change on 2026-11-24: after the fourth round raised finds on the seen half,
+the person directing the work asked for one more held-out run on the final
+branch. So the held-out half has now been run three times. Nothing was tuned
+on held-out results between runs, but the earlier looks are a weaker seal
+than a never-seen half, and the fourth-round held-out numbers should be read
+that way.
+
 ## Running it
 
 ```
@@ -247,3 +254,69 @@ which is part of why exam 1's wrong alarm rate rose. Kept run copies:
 `2026-11-24T00-54-pass2-seen` and `2026-11-24T02-04-pass3-seen` in
 `~/.atris/sentinel-real-scorecard/runs/`. `2026-11-24T01-57-pass3-seen` was
 stopped early to fold in a change and is not a measurement.
+
+## Fourth round, 2026-11-24
+
+One change on top of round 3: a hole whose only barrier is another user's
+random id, or a request captured from another user, is no longer dropped as
+"insider only". It is confirmed one step lower (never above medium), with the
+condition written out, for example "Needs another user's id, which is random
+but can leak through links or logs." Published advisories count these as
+holes; the lower severity keeps them from posing as serious alarms.
+
+Seen halves: two runs per repo, labelled by the same strict reader as rounds
+2 and 3.
+
+| | 3.92.1 | round 3 (a / b) | round 4 (a / b) |
+|---|---|---|---|
+| **this exam, seen half (10)** | | | |
+| found | 2 | 1 / 2 | 4 / 4 |
+| wrong alarms / confirmed | 2 / 18 (11%) | 3 / 24 (12%) / 4 / 27 (15%) | 4 / 31 (13%) / 4 / 35 (11%) |
+| failed area reads | 4 | 0 / 4 | 0 / 3 |
+| **exam 1, seen half (10)** | | | |
+| found | 6 | 7 / 7 | 8 / 8 |
+| wrong alarms / confirmed | 2 / 20 (10%) | 6 / 29 (21%) / 3 / 20 (15%) | 8 / 31 (26%) / 7 / 30 (23%) |
+| failed area reads | n/a | 0 / 3 | 1 / 1 |
+
+Failed reads were retried; only one run (goshs, run b) still ended with
+areas unread (3), and that run is marked incomplete with them named.
+
+This exam's seen finds doubled, with wrong alarms flat against round 3 (8 of
+66 against 7 of 51 pooled). That met the agreed bar for one held-out run.
+Exam 1 also finds one more hole in both runs, but its wrong alarms rose.
+
+Held-out halves, one run each on the round 4 branch:
+
+| | 3.92.1 | first round | round 4 |
+|---|---|---|---|
+| **this exam, held-out half (10)** | | | |
+| found | 0 | 0 | 1 |
+| near | 3 | 3 | 3 |
+| wrong alarms / confirmed | 4 / 18 (22%) | 5 / 23 (22%) | 10 / 29 (34%) |
+| **exam 1, held-out half (10)** | (earlier "after" run) | | |
+| found | 4 | | 6 |
+| wrong alarms / confirmed | 4 / 18 (22%) | | 9 / 34 (26%) |
+
+Reading it plainly: more published holes are found on both held-out halves
+(1 of 10 against 0, and 6 of 10 against 4). Wrong alarms are higher on both.
+The held-out wrong alarms are mostly close calls on one theme: a project's
+own config file treated as attacker input (four on one repo), where earlier
+labels call the repo's config the operator's own setting. One wrong alarm
+was correctly lowered to low by the new random-id rule and still judged no
+real gain.
+
+Caveats:
+
+- One held-out run per repo. The seen runs show how much a single run moves
+  (found 1 against 2 between two runs of the same code in round 3).
+- The 3.92.1 and first-round held-out labels were one reviewer's calls; round
+  4 used the stricter reader, so part of the rise in wrong alarms is the
+  reader, not the tool.
+- On this exam's held-out half, three holes were spotted and turned away.
+  One (a language or namespace value picking the request host) was filed as
+  an operator setting because it needs a custom path template.
+- The exam 1 held-out half had been run twice before this work started.
+
+Kept run copies: `2026-11-24T03-04-pass4-seen` and
+`2026-11-24T04-03-pass4-heldout` in `~/.atris/sentinel-real-scorecard/runs/`,
+each with the label files and score tables.
