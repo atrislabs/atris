@@ -1,0 +1,185 @@
+{
+ "GHSA-4g9m-rffv-h6wq": {
+  "others": {
+   "sha256:2af96033958b28cb": "real",
+   "sha256:88e37e67c006f79a": "real",
+   "sha256:cd21c25efd5810dd": "real",
+   "sha256:122c89c35b3bd47f": "real",
+   "internal/cli/artifacts.go:artifactsCollect/default-bundle-follows-repository-symlinks": "wrong",
+   "internal/cli/config.go:loadConfig/project-endpoint-reuses-operator-credentials": "wrong",
+   "sha256:367a2505b7d061c2": "real",
+   "sha256:4748a09cfffc3619": "real",
+   "sha256:b2a66b7c00a5482e": "real"
+  },
+  "note": "7 confirmed findings labelled real; details kept private. A committed symlink redirects a fixed-name metadata file; the contributor already ships code the operator runs. Strict call. Project config choosing the server is the documented project setting, and its author already commits to the operator own project; same call as the exam 1 CLI config finding."
+ },
+ "GHSA-5gpm-rgj3-9q76": {
+  "others": {
+   "sha256:cb1c0ef428a2c9ee": "real",
+   "filters/auth/grantcookie.go:extractCookie/duplicate-session-cookie-forwarded": "wrong",
+   "sha256:16e89708816484ed": "real",
+   "config/config.go:ReverseSourcePredicate/unverified-healthcheck-source": "wrong",
+   "config/config.go:SupportListener/unauthenticated-route-export": "wrong"
+  },
+  "note": "2 confirmed findings labelled real; details kept private. Wrong: the only receiver is the operator's own backend behind the gateway, which already sees the user's traffic. Source predicate reading the first forwarded address is documented behavior, and the only gain is seeing health status. The support listener is the documented internal admin and metrics port; exposure is a deployment choice. Strict call."
+ },
+ "GHSA-6mwv-4mrm-5p3m": {
+  "others": {
+   "sha256:5029004cc1ff9ea4": "real",
+   "sha256:c17e2b8834fb704e": "real",
+   "src/lib/auth/dashboardSession.js:loadJwtSecret/sample-signing-secret": "wrong",
+   "sha256:d5a62676526a8817": "real",
+   "sha256:1959c427ccce5733": "real"
+  },
+  "note": "4 confirmed findings labelled real; details kept private. Needs the operator to copy the example settings file unchanged; an operator setting."
+ },
+ "GHSA-7j4w-x8x8-5mvg": {
+  "others": {
+   "sha256:dcfa01db7a490659": "real",
+   "Containerfile:backend-builder/ui-label-as-shell-source": "wrong",
+   "Containerfile:dnf-install/disabled-package-signature-verification": "wrong",
+   "Containerfile:opa-builder/mutable-policy-source": "wrong"
+  },
+  "match": {
+   "internal/services/vddk.go:extractTarGz/lexical-containment-with-symlinks": "same",
+   "internal/services/vddk.go:extractTarGz/lexical-only-archive-containment": "same"
+  },
+  "note": "1 confirmed finding labelled real; details kept private. The attacker publishes the UI image, which already ships its own code into the product image. No new gain. Build hardening. Needs control of the package mirror; not a hole an outside user can reach. Strict call. Upstream policy maintainers are already trusted. No new gain."
+ },
+ "GHSA-9q47-3cm2-2rp8": {
+  "others": {
+   "sha256:7c2d0457f44a221c": "real",
+   "sha256:1989516be26d3a1d": "real",
+   "sha256:be32518d5c7b14c7": "real"
+  },
+  "note": "3 confirmed findings labelled real; details kept private."
+ },
+ "GHSA-c9w5-qp6m-m395": {
+  "others": {
+   "sha256:813fc1274bdf640d": "real",
+   "sha256:f61c64e940d33b1f": "real",
+   "sha256:a2480182d51fde36": "real",
+   "sha256:8844a1afacb529db": "real",
+   "sha256:6c37ff8d49ad1063": "real",
+   "sha256:65ed24b6f0707394": "real",
+   "sha256:ebe949e054c60196": "real",
+   "sha256:1ecd7108a2016bf6": "real",
+   "sha256:319dcd499de65f32": "real",
+   "sha256:747f810ad510788b": "real"
+  },
+  "match": {
+   "sha256:813fc1274bdf640d": "other",
+   "sha256:65ed24b6f0707394": "other",
+   "sha256:ebe949e054c60196": "other"
+  },
+  "note": "10 confirmed findings labelled real; details kept private."
+ },
+ "GHSA-h5gx-45rj-2h5j": {
+  "others": {
+   "sha256:ed30625890f41b2e": "real",
+   "sha256:d752c94c38eb88e7": "real",
+   "sha256:1ad2d605daac8bb2": "real",
+   "sha256:6cc81f003d4fcb63": "real",
+   "sha256:10738c3af9ec9991": "real",
+   "sha256:1dc3b30e7481a3e4": "real",
+   "sha256:a1a631420b87ae67": "real",
+   "sha256:a68ae1c38a474a03": "real",
+   "sha256:f99b99d75a0fcea4": "real"
+  },
+  "note": "9 confirmed findings labelled real; details kept private."
+ },
+ "GHSA-hrw6-wg82-cm62": {
+  "others": {
+   "jupyter_server/base/handlers.py:check_host/filesystem-existence-from-host": "wrong",
+   "jupyter_server/services/contents/fileio.py:_get_os_path/lexical-prefix-containment": "wrong",
+   "jupyter_server/utils.py:_request_for_tornado_client/unverified-shutdown-peer": "wrong"
+  },
+  "match": {
+   "sha256:1046b5739bc8ae07": "other"
+  },
+  "note": "Passing the host check only reaches the login page; sign-in still guards everything. The attacker is already an authorized contents writer, who normally can also run code on the server. Strict call. On the hole file but a different flaw. The stop command talks to the server it recorded, normally on the same machine. Strict call."
+ },
+ "GHSA-jcxm-m3jx-f287": {
+  "others": {
+   "sha256:a6d358bc4206f2a0": "real"
+  },
+  "match": {
+   "sha256:a6d358bc4206f2a0": "other"
+  },
+  "note": "1 confirmed finding labelled real; details kept private."
+ },
+ "GHSA-m98r-6667-4wq7": {
+  "others": {
+   "sha256:701ad05135a18c06": "real"
+  },
+  "match": {
+   "sha256:701ad05135a18c06": "other",
+   "libs/aegra-api/src/aegra_api/api/runs.py:run-creation/policy-bypass-on-stream-and-wait": "same"
+  },
+  "note": "1 confirmed finding labelled real; details kept private."
+ },
+ "GHSA-mw3h-qjxj-6xg9": {
+  "others": {
+   "sha256:00a84837e0e5bcb9": "real",
+   "sha256:c4f3c255c474acaa": "real",
+   "sha256:d910712d402e963c": "real",
+   "thumbor/handlers/image_resource.py:ImageResourceHandler/shared-original-storage-namespace": "wrong",
+   "sha256:174c50452d25899e": "real"
+  },
+  "match": {
+   "sha256:00a84837e0e5bcb9": "other",
+   "sha256:d910712d402e963c": "other"
+  },
+  "note": "4 confirmed findings labelled real; details kept private. The cached original is the public source image the caller named; no data gained."
+ },
+ "GHSA-rmxw-pq4x-3fvh": {
+  "others": {
+   "sha256:1364cb0d3b72b8a0": "real",
+   "sha256:58d3a5f0eff01014": "real",
+   "sha256:6d120d81e26713b6": "real",
+   "assets/js/src/preview.js:previewFile/raw-filename-as-request-url": "wrong",
+   "sha256:64568a960402dc5c": "real",
+   "sha256:7ffce2a9410ebbf9": "real"
+  },
+  "match": {
+   "httpserver/updown.go:bulkDownload/archive-members-skip-file-policy": "same"
+  },
+  "note": "5 confirmed findings labelled real; details kept private. A blind request with no credentials and no response read; any web page can do the same."
+ },
+ "GHSA-v667-gc2r-2xm7": {
+  "others": {
+   "sha256:d3719defe4710838": "real",
+   "sha256:9d78cdc235e1bf86": "real",
+   "sha256:b198d9649b330d15": "real",
+   "sha256:17984f1ce3f2e7b7": "real",
+   "sha256:c05711fa239abe70": "real",
+   "sha256:8c8e02ec0ec454dc": "real",
+   "sha256:fd8df77931f63f23": "real",
+   "shell/update.sh:gen_list_repo/word-split-destination-paths": "wrong"
+  },
+  "match": {
+   "sha256:9d78cdc235e1bf86": "other",
+   "sha256:c05711fa239abe70": "other"
+  },
+  "note": "7 confirmed findings labelled real; details kept private. Only creates empty folders one level up. Strict call."
+ },
+ "GHSA-vx32-xf7g-9ghr": {
+  "others": {
+   "sha256:1c61c11452343539": "real",
+   "app/configuration/file_manager.go:downloadMetadataCompare/cleanup-before-parent-validation": "wrong",
+   "app/cmd/bootstrap.go:bootstrapCommand/credential-in-process-arguments": "wrong",
+   "app/configuration/file_manager.go:downloadMetadataCompare/partial-cleanup-before-ancestor-check": "wrong"
+  },
+  "note": "1 confirmed finding labelled real; details kept private. Wrong (strict): needs a lower-trust user to control an ancestor of a destination the operator configured; nothing shows operators point destinations into user-writable folders. Enrollment key in process arguments; the enrollment still waits on an administrator approval, so the gain is small. Strict call. Same idea as the baseline download cleanup finding, labelled wrong there too. Strict call."
+ },
+ "GHSA-xgjr-7j9q-2h4r": {
+  "others": {
+   "sha256:3b52e63a36b40e6a": "real",
+   "cmd/settings.go:TestSMTPSettings/log-read-permission-gap": "wrong",
+   "sha256:92501e77706c21ec": "real",
+   "sha256:952466a959382f94": "real",
+   "sha256:95f41913d7fb5e68": "real"
+  },
+  "note": "4 confirmed findings labelled real; details kept private. A settings manager sees log lines; no secret shown and the role already changes settings. Strict call."
+ }
+}

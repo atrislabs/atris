@@ -100,3 +100,69 @@ kept copy.
 Six clones carry agent instruction files (`AGENTS.md`, `CLAUDE.md`). The
 audit's engines may read them. They cannot run commands, and the script still
 refuses clones with hooks or MCP settings.
+
+## Results, 2026-11-24
+
+Quick audit, 8 engine calls per repo at most, local engines (codex hunts,
+claude checks), 0 Atris credits. "Before" is the released Sentinel 3.92.1.
+"After" is this branch. The exam 1 seen half and this exam's seen half were
+used to tune; this exam's held-out half ran once before and once after, with
+nothing looked at in between.
+
+What changed in Sentinel:
+
+- When leads outnumber the check calls left, one check call takes up to three
+  leads from the same files, so fewer leads are dropped unchecked.
+- A quick run that has calls left after its first wave runs a second wave of
+  hunters, and areas whose hunter call failed go first.
+- The checker counts getting past the project's own control (a redaction, a
+  containment check, an access rule) as a gain, even when the reach is narrow.
+- A library the repo pins but has not installed is judged from its documented
+  behavior at that version instead of being left as a lead.
+- Build scripts for retired targets, and holes that need a required setting
+  left empty so the product itself fails, are not shipped findings.
+
+| | before | after |
+|---|---|---|
+| **this exam, seen half (10)** | | |
+| found | 2 | 2 |
+| near | 3 | 2 |
+| wrong alarms / confirmed | 2 / 18 (11%) | 8 / 29 (28%) |
+| new real holes (private) | 14 | 19 |
+| **this exam, held-out half (10)** | | |
+| found | 0 | 0 |
+| near | 3 | 3 |
+| wrong alarms / confirmed | 4 / 18 (22%) | 5 / 23 (22%) |
+| new real holes (private) | 14 | 18 |
+| **exam 1, seen half (10)** | | |
+| found | 6 | 7 |
+| wrong alarms / confirmed | 2 / 20 (10%) | 1 / 23 (4%) |
+
+Held-out did not improve. Sentinel still finds none of the 10 held-out holes.
+
+Why, from the after run: on three held-out repos the hunter did spot the
+published hole and the checker then dismissed it as a documented operator
+setting or as no gain to an attacker (a shared token that lets the caller
+name any owner, a region placed raw into a request host, and a language value
+that can change a request's host). Before the change, two of those were never
+checked at all (the check budget ran out) and one was never spotted. So more
+checking reached the holes, and the checker's trust rules turned them away.
+That is the next thing to fix, on the seen halves first.
+
+Wrong alarms on this exam's seen half rose from 2 to 8, mostly build files
+(an unsigned package mirror, a moving upstream archive, an image label) and
+admin or diagnostic ports that are internal by design. More leads were checked
+(29 confirmed against 18), and the checker confirmed hardening issues as
+holes.
+
+Labels: one reviewer's calls, recorded in `labels.json`. Strict calls are
+noted there. A finding on the hole's file that names a different flaw is
+`match: other` and does not count as found. New real holes are keyed by hash.
+
+Caveats: one quick run per repo. In about half the after runs some hunter
+calls failed and left areas unread (17 failed area checks on the seen half,
+21 on the held-out half, against 4 and 6 before), so luck in which areas get
+read matters. The exam 1 "before" numbers are the ones recorded for 3.92.1 in
+`../real-advisories/README.md`. Kept run copies are in
+`~/.atris/sentinel-real-scorecard/runs/` (`2026-11-23T23-22-baseline-3.92.1`,
+`2026-11-24T00-01-after2-seen`, `2026-11-24T00-17-after-heldout`).
