@@ -320,3 +320,69 @@ Caveats:
 Kept run copies: `2026-11-24T03-04-pass4-seen` and
 `2026-11-24T04-03-pass4-heldout` in `~/.atris/sentinel-real-scorecard/runs/`,
 each with the label files and score tables.
+
+## Fifth round and one reader for every version, 2026-11-24
+
+Two things, so the comparison is fair.
+
+First, every confirmed finding from 3.92.1, round 4 and round 5 now carries a
+label from the same strict reader used since round 2. Before this, 3.92.1 and
+the first round were scored with looser labels. The old exam's 3.92.1 run
+files were not kept; only its list of 38 confirmed findings (names and the
+earlier notes) survives, so the strict reader judged those from the source
+without the checker's full reasoning. "Found" below counts an advisory when
+a confirmed finding is labelled as its published hole. In one cell (round 4,
+this exam, run a) that gives 5 where the scorer's file-and-line check gives
+4: the Aegra finding names the missing owner check in the shared function
+all three published routes call.
+
+Second, one rule change, checked on the seen halves only, two runs per repo:
+the project folder a command-line or developer tool runs in counts as the
+operator's own. A settings file there (naming a server, host, user or path)
+and its committed files and symlinks are as trusted as the operator, so a
+hole that needs only those is insider access. It stays a finding when the
+tool's job is to handle folders from people it does not trust (a code
+reviewer, a scanner, a bot or CI on outside pull requests, an installer of
+third-party packages), or when the file arrives from outside. The rule is
+told to the checker only; hunters never see it. The held-out halves were not
+looked at or run for this change.
+
+| | 3.92.1 | round 4 (a / b) | round 5 (a / b) |
+|---|---|---|---|
+| **this exam, seen half (10)** | | | |
+| found | 2 | 5 / 4 | 3 / 3 |
+| wrong alarms / confirmed | 2 / 18 (11%) | 4 / 31 (13%) / 4 / 35 (11%) | 5 / 30 (17%) / 6 / 35 (17%) |
+| **this exam, held-out half (10)** | | | |
+| found | 0 | 1 | not run |
+| wrong alarms / confirmed | 5 / 18 (28%) | 10 / 29 (34%) | not run |
+| **exam 1, seen half (10)** | | | |
+| found | 6 | 8 / 8 | 7 / 8 |
+| wrong alarms / confirmed | 3 / 20 (15%) | 8 / 31 (26%) / 7 / 30 (23%) | 2 / 18 (11%) / 4 / 25 (16%) |
+| **exam 1, held-out half (10)** | | | |
+| found | 4 | 6 | not run |
+| wrong alarms / confirmed | 4 / 18 (22%) | 9 / 34 (26%) | not run |
+
+3.92.1 is one run per repo. Under the same reader, its wrong alarms move from
+11% to 11%, 28% (was 22%), 15% (was 10%) and 22% (was 22%).
+
+What the rule did: on exam 1's seen half, the repo where this wrong alarm
+lived (a command-line tool reading its project's config) went from 3 and 2
+wrong alarms to 0 and 0, and exam 1's wrong alarms fell from 25% to 14%
+pooled.
+
+What it did not do: finds fell on both seen halves in round 5. None of the
+lost holes was turned away under the new rule. On this exam, the goshs bulk
+download and the qbee archive escape were never spotted by a hunter in round
+5 (round 3, before the rule, missed both in both runs too). On exam 1, the
+Homer hole was lost in one run to reads the engine refused, and the Auth0
+hole was left as "needs a fact" about the operator's Auth0 tenant, as it was
+in two runs before the rule. This exam's extra wrong alarms are the same
+Skipper and goshs kinds seen in round 4, not project folders. So the drop
+looks like run-to-run luck, not the rule, and the rule is kept. That is a
+judgment from the records, not a measured difference: two runs per repo
+cannot separate a one-hole change from luck.
+
+Kept run copies: `2026-11-24T04-38-pass5-seen` in
+`~/.atris/sentinel-real-scorecard/runs/`. The strict label sets, the lists
+sent to the reader and this table are in
+`~/.atris/sentinel-real-scorecard/strict-relabel-2026-11-24/`.

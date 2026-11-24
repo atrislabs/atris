@@ -50,9 +50,16 @@
    "dataclients/kubernetes/kube.go:healthcheckRoutes/unverified-forwarded-client-address": "wrong",
    "sha256:9c4683ca1bcf8b1f": "real",
    "filters/auth/tokenintrospection.go:Request/unscoped-introspection-result": "wrong",
-   "sha256:a7d011148a092621": "real"
+   "sha256:a7d011148a092621": "real",
+   "sha256:14c1b5c7727be618": "real",
+   "sha256:0742c8b34164e6d9": "real",
+   "filters/auth/tokenintrospection.go:Request/cache-not-bound-to-validation-context": "wrong",
+   "sha256:28d77705e16bb87e": "real",
+   "sha256:79ad4550fe78a54a": "real",
+   "filters/auth/oidc.go:oidc-and-introspection/shared-credential-with-route-selected-issuer": "wrong",
+   "filters/auth/tokenintrospection.go:Request/issuer-independent-verdict-cache": "wrong"
   },
-  "note": "12 confirmed findings labelled real; details kept private. Wrong: the only receiver is the operator's own backend behind the gateway, which already sees the user's traffic. Source predicate reading the first forwarded address is documented behavior, and the only gain is seeing health status. The support listener is the documented internal admin and metrics port; exposure is a deployment choice. Strict call. Same as the earlier health check call: Source reading X-Forwarded-For is documented as forgeable, and the only gain is seeing health status. The cache key is not scoped by issuer, but the bypass needs a route chaining two different issuers with AND, a setup no real token could satisfy anyway; operator-built config with no realistic gain. Strict call. The predicate docs list Source as bypassable via client X-Forwarded-For and say routing is not a security feature; ClientIP exists for socket address. Documented behavior. Same documented Source/X-Forwarded-For behavior; operator chooses Source over ClientIP. Same as the other introspection cache finding: only matters for a chained two-issuer route nobody can use legitimately. Strict call. Documented forgeable Source predicate behavior. Documented forgeable Source predicate behavior. Same as the earlier health route call: the Source predicate reading X-Forwarded-For is documented as forgeable and the only gain is health status. The parent-domain cookie is the documented SSO default with a 0 opt-out, and sibling hosts under the operator's own domain are operator-controlled. Documented forgeable Source predicate behavior; only health status is gained. Documented forgeable Source predicate behavior; only health status is gained. Same as the earlier health route calls: the Source predicate reading X-Forwarded-For is documented as forgeable and the only gain is health status. Same root as the earlier introspection cache calls: the state bag result is reused across issuers only on a chained two-issuer route no real token could satisfy. Strict call."
+  "note": "16 confirmed findings labelled real; details kept private. The only receiver of the extra same-name cookie is the operator's own backend that already handles the user's traffic; same strict call as the earlier forwarded gateway cookie. Source predicate reading the first forwarded address is documented behavior, and the only gain is seeing health status. The support listener is the documented internal admin and metrics port; exposure is a deployment choice. Strict call. Same as the earlier health check call: Source reading X-Forwarded-For is documented as forgeable, and the only gain is seeing health status. The cache key is not scoped by issuer, but the bypass needs a route chaining two different issuers with AND, a setup no real token could satisfy anyway; operator-built config with no realistic gain. Strict call. The predicate docs list Source as bypassable via client X-Forwarded-For and say routing is not a security feature; ClientIP exists for socket address. Documented behavior. Same documented Source/X-Forwarded-For behavior; operator chooses Source over ClientIP. Same as the other introspection cache finding: only matters for a chained two-issuer route nobody can use legitimately. Strict call. Documented forgeable Source predicate behavior. Documented forgeable Source predicate behavior. Same as the earlier health route call: the Source predicate reading X-Forwarded-For is documented as forgeable and the only gain is health status. The parent-domain cookie is the documented SSO default with a 0 opt-out, and sibling hosts under the operator's own domain are operator-controlled. Documented forgeable Source predicate behavior; only health status is gained. Documented forgeable Source predicate behavior; only health status is gained. Same as the earlier health route calls: the Source predicate reading X-Forwarded-For is documented as forgeable and the only gain is health status. Same root as the earlier introspection cache calls: the state bag result is reused across issuers only on a chained two-issuer route no real token could satisfy. Strict call. Same root as the earlier introspection cache calls: only matters on a chained two-issuer route no real token could satisfy. Strict call. The OIDC_CLIENT_SECRET fallback for an empty route argument is documented, and route authors are operator-trusted config writers who can already send traffic and headers anywhere; no lower-trust gain. Same root as the earlier introspection cache calls: a chained two-issuer route nobody can use legitimately. Strict call."
  },
  "GHSA-6mwv-4mrm-5p3m": {
   "others": {
@@ -65,7 +72,7 @@
    "src/app/api/proxy-pools/cloudflare-deploy/route.js:relay/unauthenticated-cloud-forwarding": "wrong",
    "sha256:b695943d9cf9089b": "real"
   },
-  "note": "6 confirmed findings labelled real; details kept private. Needs the operator to copy the example settings file unchanged; an operator setting. The deployed relay is an open public proxy, but it only gives free egress from public cloud IPs that anyone can get, and it reaches no private network or operator data. Strict call."
+  "note": "6 confirmed findings labelled real; details kept private. The value is a change-me placeholder the operator is told to replace, and an unset secret is randomly generated; only the operator controls it. The deployed relay is an open public proxy, but it only gives free egress from public cloud IPs that anyone can get, and it reaches no private network or operator data. Strict call."
  },
  "GHSA-7j4w-x8x8-5mvg": {
   "others": {
@@ -80,29 +87,36 @@
    "sha256:8b91d1c74d91a069": "real",
    "sha256:66c6ab4fe99d6124": "real",
    "sha256:938918a6774d0c85": "real",
-   "sha256:e9a90fc0c40d54bd": "real"
+   "sha256:e9a90fc0c40d54bd": "real",
+   "sha256:0a4eeb6ced208da8": "real",
+   "sha256:e36af3dbc15869b5": "real",
+   "sha256:54670d5ab41cf2d0": "real",
+   "sha256:c7fe83e18874d4dd": "real",
+   "sha256:34b4f654ad3ad20b": "real"
   },
   "match": {
-   "internal/services/vddk.go:extractTarGz/lexical-containment-with-symlinks": "same",
+   "sha256:0a4eeb6ced208da8": "same",
    "internal/services/vddk.go:extractTarGz/lexical-only-archive-containment": "same",
    "sha256:6db73c95e66f244a": "same",
    "sha256:8b91d1c74d91a069": "near",
    "sha256:938918a6774d0c85": "same",
-   "sha256:e9a90fc0c40d54bd": "same"
+   "sha256:e9a90fc0c40d54bd": "same",
+   "sha256:54670d5ab41cf2d0": "same",
+   "sha256:34b4f654ad3ad20b": "same"
   },
-  "note": "9 confirmed findings labelled real; details kept private. The attacker publishes the UI image, which already ships its own code into the product image. No new gain. Build hardening. Needs control of the package mirror; not a hole an outside user can reach. Strict call. Upstream policy maintainers are already trusted. No new gain."
+  "note": "14 confirmed findings labelled real; details kept private. The attacker publishes the UI image, which already ships its own code into the product image. No new gain. Build hardening. Needs control of the package mirror; not a hole an outside user can reach. Strict call. Upstream policy maintainers are already trusted. No new gain."
  },
  "GHSA-9q47-3cm2-2rp8": {
   "others": {
    "sha256:7c2d0457f44a221c": "real",
-   "sha256:1989516be26d3a1d": "real",
+   "src/pyload/plugins/downloaders/XDCC.py:do_download/unconfined-peer-filename": "wrong",
    "sha256:be32518d5c7b14c7": "real",
    "sha256:557531afdbbf97c2": "real",
    "sha256:3d711193f5c31324": "real",
    "src/pyload/webui/app/themes/modern/templates/js/base.js:windowEventListener/unverified-captcha-sender": "wrong",
    "sha256:3bbc930fd27d87df": "real"
   },
-  "note": "6 confirmed findings labelled real; details kept private. With no origin check, another window can submit an answer for the active captcha, but that only fails one pending captcha and reads nothing. Strict call."
+  "note": "5 confirmed findings labelled real; details kept private. Checked: the peer name is assigned to pyfile.name, whose setter strips / and \\, so the join stays in the download folder (a bare .. only makes a rename onto a directory fail). With no origin check, another window can submit an answer for the active captcha, but that only fails one pending captcha and reads nothing. Strict call."
  },
  "GHSA-c9w5-qp6m-m395": {
   "others": {
@@ -161,7 +175,18 @@
    "sha256:d66964169517f00a": "real",
    "sha256:a29b7c5cb9d5df31": "real",
    "sha256:141b14dcd8a31bf2": "real",
-   "sha256:68a091d0b4711b7d": "real"
+   "sha256:68a091d0b4711b7d": "real",
+   "sha256:19cabf71f97f0670": "real",
+   "sha256:3a674bd0873d0437": "real",
+   "sha256:6d5af37061baf22b": "real",
+   "sha256:434494e16b2075d5": "real",
+   "sha256:51119a7069cd1fd5": "real",
+   "sha256:b6b1639b452306bc": "real",
+   "sha256:56274eb3afc7b3c4": "real",
+   "sha256:5801081da66690b5": "real",
+   "sha256:a84e54ce5e00626f": "real",
+   "sha256:9a0e3cfdf4582de2": "real",
+   "sha256:95486811dd0c75a8": "real"
   },
   "match": {
    "sha256:813fc1274bdf640d": "other",
@@ -169,9 +194,10 @@
    "sha256:ebe949e054c60196": "other",
    "sha256:eb6a71810d01fac3": "other",
    "sha256:b2d4070cf1a9a1d2": "other",
-   "sha256:2ea9406168338a3a": "other"
+   "sha256:2ea9406168338a3a": "other",
+   "sha256:56274eb3afc7b3c4": "other"
   },
-  "note": "55 confirmed findings labelled real; details kept private. The only receiver is the operator's own upstream behind the gateway, which already handles the user's traffic; same strict call as Skipper's forwarded cookie."
+  "note": "66 confirmed findings labelled real; details kept private. The only receiver is the operator's own upstream behind the gateway, which already handles the user's traffic; same strict call as Skipper's forwarded cookie."
  },
  "GHSA-f8c7-rwf9-fmgm": {
   "others": {
@@ -210,9 +236,13 @@
    "sha256:3f87a54d43e02277": "real",
    "sha256:166d48f3b34d95c1": "real",
    "sha256:c132a96bb2a64ccb": "real",
-   "sha256:897ec86371eb70da": "real"
+   "sha256:897ec86371eb70da": "real",
+   "sha256:4bc1c61e2d9d25e1": "real",
+   "sha256:1f460e9a5c47036c": "real",
+   "ui/src/api/api.js:axiosBase/credentials-over-plaintext-http": "wrong",
+   "sha256:9e4056c0f2f8e1d6": "real"
   },
-  "note": "29 confirmed findings labelled real; details kept private."
+  "note": "32 confirmed findings labelled real; details kept private. The UI uses the page's own protocol and the agent is a plain HTTP appliance meant to sit on a LAN or behind the operator's TLS proxy; transport is a deployment choice, not a code flaw."
  },
  "GHSA-hrw6-wg82-cm62": {
   "others": {
@@ -224,7 +254,7 @@
   "match": {
    "sha256:1046b5739bc8ae07": "other"
   },
-  "note": "Passing the host check only reaches the login page; sign-in still guards everything. The attacker is already an authorized contents writer, who normally can also run code on the server. Strict call. On the hole file but a different flaw. The stop command talks to the server it recorded, normally on the same machine. Strict call. As in the earlier call, the attacker is already an authorized contents writer, who normally can also run code on the server. Strict call."
+  "note": "check_host only reads the Host header, so a remote non-browser client can already send Host: localhost; the gain is the login page plus a path-exists hint. Strict call. Same as the earlier wrong contents-manager call: the attacker is already an authorized contents writer, who normally can also run code on the server. On the hole file but a different flaw. The stop command talks to the server it recorded, normally on the same machine. Strict call. As in the earlier call, the attacker is already an authorized contents writer, who normally can also run code on the server. Strict call."
  },
  "GHSA-hxpf-9xvq-wph8": {
   "others": {
@@ -236,15 +266,21 @@
    "src/netlicensing_mcp/server.py:netlicensing_delete_product/model-can-satisfy-user-approval": "wrong",
    "src/netlicensing_mcp/safety.py:validate_and_consume/confirmation-omits-approved-parameters-and-principal": "wrong",
    "sha256:ea4bf4f7be0378ad": "real",
-   "src/netlicensing_mcp/safety.py:validate_and_consume/confirmation-omits-action-parameters": "wrong"
+   "src/netlicensing_mcp/safety.py:validate_and_consume/confirmation-omits-action-parameters": "wrong",
+   "sha256:6199b729a1082f00": "real",
+   "src/netlicensing_mcp/safety.py:validate_and_consume/confirmation-omits-requested-effect": "wrong",
+   "src/netlicensing_mcp/safety.py:validate_and_consume/agent-controlled-approval": "wrong",
+   "sha256:c56124c71cfcea47": "real"
   },
   "match": {
    "sha256:f780a0c727c64a6e": "same",
    "sha256:1cbadc5b86289a00": "same",
    "sha256:1f61c7f37f200fcf": "same",
-   "sha256:ea4bf4f7be0378ad": "same"
+   "sha256:ea4bf4f7be0378ad": "same",
+   "sha256:6199b729a1082f00": "same",
+   "sha256:c56124c71cfcea47": "same"
   },
-  "note": "4 confirmed findings labelled real; details kept private. The token is a model-facing two-step, not a human approval; any client prompt shows the final call's arguments, so a steered model gains nothing it could not already do. Strict call. The confirmation token is designed to be handed to the model; human approval is the client's job, and the attack needs the operator to auto-approve tool calls. Same as the earlier wrong calls: the confirmation token is a model-facing two-step, and human approval is the client's job. Same as the earlier wrong calls: the confirmation token is a model-facing two-step, and human approval of the final call is the client's job. Strict call. Same as the earlier wrong calls: the confirmation token is a model-facing two-step, not a human approval. Strict call."
+  "note": "6 confirmed findings labelled real; details kept private. The token is a model-facing two-step, not a human approval; any client prompt shows the final call's arguments, so a steered model gains nothing it could not already do. Strict call. The confirmation token is designed to be handed to the model; human approval is the client's job, and the attack needs the operator to auto-approve tool calls. Same as the earlier wrong calls: the confirmation token is a model-facing two-step, and human approval is the client's job. Same as the earlier wrong calls: the confirmation token is a model-facing two-step, and human approval of the final call is the client's job. Strict call. Same as the earlier wrong calls: the confirmation token is a model-facing two-step, not a human approval. Strict call. Same as the earlier wrong calls: the confirmation token is a model-facing two-step, and human approval of the final call is the client's job. Strict call. Same as the earlier wrong calls: the confirmation token is designed to be handed to the model; human approval is the client's job."
  },
  "GHSA-jcxm-m3jx-f287": {
   "others": {
@@ -274,7 +310,14 @@
    "libs/aegra-api/src/aegra_api/core/auth_middleware.py:authenticate/custom-auth-load-fails-open": "wrong",
    "sha256:d72365382bbab4b0": "real",
    "sha256:e7ac0a66a6677884": "real",
-   "sha256:56d8ed405e2d18fa": "real"
+   "sha256:56d8ed405e2d18fa": "real",
+   "sha256:fe7015cc18f40132": "real",
+   "sha256:4a5ad6932e873632": "real",
+   "sha256:a3454c9580218b3f": "real",
+   "sha256:88724af94f6c34c7": "real",
+   "sha256:46a24ece8918cb34": "real",
+   "sha256:a6b839993f94cff6": "real",
+   "sha256:bd056a48b017a98e": "real"
   },
   "match": {
    "sha256:701ad05135a18c06": "other",
@@ -288,9 +331,14 @@
    "sha256:46b56cf375dce4a8": "same",
    "sha256:f84df53214d0b754": "other",
    "sha256:e7ac0a66a6677884": "near",
-   "sha256:56d8ed405e2d18fa": "same"
+   "sha256:56d8ed405e2d18fa": "same",
+   "sha256:4a5ad6932e873632": "same",
+   "sha256:a3454c9580218b3f": "near",
+   "sha256:88724af94f6c34c7": "other",
+   "sha256:a6b839993f94cff6": "near",
+   "sha256:bd056a48b017a98e": "same"
   },
-  "note": "17 confirmed findings labelled real; details kept private. Checked that a failed auth module load falls back to the anonymous user, but the trigger is the operator's own broken deployment, which the attacker cannot cause, and other owners' records stay filtered. Strict call."
+  "note": "24 confirmed findings labelled real; details kept private. Checked that a failed auth module load falls back to the anonymous user, but the trigger is the operator's own broken deployment, which the attacker cannot cause, and other owners' records stay filtered. Strict call."
  },
  "GHSA-mw3h-qjxj-6xg9": {
   "others": {
@@ -340,16 +388,26 @@
    "sha256:82ddbf1071e88edd": "real",
    "sha256:fe0725f6013e3fbf": "real",
    "httpserver/server.go:SetupMux/share-revocation-accepts-download-token": "wrong",
-   "sha256:a82394e322b70bc7": "real"
+   "sha256:a82394e322b70bc7": "real",
+   "sha256:55d157cbd8573f06": "real",
+   "sha256:4871428d11969c49": "real",
+   "logger/logger.go:logVerbose/authorization-in-webhook-payload": "wrong",
+   "assets/js/src/catcher.js:upgradeCatcherWindows/unauthenticated-script-download": "wrong",
+   "sha256:ebce701b6b466197": "real",
+   "sha256:88f111324a6ba285": "real",
+   "sha256:a28daed7f5a3e70d": "real",
+   "sha256:32578e15e4936990": "real",
+   "httpserver/server.go:SetupMux/download-token-authorizes-revocation": "wrong",
+   "sha256:9b50ffa07b65ed6b": "real"
   },
   "match": {
-   "httpserver/updown.go:bulkDownload/archive-members-skip-file-policy": "same",
+   "sha256:55d157cbd8573f06": "same",
    "sha256:fc885382c7509fbd": "same",
    "sha256:a47215238e8cf6ce": "same",
    "sha256:8f880798c1678d51": "other",
    "sha256:42a91f9a4b4d8c97": "same"
   },
-  "note": "23 confirmed findings labelled real; details kept private. A blind request with no credentials and no response read; any web page can do the same. A tracking pixel or blind request from the viewer's browser with no response read; any web page can do the same. A link holder can delete the link, but with the default one-download limit they can already use it up; negligible gain. Strict call. Blind outbound request from rendered mail; no data gained. Like the earlier preview.js call: fetch refuses URLs with credentials, and a leaked CSRF token gives nothing cross-origin since the custom header needs CORS. Blind request from a Markdown preview; any web page can do the same. Same share revocation finding; negligible gain for a link holder. Strict call. Same as the earlier wrong share revocation calls: a link holder can already use up the link. Strict call."
+  "note": "30 confirmed findings labelled real; details kept private. A blind request with no credentials and no response read; any web page can do the same. A tracking pixel or blind request from the viewer's browser with no response read; any web page can do the same. A link holder can delete the link, but with the default one-download limit they can already use it up; negligible gain. Strict call. Blind outbound request from rendered mail; no data gained. Like the earlier preview.js call: fetch refuses URLs with credentials, and a leaked CSRF token gives nothing cross-origin since the custom header needs CORS. Blind request from a Markdown preview; any web page can do the same. Same share revocation finding; negligible gain for a link holder. Strict call. Same as the earlier wrong share revocation calls: a link holder can already use up the link. Strict call. Checked: credentials reach the webhook only when the operator turns on verbose mode and subscribes the webhook to verbose events (all excludes them); the recipient is the operator's own channel. The on-path party already sits on the plaintext reverse shell this command travels over and can inject commands directly; no new gain. Same as the earlier wrong share revocation calls: a link holder can already use up the link. Strict call."
  },
  "GHSA-v667-gc2r-2xm7": {
   "others": {
@@ -393,7 +451,7 @@
   "match": {
    "sha256:fcf3d2e3b292ffb1": "same"
   },
-  "note": "5 confirmed findings labelled real; details kept private. Wrong (strict): needs a lower-trust user to control an ancestor of a destination the operator configured; nothing shows operators point destinations into user-writable folders. Enrollment key in process arguments; the enrollment still waits on an administrator approval, so the gain is small. Strict call. Same idea as the baseline download cleanup finding, labelled wrong there too. Strict call. Same as the earlier wrong call: enrollment key in process arguments still needs administrator approval. Strict call. Basic credentials to a plain HTTP proxy is how the operator-configured proxy protocol works; the observer gains only proxy use. Hygiene, strict call."
+  "note": "5 confirmed findings labelled real; details kept private. Checked: the only file the early remove can hit is named .<dest>.part, a name only the agent's own partial downloads use, and a symlinked final name is unlinked not followed, so there is no meaningful gain. Enrollment key in process arguments; the enrollment still waits on an administrator approval, so the gain is small. Strict call. Same idea as the baseline download cleanup finding, labelled wrong there too. Strict call. Same as the earlier wrong call: enrollment key in process arguments still needs administrator approval. Strict call. Basic credentials to a plain HTTP proxy is how the operator-configured proxy protocol works; the observer gains only proxy use. Hygiene, strict call."
  },
  "GHSA-xgjr-7j9q-2h4r": {
   "others": {
@@ -405,7 +463,7 @@
    "cmd/public.go:processSubForm/email-only-single-optin-reactivation": "wrong",
    "sha256:83c5f8a493ed5ea0": "real"
   },
-  "note": "5 confirmed findings labelled real; details kept private. A settings manager sees log lines; no secret shown and the role already changes settings. Strict call. Single opt-in lists take any email without proof by design, and the resubscribe override is an intended public-form behavior; blocklisted addresses stay protected. Strict call."
+  "note": "5 confirmed findings labelled real; details kept private. A settings:manage holder can already rewrite every setting and reload the app; seeing buffered log lines through the SMTP test adds nothing meaningful. Strict call. Single opt-in lists take any email without proof by design, and the resubscribe override is an intended public-form behavior; blocklisted addresses stay protected. Strict call."
  },
  "GHSA-xgm2-5f3f-mvvc": {
   "others": {
