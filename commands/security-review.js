@@ -570,6 +570,8 @@ const INCOMPLETE_WORDS = {
 
 // The audit landing: what was found, how much was read, what is left.
 function renderAuditLanding({ dir, meta, records }) {
+  const warning = require('../lib/security-audit').sourceWarning(meta);
+  if (warning) return `\n  ${warning} Earlier findings keep their previous status.\n  Run Sentinel again on stable source.\n  Report: ${tildePath(path.join(dir, 'REPORT.md'))}\n`;
   const rank = { critical: 0, high: 1, medium: 2, low: 3, informational: 4 };
   const sevRank = (r) => rank[(r.severity && r.severity.overall) || ''] ?? 5;
   const confirmed = records.filter((r) => r.verdict === 'confirmed').sort((a, b) => sevRank(a) - sevRank(b));
@@ -673,6 +675,8 @@ function notUploadable(dir) {
   let meta = null;
   try { meta = JSON.parse(fs.readFileSync(path.join(dir, 'run-metadata.json'), 'utf8')); } catch {}
   if (!meta) return 'it has no readable summary';
+  const warning = require('../lib/security-audit').sourceWarning(meta);
+  if (warning) return warning;
   if (meta.incomplete_reason === 'plan_only') return 'it is a plan. nothing was read';
   if (!['complete', 'incomplete'].includes(meta.run_status) || !meta.finished_at) return 'that review never finished';
   const stillOpen = meta.counts && Number(meta.counts.confirmed) > 0;
@@ -910,6 +914,7 @@ const OUTCOME_WORDS = { fixed: 'fixed', open: 'still open', moved: 'still open, 
 
 function renderRecheckLanding(result) {
   const { meta, records, dir } = result;
+  if (require('../lib/security-audit').sourceWarning(meta)) return renderAuditLanding(result);
   const a = meta.audit;
   const byFp = new Map(records.map((r) => [r.fingerprint, r]));
   const L = ['', `  ◉ sentinel re-check · ${meta.repo}`, ''];
@@ -1048,12 +1053,18 @@ async function auditCommand(argv, deps = {}) {
     // The newest review of this folder, alone or as one of several places.
     const last = audit.latestReview(root);
     if (!last || !last.meta) { console.log('\n  no finished sentinel review of this folder yet\n'); return 0; }
-    if (argv.includes('--json')) { console.log(JSON.stringify({ dir: last.dir, meta: last.meta, findings: last.records, system: last.system || null, skipped: (last.skipped || []).map((s) => ({ run: path.basename(s.dir), why: s.why })) }, null, 2)); return 0; }
+    const status = audit.sourceWarning(last.meta) ? 1 : 0;
+    if (argv.includes('--json')) {
+      const meta = status && last.meta.run_status === 'complete'
+        ? { ...last.meta, run_status: 'incomplete', incomplete_reason: 'source_unverified' } : last.meta;
+      console.log(JSON.stringify({ dir: last.dir, meta, findings: last.records, system: last.system || null, skipped: (last.skipped || []).map((s) => ({ run: path.basename(s.dir), why: s.why })) }, null, 2));
+      return status;
+    }
     const unfinished = (last.skipped || []).filter((s) => s.why === 'unfinished').length;
     if (unfinished) console.log(`\n  the newest review${unfinished === 1 ? '' : 's'} of this folder did not finish, so ${unfinished === 1 ? 'it changes' : 'they change'} nothing. this is the last one that did:`);
     console.log(renderAuditLanding({ dir: last.dir, meta: last.meta, records: last.records }));
     if (last.system) console.log(`${systemReviewNote(last, 'status shows it here. recheck and fix work on a review of one folder for now')}\n`);
-    return 0;
+    return status;
   }
   if (['agents', 'guard', 'watch', 'flush'].includes(argv[0])) {
     const powers = require('./sentinel-powers');

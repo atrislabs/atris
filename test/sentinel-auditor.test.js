@@ -123,6 +123,31 @@ async function firstReview(root) {
   return res;
 }
 
+test('source drift keeps the previous finding open and an unchanged follow-up can still resolve it', () => withHome(async () => {
+  const root = makeRepo();
+  try {
+    const first = await firstReview(root);
+    applyFix(root);
+    const fake = engines([]);
+    const mixed = await audit.runRecheck({root, runJobs: async (jobs) => {
+      const answers = await fake(jobs);
+      fs.appendFileSync(path.join(root,'lib/run.js'),'// edited during the review\n');
+      return answers;
+    }});
+    assert.equal(mixed.meta.source_integrity.state,'changed');
+    assert.equal(mixed.meta.run_status,'incomplete');
+    assert.equal(mixed.meta.counts.confirmed,1);
+    assert.equal(mixed.meta.counts.fixed,0);
+    assert.equal(mixed.meta.waiting[0].fingerprint,CANDIDATE.fingerprint);
+    assert.equal(audit.shouldFailRun(mixed.dir,mixed.records),true);
+    assert.equal(audit.latestReview(root).dir,mixed.dir);
+    const rerun = await audit.runRecheck({root, runJobs: engines([])});
+    assert.equal(rerun.meta.prior_run,first.dir);
+    assert.equal(rerun.meta.source_integrity.state,'matched');
+    assert.equal(rerun.meta.counts.fixed,1);
+  } finally { fs.rmSync(root, {recursive:true,force:true}); }
+}));
+
 test('a fixed finding becomes fixed with the line that closes it', () => withHome(async () => {
   const root = makeRepo();
   try {
