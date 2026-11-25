@@ -10,16 +10,17 @@ const ops = require('../lib/element-ops');
 const cmds = require('../lib/element-commands');
 const sched = require('../lib/element-schedules');
 const inspect = require('../lib/element-inspect');
+const swarm = require('../lib/element-swarm');
 const decisionFeed = require('./decision-feed');
 
 const ELEMENT_ACTIONS = new Set([
-  'next', 'yes', 'no', 'pass', 'talk', 'post', 'wait', 'tail', 'claim', 'complete', 'curve', 'cmd', 'run', 'schedule', 'inspect', 'help',
+  'next', 'yes', 'no', 'pass', 'talk', 'post', 'wait', 'tail', 'connect', 'task', 'claim', 'progress', 'complete', 'receipt', 'curve', 'cmd', 'run', 'schedule', 'inspect', 'help',
 ]);
 
 const VALUE_FLAGS = new Set([
   '--filter', '--note', '--limit', '--cursor', '--since', '--as', '--member', '--engine',
   '--id', '--after', '--timeout', '--interval', '--lease', '--wait', '--proof', '--file', '--window',
-  '--description', '--every', '--to', '--now', '--port',
+  '--description', '--every', '--to', '--now', '--port', '--why', '--detail', '--lane', '--lesson', '--verify',
 ]);
 
 const HELP = [
@@ -35,10 +36,17 @@ const HELP = [
   '                                                                   block until a new reply or state change lands (race-free)',
   '       atris element tail [--limit 20] [--since <iso>] [--follow] [--timeout 30s] [--json]',
   '                                                                   stream Element events as lines or NDJSON',
-  '       atris element claim --as <member> [--lease 5m] [--wait 30s] [--json]',
-  '                                                                   claim the next ready card with a lease (no double-claim)',
-  '       atris element complete <card> --as <member> --proof "<what passed>" ["<summary>"]',
-  '                                                                   record a verified result and release the lease',
+  '       atris element connect --as <name> [--engine codex|claude|devin|grok|muse|atris|other] [--json]',
+  '                                                                   a helper from outside takes a seat and reads where the project stands',
+  '       atris element task "<what to do>" [--as <member>] [--to <teammate>] [--why "<why>"] [--detail "<technical text>"] [--id <key>]',
+  '                                                                   post a task; tag who does it, or it goes to the best fit',
+  '       atris element claim [<card>] --as <member> [--lease 30m] [--wait 30s] [--json]',
+  '                                                                   become the owner of a task and get its handoff (no double-claim)',
+  '       atris element progress <card> --as <member> "<one plain line>"',
+  '                                                                   say where the work is, on the same card',
+  '       atris element complete <card> --as <member> --proof "<what passed>" [--verify "<check>"] [--lesson "<kept>"] ["<summary>"]',
+  '                                                                   hand in a checked result, save the lesson, release the card',
+  '       atris element receipt <card> [--json]                       the saved chain: who asked, who took it, the result, proof and lesson',
   '       atris element curve [--file <path>] [--limit 100] [--window 10] [--json]',
   '                                                                   loss curve, spend, p95 speed and slowest bottleneck',
   '       atris element cmd add <name> "<shell>" [--description "..."] | list | remove <name>',
@@ -250,24 +258,74 @@ async function run(args = [], { cwd = process.cwd(), env = process.env, deps = {
       return 0;
     }
 
+    if (sub === 'connect') {
+      const out = swarm.connect(root, { as: flags.as || positional[1], engine: flags.engine, env });
+      if (json) console.log(JSON.stringify(out, null, 2));
+      else {
+        console.log(`${out.member} is connected${out.on ? '' : ' but switched off'}.${out.context.goal ? ` Goal: ${out.context.goal}` : ''}`);
+        if (out.why_off) console.log(out.why_off);
+        if (out.context.read_first.length) console.log(`Read first: ${out.context.read_first.join(', ')}`);
+        for (const line of out.context.yours) console.log(`yours  ${line.card}  ${line.title}  (${line.state})`);
+        for (const line of out.context.open_to_claim) console.log(`open   ${line.card}  ${line.title}`);
+        console.log(`Take work with: ${out.commands.claim}`);
+      }
+      return out.on ? 0 : 1;
+    }
+
+    if (sub === 'task') {
+      const out = swarm.postTask(root, {
+        text: positional.slice(1).join(' ').trim(),
+        as: flags.as || null,
+        to: flags.to || null,
+        why: flags.why || null,
+        detail: flags.detail || null,
+        lane: flags.lane || null,
+        idKey: flags.id || null,
+        env,
+        deps,
+      });
+      if (flags['id-only']) console.log(out.card_id || '');
+      else if (json) console.log(JSON.stringify(out, null, 2));
+      else console.log(`${out.replayed ? 'existing' : 'posted'} ${out.card_id}  for ${out.owner}`);
+      return 0;
+    }
+
     if (sub === 'claim') {
-      const leaseMs = ops.parseDuration(flags.lease, 300000);
+      const leaseMs = ops.parseDuration(flags.lease, 30 * 60 * 1000);
       const waitMs = ops.parseDuration(flags.wait, 0);
       const intervalMs = ops.parseDuration(flags.interval, 200);
-      const out = await ops.claimCard(root, { as: flags.as, leaseMs, waitMs, intervalMs, env });
+      const out = await swarm.claim(root, { as: flags.as, card: positional[1] || null, leaseMs, waitMs, intervalMs, env });
       if (json) console.log(JSON.stringify(out, null, 2));
-      else if (out.claimed) console.log(`${out.card.id}  leased to ${out.lease.holder} until ${out.lease.expires_at}  ${out.card.title}`);
+      else if (out.claimed) console.log(`${out.card.id}  yours (${out.lease.holder}) until ${out.lease.expires_at}  ${out.card.title}`);
       else console.log('no claimable card right now.');
       return out.claimed ? 0 : 1;
+    }
+
+    if (sub === 'progress') {
+      const out = swarm.progress(root, positional[1], { as: flags.as, text: positional.slice(2).join(' ').trim(), env, deps });
+      if (json) console.log(JSON.stringify(out, null, 2));
+      else console.log(`noted on ${out.card_id}`);
+      return 0;
     }
 
     if (sub === 'complete') {
       const cardId = positional[1];
       const text = positional.slice(2).join(' ').trim();
-      const out = ops.completeCard(root, cardId, { as: flags.as, proof: flags.proof, text, env, deps });
+      const out = swarm.complete(root, cardId, { as: flags.as, proof: flags.proof, text, lesson: flags.lesson || '', verify: flags.verify || '', env, deps });
       if (json) console.log(JSON.stringify(out, null, 2));
-      else console.log(`completed ${cardId}`);
+      else console.log(`completed ${cardId}. ${out.next}`);
       return 0;
+    }
+
+    if (sub === 'receipt') {
+      const out = swarm.receipt(root, positional[1]);
+      if (json) console.log(JSON.stringify(out, null, 2));
+      else {
+        console.log(`${out.title}  (${out.state})`);
+        console.log(`asked by ${out.posted_by || 'nobody on record'}, done by ${out.owner || 'nobody yet'}`);
+        for (const [name, ok] of Object.entries(out.steps)) console.log(`${ok ? 'yes' : 'no '}  ${name}`);
+      }
+      return out.complete ? 0 : 1;
     }
 
     if (sub === 'curve') {

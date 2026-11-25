@@ -138,32 +138,194 @@ test('element wait returns immediately when a reply already landed after --after
   assert.equal(parsed.reply.text, 'Second thought wins');
 });
 
-test('element claim leases a card to one agent so a second agent cannot double-claim it', async (t) => {
+// A helper from outside (Codex here) joins, takes a task a teammate tagged it on, reports on the same card,
+// hands in a checked result and leaves a lesson. The receipt reads the whole chain back from what was saved.
+test('element: an outside helper connects, claims a tagged task with a handoff, reports, finishes and leaves a receipt', async (t) => {
   const ctx = project(t);
-  const prop = feed.proposeCard(ctx.root, {
-    as: 'scout',
-    title: 'Check the billing webhook',
-    why: 'Keep payment receipts accurate',
-    env: ctx.env,
-  });
+  const o = { cwd: ctx.root, env: ctx.agentEnv, deps: ctx.deps };
+  fs.writeFileSync(path.join(ctx.root, 'atris', 'lessons.md'), '# Lessons\n\n- Check the title on a phone before saving\n');
 
-  const first = await captureRun(['claim', '--as', 'scout', '--lease', '5m', '--json'], {
-    cwd: ctx.root,
-    env: ctx.env,
-  });
-  assert.equal(first.code, 0);
-  const firstOut = JSON.parse(first.stdout);
-  assert.equal(firstOut.claimed, true);
-  assert.equal(firstOut.card.id, prop.card.id);
-  assert.equal(firstOut.lease.holder, 'scout');
+  const joined = await captureRun(['connect', '--as', 'codex', '--json'], o);
+  assert.equal(joined.code, 0);
+  const seat = JSON.parse(joined.stdout);
+  assert.equal(seat.outside, true);
+  assert.equal(seat.on, true);
+  assert.deepEqual(seat.context.lessons, ['Check the title on a phone before saving']);
+  assert.ok(fs.existsSync(path.join(ctx.root, 'atris', 'team', 'codex', 'MEMBER.md')));
 
-  // Second agent sees nothing claimable while the first lease is active.
-  const rival = await captureRun(['claim', '--as', 'builder', '--lease', '5m', '--json'], {
-    cwd: ctx.root,
-    env: ctx.env,
-  });
+  const posted = await captureRun(['task', 'Fix the typo in the readme title', '--as', 'scout', '--to', 'codex', '--detail', 'README.md line 1: "Atirs" should be "Atris"', '--id', 'typo-1', '--json'], o);
+  assert.equal(posted.code, 0);
+  const task = JSON.parse(posted.stdout);
+  assert.equal(task.owner, 'codex');
+  assert.equal(task.posted_by, 'agent:scout');
+  // The same key never makes a second card.
+  const again = JSON.parse((await captureRun(['task', 'Fix the typo in the readme title', '--as', 'scout', '--to', 'codex', '--id', 'typo-1', '--json'], o)).stdout);
+  assert.equal(again.replayed, true);
+  assert.equal(again.card_id, task.card_id);
+
+  // connect now shows the card waiting for this helper.
+  const back = JSON.parse((await captureRun(['connect', '--as', 'codex', '--json'], o)).stdout);
+  assert.equal(back.created, false);
+  assert.deepEqual(back.context.yours.map((line) => line.card), [task.card_id]);
+
+  const claimed = await captureRun(['claim', '--as', 'codex', '--json'], o);
+  assert.equal(claimed.code, 0);
+  const mine = JSON.parse(claimed.stdout);
+  assert.equal(mine.card.id, task.card_id);
+  assert.equal(mine.owner, 'codex');
+  assert.equal(mine.card.state, 'working');
+  assert.equal(mine.handoff.task.asked_by, 'agent:scout');
+  assert.equal(mine.handoff.task.detail, 'README.md line 1: "Atirs" should be "Atris"');
+  assert.ok(mine.handoff.lessons.includes('Check the title on a phone before saving'));
+  assert.match(mine.handoff.report_with.complete, /element complete/);
+
+  // Nobody else can take it or report on it while the hold is live.
+  const rival = await captureRun(['claim', task.card_id, '--as', 'writer', '--json'], o);
   assert.equal(rival.code, 1);
-  assert.equal(JSON.parse(rival.stdout).claimed, false);
+  assert.match(JSON.parse(rival.stdout).error.message, /codex holds this card/);
+  const stranger = await captureRun(['progress', task.card_id, '--as', 'writer', 'Looking at it too', '--json'], o);
+  assert.equal(stranger.code, 1);
+
+  assert.equal((await captureRun(['progress', task.card_id, '--as', 'codex', 'Found the typo on line one'], o)).code, 0);
+
+  // A check that fails means no result: the card is still being worked.
+  const failed = await captureRun(['complete', task.card_id, '--as', 'codex', '--proof', 'ran the check', '--verify', 'exit 3', '--json'], o);
+  assert.equal(failed.code, 1);
+  assert.match(JSON.parse(failed.stdout).error.message, /check did not pass \(exit 3\)/);
+  const midway = JSON.parse((await captureRun(['receipt', task.card_id, '--json'], o)).stdout);
+  assert.equal(midway.complete, false);
+  assert.equal(midway.steps.result, false);
+
+  const done = await captureRun([
+    'complete', task.card_id, '--as', 'codex', '--proof', 'ran the readme check and it passed', '--verify', 'exit 0',
+    '--lesson', 'Read the title aloud before saving', 'Fixed the title', '--json',
+  ], o);
+  assert.equal(done.code, 0);
+  assert.equal(JSON.parse(done.stdout).check.passed, true);
+
+  const proofOut = await captureRun(['receipt', task.card_id, '--json'], o);
+  assert.equal(proofOut.code, 0);
+  const receipt = JSON.parse(proofOut.stdout);
+  assert.equal(receipt.complete, true);
+  assert.deepEqual(receipt.steps, { posted: true, handoff: true, owner: true, result: true, checked: true, lesson: true });
+  assert.equal(receipt.owner, 'codex');
+  assert.equal(receipt.owner_outside, true);
+  assert.equal(receipt.posted_by, 'agent:scout');
+  assert.equal(receipt.state, 'waiting for the owner to accept');
+  assert.deepEqual(receipt.progress.map((p) => p.text), ['Found the typo on line one']);
+  assert.equal(receipt.proof, 'ran the readme check and it passed');
+  assert.match(fs.readFileSync(path.join(ctx.root, 'atris', 'team', 'codex', 'lessons.md'), 'utf8'), /- Read the title aloud before saving \(from "Fix the typo in the readme title"/);
+
+  // The finished work is in front of the owner to accept, and no run was started on the owner's models.
+  const ownerView = JSON.parse((await captureRun(['--json'], { cwd: ctx.root, env: ctx.env })).stdout);
+  assert.equal(ownerView.counts.needs_decision, 1);
+  assert.equal(ctx.spawned.length, 0);
+  assert.equal(ctx.turns.length, 0);
+
+  // The lesson is handed to the next helper that takes a card here.
+  const next = JSON.parse((await captureRun(['task', 'Check the footer year', '--as', 'scout', '--to', 'codex', '--json'], o)).stdout);
+  const second = JSON.parse((await captureRun(['claim', next.card_id, '--as', 'codex', '--json'], o)).stdout);
+  assert.ok(second.handoff.lessons.some((line) => line.startsWith('Read the title aloud before saving')));
+});
+
+test('element claim keeps what is the owner\'s: ideas, protected work, another helper\'s tag and a seat switched off', async (t) => {
+  const ctx = project(t);
+  const o = { cwd: ctx.root, env: ctx.agentEnv, deps: ctx.deps };
+  await captureRun(['connect', '--as', 'codex', '--json'], o);
+  await captureRun(['connect', '--as', 'devin', '--json'], o);
+
+  // An idea the team thought up still waits for the owner's yes.
+  const idea = feed.proposeCard(ctx.root, { as: 'codex', title: 'Check the billing webhook', why: 'Keep payment receipts accurate', env: ctx.agentEnv });
+  const early = await captureRun(['claim', idea.card.id, '--as', 'codex', '--json'], o);
+  assert.equal(early.code, 1);
+  assert.match(JSON.parse(early.stdout).error.message, /waits for the owner's yes/);
+  // The owner's yes hands it to the outside helper without starting anything on this computer.
+  const yes = feed.decide(ctx.root, idea.card.id, 'approve', { env: ctx.env, deps: ctx.deps });
+  assert.equal(yes.outcome.started, false);
+  assert.equal(yes.outcome.reason, 'waits_for_outside_helper');
+  assert.equal(ctx.spawned.length, 0);
+  assert.equal((await captureRun(['claim', idea.card.id, '--as', 'codex', '--json'], o)).code, 0);
+
+  // Protected work waits for the owner even when a teammate posts it as a task.
+  const money = JSON.parse((await captureRun(['task', 'Refund the last three orders', '--as', 'scout', '--to', 'codex', '--lane', 'money', '--json'], o)).stdout);
+  const held = await captureRun(['claim', money.card_id, '--as', 'codex', '--json'], o);
+  assert.equal(held.code, 1);
+  assert.match(JSON.parse(held.stdout).error.message, /money work, so it waits for the owner's yes/);
+
+  // A task tagged to one helper is not another's to take.
+  const tagged = JSON.parse((await captureRun(['task', 'Tidy the changelog headings', '--as', 'scout', '--to', 'devin', '--json'], o)).stdout);
+  const wrong = await captureRun(['claim', tagged.card_id, '--as', 'codex', '--json'], o);
+  assert.equal(wrong.code, 1);
+  assert.match(JSON.parse(wrong.stdout).error.message, /tagged to devin/);
+  // With no card named, a helper only ever gets work it may take: here, nothing.
+  const none = await captureRun(['claim', '--as', 'writer', '--json'], o);
+  assert.equal(none.code, 1);
+  assert.equal(JSON.parse(none.stdout).claimed, false);
+
+  // The owner can make a teammate's task wait for their yes too.
+  fs.writeFileSync(path.join(ctx.root, 'atris', '.config'), JSON.stringify({ feed: { default_engine: 'codex', agent_tasks: 'off' } }));
+  const waits = await captureRun(['claim', tagged.card_id, '--as', 'devin', '--json'], o);
+  assert.equal(waits.code, 1);
+  assert.match(JSON.parse(waits.stdout).error.message, /waits for their yes/);
+  fs.writeFileSync(path.join(ctx.root, 'atris', '.config'), JSON.stringify({ feed: { default_engine: 'codex' } }));
+
+  // A seat the owner switched off takes nothing, posts nothing, and connect does not switch it back on.
+  require('../lib/member-switches').setMemberAwake('devin', false, ctx.root);
+  const mute = await captureRun(['task', 'Sort the footer links', '--as', 'devin', '--to', 'codex', '--json'], o);
+  assert.equal(mute.code, 1);
+  assert.match(JSON.parse(mute.stdout).error.message, /devin is off, so it cannot post a task/);
+  const off = await captureRun(['claim', tagged.card_id, '--as', 'devin', '--json'], o);
+  assert.equal(off.code, 1);
+  assert.match(JSON.parse(off.stdout).error.message, /devin is off/);
+  const rejoin = await captureRun(['connect', '--as', 'devin', '--json'], o);
+  assert.equal(rejoin.code, 1);
+  assert.equal(JSON.parse(rejoin.stdout).on, false);
+});
+
+test('element: a person\'s task for an outside helper is ready to claim, and a hold that ran out lets the next helper take over', async (t) => {
+  const ctx = project(t);
+  const agent = { cwd: ctx.root, env: ctx.agentEnv, deps: ctx.deps };
+  const person = { cwd: ctx.root, env: ctx.env, deps: ctx.deps };
+  await captureRun(['connect', '--as', 'codex', '--json'], agent);
+  await captureRun(['connect', '--as', 'devin', '--json'], agent);
+
+  // An agent has to say who it is.
+  const nameless = await captureRun(['task', 'Sort the glossary by letter', '--json'], agent);
+  assert.equal(nameless.code, 1);
+
+  // No tag: the task goes to the seat whose role fits its words.
+  fs.writeFileSync(path.join(ctx.root, 'atris', 'team', 'writer', 'MEMBER.md'), '---\nname: writer\nrole: Writes the glossary and help pages\n---\n# writer\n');
+  const routed = JSON.parse((await captureRun(['task', 'Sort the glossary by letter', '--as', 'scout', '--json'], agent)).stdout);
+  assert.equal(routed.owner, 'writer');
+
+  const posted = JSON.parse((await captureRun(['task', 'Add the missing alt text on the pricing page', '--to', 'codex', '--json'], person)).stdout);
+  assert.equal(posted.posted_by, 'user:owner');
+  assert.equal(ctx.spawned.length, 0);
+
+  const first = JSON.parse((await captureRun(['claim', posted.card_id, '--as', 'codex', '--lease', '1s', '--json'], agent)).stdout);
+  assert.equal(first.owner, 'codex');
+  // The tag was the person's, so another helper cannot take it while it is held or after.
+  const leases = path.join(ctx.root, '.atris', 'state', 'feed', 'leases.json');
+  const saved = JSON.parse(fs.readFileSync(leases, 'utf8'));
+  saved[posted.card_id].expires_at_ms = Date.now() - 1000;
+  fs.writeFileSync(leases, JSON.stringify(saved));
+  const blocked = await captureRun(['claim', posted.card_id, '--as', 'devin', '--json'], agent);
+  assert.equal(blocked.code, 1);
+  assert.match(JSON.parse(blocked.stdout).error.message, /tagged to codex/);
+
+  // An untagged task whose helper went quiet past its hold goes to the next one, and the first can no longer finish it.
+  const open = JSON.parse((await captureRun(['task', 'Refresh the screenshot on the help page', '--as', 'codex', '--json'], agent)).stdout);
+  const db = require('../lib/task-db');
+  db.updateTaskMetadata(ctx.db, open.card_id.split(':')[1], (metadata) => { metadata.feed.task.tagged = false; metadata.feed.task.to = ''; return metadata; });
+  assert.equal((await captureRun(['claim', open.card_id, '--as', 'codex', '--json'], agent)).code, 0);
+  const held = JSON.parse(fs.readFileSync(leases, 'utf8'));
+  held[open.card_id].expires_at_ms = Date.now() - 1000;
+  fs.writeFileSync(leases, JSON.stringify(held));
+  const taken = JSON.parse((await captureRun(['claim', open.card_id, '--as', 'devin', '--json'], agent)).stdout);
+  assert.equal(taken.owner, 'devin');
+  const late = await captureRun(['complete', open.card_id, '--as', 'codex', '--proof', 'ran it', '--json'], agent);
+  assert.equal(late.code, 1);
+  assert.match(JSON.parse(late.stdout).error.message, /codex is not the one doing this work/);
 });
 
 test('element tail emits NDJSON events and element curve computes sparkline, loss and bottleneck', async (t) => {
