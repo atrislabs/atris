@@ -9144,6 +9144,13 @@ async function memberChat(name, ...rest) {
   // Contract shared with obelisk src/lib/memberChatInbox.cjs: one JSON object per line.
   const line = JSON.stringify({ at: new Date().toISOString(), from, text });
   fs.appendFileSync(path.join(paths.memberDir, 'chat-inbox.jsonl'), `${line}\n`, 'utf8');
+  // "start a campaign to <goal>": the member drafts a judge that fails today,
+  // starts the campaign and leads it (commands/campaign.js).
+  const campaign = await require('./campaign').campaignFromChat(paths.storageName || name, text);
+  if (campaign) {
+    if (campaign.code !== 0) process.exitCode = campaign.code;
+    return { ok: campaign.code === 0, campaign_id: campaign.id };
+  }
   console.log(`Sent to ${paths.storageName || name}'s desk. It appears in Atris Desktop within about 15 seconds when the app is open.`);
   return { ok: true };
 }

@@ -37,6 +37,21 @@ atris campaign sync <id>                     # share it with the Atris web app a
 
 `atris campaign "<goal>"` is the same as `atris campaign new "<goal>"`. Already have a judge? Start directly: `atris campaign "<goal>" --judge "<command>"`. A local campaign needs no budget; one that runs in the cloud does (`--budget 20`). Add `--json` to any verb for machine output. `atris campaign` alone lists every campaign and its next move.
 
+## Lead it where the person can watch
+
+Every campaign shows on the feed as one card: its score (like 7 of 21), what happened last and who did it. Name the member who manages it. That member answers there.
+
+```bash
+atris campaign "<goal>" --lead <member>           # the lead drafts the judge and plans the work
+atris campaign lead <id> <member>                 # name or change the lead later
+atris member chat <member> "start a campaign to <goal>"   # the same, said in chat
+atris campaign run <id> --runner agy              # pick the engine: agy, codex, fable, "claude fable"
+atris feed cards                                  # the card, plus a question card for each open ask
+atris feed talk campaign:<id> "<words>"           # the lead answers; the next plan reads what was said
+```
+
+A person answers a question card with words: `atris feed talk <question card> "<answer>"`. A member working by hand writes on the card with `--as <member>`. Only the lead can.
+
 ## Write a good judge
 
 1. **Outside the model.** Tests, counts, greps, a build, a local script. Never ask a model whether it is done.
