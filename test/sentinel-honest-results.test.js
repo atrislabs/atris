@@ -65,6 +65,123 @@ function makeRepo(dir, files = { 'lib/run.js': HOLE }, remote = null) {
   return fs.realpathSync(root);
 }
 
+test('a local Sentinel review binds its evidence to the scoped source before and after reading', async (t) => {
+  const route = "function show(req, res) { return res.json({ name: req.query.name }); }\n";
+  const cases = [
+    ['unchanged tracked source', () => {}, 'matched'],
+    ['unchanged dirty source', () => {}, 'matched', true],
+    ['different bytes while already dirty', (root) => fs.appendFileSync(path.join(root,'lib/view.js'),'// edited again\n'), 'changed', true],
+    ['HEAD advances while reading', (root) => git(root,'commit','--allow-empty','-qm','advance'), 'changed'],
+    ['tracked source added', (root) => { fs.writeFileSync(path.join(root,'lib/more.js'),'const colour = 1;'); git(root,'add','lib/more.js'); }, 'changed'],
+    ['tracked source removed', (root) => git(root,'rm','-q','lib/other.js'), 'changed'],
+    ['out-of-scope edit', (root) => fs.appendFileSync(path.join(root,'elsewhere.js'),'// unrelated\n'), 'matched'],
+    ['out-of-scope SQL actually used for preparation', (root) => fs.appendFileSync(path.join(root,'policy.sql'),'-- adjustment\n'), 'changed'],
+    ['indexed source cannot be read', (root) => fs.unlinkSync(path.join(root,'lib/other.js')), 'unverified'],
+    ['source in a plain folder changes', (root) => fs.appendFileSync(path.join(root,'lib/view.js'),'// local edit\n'), 'changed', false, true],
+  ];
+  for (const [label, mutate, expected, dirty, plain] of cases) {
+    await t.test(label, async () => {
+      const home = freshHome();
+      const root = makeRepo(null, {'lib/view.js':route,'lib/other.js':'const a = 1;\n','elsewhere.js':'const b = 2;\n','policy.sql':'-- sample database settings\n'});
+      if (dirty) fs.appendFileSync(path.join(root,'lib/view.js'),'// already dirty\n');
+      if (plain) fs.rmSync(path.join(root,'.git'), {recursive:true,force:true});
+      let called = false;
+      const fake = engines({clean:true});
+      const uploads = [];
+      const runJobs = async (jobs) => {
+        if (!called) { called = true; mutate(root); }
+        return fake(jobs);
+      };
+      const result = await capture(() => auditCommand(['lib','--json','--upload'], deps(root,home,{runJobs,token:'tok',cloud:cloudCatching(uploads)})));
+      assert.equal(called,true);
+      const json=JSON.parse(result.stdout);
+      assert.equal(json.meta.source_integrity.state,expected);
+      assert.equal(json.meta.source_integrity.start.dirty,plain ? null : !!dirty);
+      if (expected==='matched') {
+        assert.equal(result.code,0);
+        assert.equal(json.meta.run_status,'complete');
+        assert.equal(uploads.length,1);
+      } else {
+        assert.equal(result.code,1);
+        assert.equal(json.ok,false);
+        assert.equal(json.meta.run_status,'incomplete');
+        assert.equal(uploads.length,0);
+        assert.equal(audit.shouldFailRun(json.dir,json.findings),true);
+        assert.ok(fs.existsSync(path.join(json.dir,'unverified-review.json')));
+        assert.match(fs.readFileSync(path.join(json.dir,'REPORT.md'),'utf8'),/source (changed|for this review)/i);
+        const status=await capture(() => auditCommand(['status'],deps(root,home)));
+        assert.equal(status.code,1);
+        const saved=await capture(() => auditCommand(['status','--json'],deps(root,home)));
+        assert.equal(saved.code,1);
+        assert.deepEqual(JSON.parse(saved.stdout).meta.source_integrity,json.meta.source_integrity);
+        assert.throws(() => realCloud.buildUploadBody(json.dir), /source/i);
+        const entry=rec.entryFromRun(json.dir);
+        assert.equal(entry.counts.complete,0);
+        assert.match(entry.summary,/source/i);
+        assert.match(status.out,/source (changed|for this review)/i);
+        assert.doesNotMatch(status.out,/no problems found/i);
+      }
+    });
+  }
+});
+
+test('untracked supporting source affects the result only when the reader used it', async (t) => {
+  for (const [cited, edited, expected] of [[true,false,'matched'], [true,true,'changed'], [false,true,'matched']]) {
+    await t.test(`cited=${cited} edited=${edited}`, async () => {
+      const home = freshHome();
+      const root = makeRepo(null, {'lib/view.js': 'function show(req,res) { return res.json(req.query.name); }\n'});
+      const rel = 'lib/local.js';
+      fs.writeFileSync(path.join(root,rel),'const label = "initial";');
+      const reader = engines({clean:true});
+      const result = await capture(() => auditCommand(['--json','--no-upload'], deps(root,home,{runJobs:async (jobs) => {
+        const answers = await reader(jobs);
+        for (const answer of answers) {
+          const payload = JSON.parse(answer.stdout);
+          if (!Array.isArray(payload.units)) continue;
+          if (edited) fs.writeFileSync(path.join(root,rel),'const label = "edited";');
+          if (cited) for (const unit of payload.units) {
+            unit.reviewed_paths.push(rel);
+            unit.checks[0].reviewed_paths.push(rel);
+          }
+          answer.stdout = JSON.stringify(payload);
+        }
+        return answers;
+      }})));
+      const run=JSON.parse(result.stdout);
+      assert.equal(run.meta.source_integrity.state,expected);
+      assert.equal(run.meta.source_integrity.start.untracked_files || 0,Number(cited));
+      assert.equal(run.meta.source_ref.dirty,cited);
+    });
+  }
+});
+
+test('an unresolvable HEAD in a Git checkout cannot be treated as a verified plain folder', async () => {
+  const home=freshHome();
+  const root=makeRepo(null,{'lib/view.js':'function show(req,res) { return res.json(req.query.name); }\n'});
+  git(root,'update-ref','-d','HEAD');
+  const result=await capture(() => auditCommand(['--json','--no-upload'],deps(root,home,{runJobs:engines({clean:true})})));
+  const run=JSON.parse(result.stdout);
+  assert.equal(run.meta.source_integrity.state,'unverified');
+  assert.equal(run.meta.source_integrity.start.commit,null);
+  assert.equal(run.meta.source_integrity.end.commit,null);
+  assert.equal(result.code,1);
+});
+
+test('invalid saved source proof blocks exporting the summary', async () => {
+  const home=freshHome();
+  const root=makeRepo(null,{'lib/view.js':'function show(req,res) { return res.json(req.query.name); }\n'});
+  const run=await audit.runAudit({root,runJobs:engines({clean:true})});
+  const file=path.join(run.dir,'run-metadata.json');
+  const meta=JSON.parse(fs.readFileSync(file,'utf8'));
+  meta.source_integrity.end.digest=null;
+  fs.writeFileSync(file,JSON.stringify(meta));
+  assert.equal(audit.shouldFailRun(run.dir,run.records),true);
+  assert.throws(() => realCloud.buildUploadBody(run.dir),/could not verify/);
+  const saved=await capture(() => auditCommand(['status'],deps(root,home)));
+  assert.equal(saved.code,1);
+  assert.match(saved.out,/could not verify/);
+});
+
 const CANDIDATE = {
   proposed_verdict: 'confirmed',
   fingerprint: 'lib/run.js:runTask/shell-from-task-title',
@@ -131,13 +248,14 @@ function cloudCatching(uploads) {
 
 async function capture(fn) {
   const out = [];
+  const stdout = [];
   const log = console.log;
   const error = console.error;
-  console.log = (...a) => out.push(a.join(' '));
+  console.log = (...a) => { const line = a.join(' '); stdout.push(line); out.push(line); };
   console.error = (...a) => out.push(a.join(' '));
   try {
     const code = await fn();
-    return { code, out: out.join('\n') };
+    return { code, out: out.join('\n'), stdout: stdout.join('\n') };
   } finally {
     console.log = log;
     console.error = error;
