@@ -32,6 +32,7 @@ function printHelp() {
   console.log('  atris campaign new "<goal>" [--budget 20] [--owner <member>] [--yes] [--run]   --run keeps going after the start');
   console.log('  atris campaign start "<title>" --judge "<cmd>" [--budget <dollars>]   no --budget means no limit; --cloud needs one');
   console.log('        [--holdout <file>]   move held-out data out of the repo; the judge reads it from $ATRIS_CAMPAIGN_HOLDOUT');
+  console.log('        [--lead <member>]   the member who manages it for you; it plans the work unless --owner names someone else');
   console.log('        [--owner <member>] [--seat <member>[:<role>]]... [--bet "<bet>" [--wrong-if "<what proves it wrong>"]]');
   console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud [--basis atris_cloud]] [--protect <path>]... [--brief <file>] [--run]');
   console.log('        --protect saves paths agents must not touch, and the commit they start from');
@@ -41,6 +42,7 @@ function printHelp() {
   console.log('  atris campaign guard <id>              exits 1 naming any protected path changed since start');
   console.log('  atris campaign set-judge <id> "<cmd>"   change the judge (owner or a person; must fail first)');
   console.log('  atris campaign seat <id> <member> [--role <role>]');
+  console.log('  atris campaign lead <id> [<member>]    name the member who manages it, or see who does');
   console.log('  atris campaign bet <id> "<bet>" [--wrong-if "<what proves it wrong>"]');
   console.log('  atris campaign budget <id> --add <dollars>');
   console.log('  atris campaign ask <id> "<question>" [--mission <id>]   stop before anything that cannot be undone');
@@ -48,6 +50,8 @@ function printHelp() {
   console.log('  atris campaign pause|resume|stop <id>');
   console.log('  atris campaign event <id> <type> [--data \'<json>\']   append any event by hand');
   console.log('  atris campaign run <id> [--parallel 3] [--max-steps 20] [--max-ticks 3] [--mission-minutes 40] [--runner auto]');
+  console.log('        --runner names the engine every mission runs on: agy, codex, fable, "claude fable", or any engine on your roster;');
+  console.log('        left out, each member runs on its own engine. Either way each mission shows which engine ran it');
   console.log('        the campaign runs itself: proposes missions, runs them at once, judges, repeats until done, broke, or needing you');
   console.log('        add --work 50m --break 10m [--rounds N] to work in rounds; each break judges and writes lessons the next round plans from');
   console.log('  atris campaign step <id>               one step of that loop');
@@ -91,7 +95,7 @@ const NO_LIMIT_BUDGET = 1e9;
 const noLimit = (view) => view.budget.total >= CLOUD_MAX_BUDGET;
 
 // The flags this command understands, so positional words are what is left.
-const VALUE_FLAGS = ['--mission-minutes', '--basis', '--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect', '--brief', '--every', '--steps'];
+const VALUE_FLAGS = ['--mission-minutes', '--basis', '--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--lead', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect', '--brief', '--every', '--steps'];
 
 function positionals(args) {
   const out = [];
@@ -311,6 +315,7 @@ function renderShow(view) {
     row('budget', paid ? `${spentText(view, paid)} · ${money(view.budget.reserved)} reserved · ${money(view.budget.available)} left` : spentText(view, paid));
   }
   row('owner', view.owner + (view.standing ? ' · standing (a passing judge means healthy, not done)' : ''));
+  if (view.lead) row('lead', view.lead);
   if (view.bet) row('bet', `${view.bet.text}${view.bet.wrong_if ? ` · wrong if ${view.bet.wrong_if}` : ''}`);
   if (view.parent) row('parent', view.parent);
   let ovrByMember = new Map();
@@ -331,7 +336,8 @@ function renderShow(view) {
   row('missions', view.missions.length ? '' : 'none');
   for (const m of view.missions) {
     const cost = m.cost_usd === null || !paysDollars(view) ? '' : ` · ${money(m.cost_usd)}`;
-    lines.push(`  ${m.id.padEnd(22)} ${m.status.padEnd(8)} ${m.member || '-'}${m.outcome ? ` · ${m.outcome}` : ''}${cost}`);
+    const engine = m.engine ? ` · ran on ${m.engine}${m.model ? ` ${m.model}` : ''}` : '';
+    lines.push(`  ${m.id.padEnd(22)} ${m.status.padEnd(8)} ${m.member || '-'}${engine}${m.outcome ? ` · ${m.outcome}` : ''}${cost}`);
   }
   row('asks', view.asks.length ? '' : 'none');
   for (const ask of view.asks) lines.push(`  ${ask.id}: ${ask.question}`);
@@ -352,7 +358,9 @@ async function cmdStart(args, ctx) {
   const wrongIf = readFlag(args, '--wrong-if', '');
   const parent = readFlag(args, '--parent', '');
   const standing = args.includes('--standing');
-  const owner = readFlag(args, '--owner', '');
+  const lead = readFlag(args, '--lead', '').trim();
+  // The lead plans the work unless someone else is named as owner.
+  const owner = readFlag(args, '--owner', '') || lead;
   const seats = readAll(args, '--seat').map((seat) => {
     const [member, role] = seat.split(':');
     return role ? { member, role } : member;
@@ -425,6 +433,7 @@ async function cmdStart(args, ctx) {
   if (kept && !ctx.asJson) console.error(`copied the judge script from ${kept.from} into the campaign: ${kept.judge}`);
 
   const startData = { title, judge: kept ? kept.judge : judge, budget, owner: owner || 'mission-lead', created_from: `atris campaign start by ${ctx.actor}` };
+  if (lead) startData.lead = lead;
   if (seats.length) startData.seats = seats;
   if (bet && !wrongIf) startData.bet = bet;
   if (standing) startData.standing = true;
@@ -695,6 +704,25 @@ const cmdSeat = simpleEvent('seat_filled', (args, words) => {
   if (!member) return { error: 'name the member: atris campaign seat <id> <member> [--role <role>]' };
   return { data: { member, role: readFlag(args, '--role', '') || seatRole(member) } };
 }, (d) => `seated ${d.member} as ${d.role}`);
+
+// The lead is a seat with the role "lead"; the newest one manages the campaign.
+const cmdLead = async (args, ctx) => {
+  const words = positionals(args);
+  const { view, error } = requireCampaign(ctx, words[1]);
+  if (error !== undefined) return error;
+  const member = (words[2] || '').trim();
+  if (!member) {
+    ctx.out(view.lead ? `${view.id} is led by ${view.lead}` : `${view.id} has no lead yet. Name one: atris campaign lead ${view.id} <member>`, { ok: true, campaign_id: view.id, lead: view.lead || null });
+    return 0;
+  }
+  if (![view.owner, view.lead].includes(ctx.actor) && !isHumanActor(ctx.actor)) {
+    return ctx.fail(`only the owner (${view.owner}), the lead, or a person can name the lead`);
+  }
+  ctx.append(view.id, 'seat_filled', { member, role: 'lead' });
+  const after = getCampaign(ctx.store, view.id);
+  ctx.out(`${member} now leads ${view.id}\n${renderShow(after)}`, { ok: true, action: 'lead_set', campaign: after, next: decide(after) });
+  return 0;
+};
 
 const cmdBet = simpleEvent('bet_set', (args, words) => {
   const bet = words[2];
@@ -1025,7 +1053,7 @@ function cmdKeep(args, ctx) {
 
 const VERBS = {
   wake: cmdWake, keep: cmdKeep, schedule: cmdSchedule,
-  start: cmdStart, show: cmdShow, judge: cmdJudge, guard: cmdGuard, seat: cmdSeat, bet: cmdBet, budget: cmdBudget,
+  start: cmdStart, show: cmdShow, judge: cmdJudge, guard: cmdGuard, seat: cmdSeat, lead: cmdLead, bet: cmdBet, budget: cmdBudget,
   pause: cmdPause, resume: cmdResume, stop: cmdStop, event: cmdEvent,
   ask: cmdAsk, answer: cmdAnswer, 'set-judge': cmdSetJudge, sync: cmdSync, 'cloud-run': cmdCloudRun,
   rsi: cmdRsi, learn: cmdRsi,
