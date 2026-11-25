@@ -13,12 +13,15 @@
 //   atris slop detect src/ --json   # machine output for CI / the loop
 //   atris slop detect src/ --quiet  # only print the summary line
 //
+//   atris slop detect --kind email draft.txt   # precise rules by kind (lib/slop-kinds.js)
+//
 // Exit code: 0 = clean, 1 = slop found, 2 = bad usage. CI/PR gates read this.
 
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const escapeRegExp = require('../lib/escape-regexp');
+const { KINDS, rulesForKind, scanText, walkKind } = require('../lib/slop-kinds');
 
 const SCAN_EXTS = new Set(['.css', '.scss', '.sass', '.less', '.tsx', '.jsx', '.ts', '.js', '.mjs', '.html', '.vue', '.svelte', '.astro',
   '.md', '.mdx', '.txt']); // prose too: the voice doctrine (em-dash, hype-copy) is enforceable, not just advice
@@ -121,7 +124,7 @@ function loadProjectRules(root = process.cwd()) {
     const raw = JSON.parse(fs.readFileSync(path.join(root, PROJECT_RULES_FILE), 'utf8'));
     const arr = Array.isArray(raw) ? raw : (raw.rules || []);
     return arr.map((r) => {
-      if (!r || !r.id || !r.pattern) return null;
+      if (!r || !r.id || !r.pattern || r.kind) return null; // a rule with a kind runs only under --kind
       let re; try { re = new RegExp(r.pattern, r.flags || 'i'); } catch { return null; }
       return { id: r.id, sev: r.sev === 'error' ? 'error' : 'warn', re, why: r.why || r.id, project: true };
     }).filter(Boolean);
@@ -306,7 +309,86 @@ function scanPaths(targets, options = {}) {
   return { root, files, findings };
 }
 
+// Value of a flag that takes one argument (`--kind email`), or null.
+function flagValue(argv, name) {
+  const i = argv.indexOf(name);
+  if (i >= 0) return argv[i + 1] != null ? argv[i + 1] : '';
+  const eq = argv.find((a) => a.startsWith(`${name}=`));
+  return eq ? eq.slice(name.length + 1) : null;
+}
+
+// Positional words, leaving out the values of flags that take one.
+function positionalArgs(argv, valueFlags = ['--kind', '--subject', '--sev', '--said']) {
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (valueFlags.includes(argv[i])) { i++; continue; }
+    if (argv[i] === '-' || !argv[i].startsWith('-')) out.push(argv[i]);
+  }
+  return out;
+}
+
+// `atris slop detect --kind customer-copy|email|screen <paths|->`: precise rules for
+// words customers read, first emails and screens. Errors exit 1, warnings do not.
+function detectKind(argv, kind) {
+  const json = argv.includes('--json');
+  const quiet = argv.includes('--quiet');
+  if (!KINDS.includes(kind)) {
+    console.error(`  --kind is one of ${KINDS.join(', ')}`);
+    return 2;
+  }
+  const subject = flagValue(argv, '--subject');
+  const targets = positionalArgs(argv);
+  if (!targets.length) {
+    console.error(`  usage: atris slop detect --kind ${kind} <file|dir|-> [--json]`);
+    return 2;
+  }
+  const docs = [];
+  for (const target of targets) {
+    if (target === '-') {
+      let text = '';
+      try { text = fs.readFileSync(0, 'utf8'); } catch {}
+      docs.push({ label: '-', text });
+      continue;
+    }
+    const files = walkKind(path.resolve(target), kind, []);
+    if (!files.length && !fs.existsSync(target)) { console.error(`  not found: ${target}`); return 2; }
+    for (const file of files) {
+      let text; try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
+      docs.push({ label: path.relative(process.cwd(), file) || file, text });
+    }
+  }
+  const findings = [];
+  const components = {};
+  for (const doc of docs) {
+    const res = scanText(doc.text, doc.label, kind, { subject });
+    findings.push(...res.findings);
+    if (res.components) components[doc.label] = res.components;
+  }
+  const errors = findings.filter((f) => f.level === 'error').length;
+  const warnings = findings.length - errors;
+  const code = errors ? 1 : 0;
+  if (json) {
+    console.log(JSON.stringify({
+      ok: errors === 0, kind, scanned: docs.length, errors, warnings, findings,
+      ...(kind === 'screen' ? { components } : {}),
+    }, null, 2));
+    return code;
+  }
+  if (!quiet && findings.length) {
+    console.log('');
+    const w = Math.max(...findings.map((f) => `${f.file}:${f.line}`.length));
+    for (const f of findings) {
+      console.log(`  ${ICON[f.level]} ${`${f.file}:${f.line}`.padEnd(w)}  ${f.rule.padEnd(24)} ${f.why}: "${f.text}"`);
+    }
+  }
+  if (errors) console.log(`\n  ${errors} error${errors === 1 ? '' : 's'}${warnings ? `, ${warnings} warning${warnings === 1 ? '' : 's'}` : ''} as ${kind} · exit 1\n`);
+  else console.log(`\n  ✓ ${kind}: no errors in ${docs.length} file${docs.length === 1 ? '' : 's'}${warnings ? ` (${warnings} warning${warnings === 1 ? '' : 's'})` : ''} · exit 0\n`);
+  return code;
+}
+
 function detect(argv) {
+  const kind = flagValue(argv, '--kind');
+  if (kind !== null) return detectKind(argv, kind);
   const json = argv.includes('--json');
   const quiet = argv.includes('--quiet');
   const doFix = argv.includes('--fix');
@@ -618,15 +700,30 @@ function slopCommand(argv) {
   }
 
   if (sub === 'rules') {
+    const kind = flagValue(argv, '--kind');
+    if (kind !== null && !KINDS.includes(kind)) { console.error(`  --kind is one of ${KINDS.join(', ')}`); return 2; }
     if (argv.includes('--add')) {
-      const rest = argv.slice(argv.indexOf('--add') + 1).filter((a) => !a.startsWith('-'));
+      const rest = positionalArgs(argv.slice(argv.indexOf('--add') + 1));
       const [id, pattern, ...whyParts] = rest;
-      if (!id || !pattern) { console.error('  usage: atris slop rules --add <id> <regex-pattern> <why...> [--sev error|warn]'); return 2; }
+      if (!id || !pattern) { console.error('  usage: atris slop rules --add <id> <regex-pattern> <why...> [--sev error|warn] [--kind <kind>] [--said "<words, date>"]'); return 2; }
       let valid = true; try { new RegExp(pattern, 'i'); } catch { valid = false; }
       if (!valid) { console.error(`  invalid regex: ${pattern}`); return 2; }
-      const sev = (argv[argv.indexOf('--sev') + 1] === 'error') ? 'error' : 'warn';
-      const file = addProjectRule({ id, pattern, why: whyParts.join(' ') || id, sev });
-      console.log(`  ✓ added project rule "${id}" to ${path.relative(process.cwd(), file)}`);
+      const sevFlag = flagValue(argv, '--sev');
+      // A rule with a kind is a precise rule the owner stated, so it fails by default.
+      const sev = sevFlag ? (sevFlag === 'error' ? 'error' : 'warn') : (kind ? 'error' : 'warn');
+      const rule = { id, pattern, why: whyParts.join(' ') || id, sev };
+      if (kind) rule.kind = kind;
+      const said = flagValue(argv, '--said');
+      if (said) rule.said = said;
+      const file = addProjectRule(rule);
+      console.log(`  ✓ added project rule "${id}"${kind ? ` for ${kind}` : ''} to ${path.relative(process.cwd(), file)}`);
+      return 0;
+    }
+    if (kind) {
+      const list = rulesForKind(kind);
+      console.log(`\n  atris slop, rules for --kind ${kind}:\n`);
+      for (const r of list) console.log(`  ${ICON[r.level]} ${r.id.padEnd(26)} ${r.why}${r.project ? '  (project)' : ''}`);
+      console.log(`\n  ${list.length} rule${list.length === 1 ? '' : 's'}; each says where it came from with --json on detect\n`);
       return 0;
     }
     const project = loadProjectRules();
@@ -649,6 +746,14 @@ function slopCommand(argv) {
     atris slop rules --add <id> <pattern> <why>   grow the project ruleset
     atris slop hook               install a pre-commit gate (runs --staged)
     atris slop dead [root]        find dead JS (unreachable + unreferenced files)
+
+  Kinds: precise rules for what customers read
+    atris slop detect --kind customer-copy <paths|->   no AI, agent or automate, no em dash, no hype
+    atris slop detect --kind email <file|-> [--subject "..."]   Hey <Name>, one question, 75 words, no sign-off
+    atris slop detect --kind screen <paths>   no subtitle or explanatory text, no all caps, no left bars
+    atris slop rules --kind <kind>            list a kind's rules
+    atris slop rules --add <id> <pattern> <why> --kind <kind> [--said "<his words, date>"]
+  An email file starts with "Subject: ..." then the body. Errors exit 1, warnings do not.
 
   Project rules live in .atris/slop.rules.json and compound over time.
   exit 0 = clean, 1 = slop found. Wire into PR checks and the autopilot gate.

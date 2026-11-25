@@ -145,6 +145,7 @@ test/skill-audit-codeblocks.test.js
 test/slides-deck.test.js
 test/slop-loop.test.js
 test/slop.test.js
+test/slop-kinds.test.js
 test/smoke.fast.test.js
 test/staleness-parser.test.js
 test/strings.test.js
@@ -210,3 +211,4 @@ test/nexus-experiments.test.js
 test/script-command.test.js
 test/check-command.test.js
 test/check-select.test.js
+test/timestone-command.test.js
