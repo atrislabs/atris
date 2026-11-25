@@ -83,9 +83,9 @@ function assertLegacyUpgraded(project) {
   }
 }
 
-test('atris.md opens its operating rules with four bullets', () => {
-  assert.equal(sourceBullets.length, 4);
-  for (const word of ['Acceleration', 'Accuracy', 'Ambition', 'Agency']) {
+test('atris.md opens its operating rules with the four values and how we talk', () => {
+  assert.equal(sourceBullets.length, 5);
+  for (const word of ['Acceleration', 'Accuracy', 'Ambition', 'Agency', 'How we talk']) {
     assert.ok(sourceBullets.some((line) => line.startsWith(`- **${word}.**`)), `missing ${word}`);
   }
 });
