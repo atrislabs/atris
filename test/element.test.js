@@ -153,7 +153,7 @@ test('element: an outside helper connects, claims a tagged task with a handoff, 
   assert.deepEqual(seat.context.lessons, ['Check the title on a phone before saving']);
   assert.ok(fs.existsSync(path.join(ctx.root, 'atris', 'team', 'codex', 'MEMBER.md')));
 
-  const posted = await captureRun(['task', 'Fix the typo in the readme title', '--as', 'scout', '--to', 'codex', '--id', 'typo-1', '--json'], o);
+  const posted = await captureRun(['task', 'Fix the typo in the readme title', '--as', 'scout', '--to', 'codex', '--detail', 'README.md line 1: "Atirs" should be "Atris"', '--id', 'typo-1', '--json'], o);
   assert.equal(posted.code, 0);
   const task = JSON.parse(posted.stdout);
   assert.equal(task.owner, 'codex');
@@ -175,6 +175,7 @@ test('element: an outside helper connects, claims a tagged task with a handoff, 
   assert.equal(mine.owner, 'codex');
   assert.equal(mine.card.state, 'working');
   assert.equal(mine.handoff.task.asked_by, 'agent:scout');
+  assert.equal(mine.handoff.task.detail, 'README.md line 1: "Atirs" should be "Atris"');
   assert.ok(mine.handoff.lessons.includes('Check the title on a phone before saving'));
   assert.match(mine.handoff.report_with.complete, /element complete/);
 

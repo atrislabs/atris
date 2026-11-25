@@ -20,7 +20,7 @@ const ELEMENT_ACTIONS = new Set([
 const VALUE_FLAGS = new Set([
   '--filter', '--note', '--limit', '--cursor', '--since', '--as', '--member', '--engine',
   '--id', '--after', '--timeout', '--interval', '--lease', '--wait', '--proof', '--file', '--window',
-  '--description', '--every', '--to', '--now', '--port', '--why', '--lane', '--lesson', '--verify',
+  '--description', '--every', '--to', '--now', '--port', '--why', '--detail', '--lane', '--lesson', '--verify',
 ]);
 
 const HELP = [
@@ -38,7 +38,7 @@ const HELP = [
   '                                                                   stream Element events as lines or NDJSON',
   '       atris element connect --as <name> [--engine codex|claude|devin|grok|muse|atris|other] [--json]',
   '                                                                   a helper from outside takes a seat and reads where the project stands',
-  '       atris element task "<what to do>" [--as <member>] [--to <teammate>] [--why "<why>"] [--id <key>]',
+  '       atris element task "<what to do>" [--as <member>] [--to <teammate>] [--why "<why>"] [--detail "<technical text>"] [--id <key>]',
   '                                                                   post a task; tag who does it, or it goes to the best fit',
   '       atris element claim [<card>] --as <member> [--lease 30m] [--wait 30s] [--json]',
   '                                                                   become the owner of a task and get its handoff (no double-claim)',
@@ -278,6 +278,7 @@ async function run(args = [], { cwd = process.cwd(), env = process.env, deps = {
         as: flags.as || null,
         to: flags.to || null,
         why: flags.why || null,
+        detail: flags.detail || null,
         lane: flags.lane || null,
         idKey: flags.id || null,
         env,
