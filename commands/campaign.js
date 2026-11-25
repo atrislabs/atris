@@ -29,7 +29,8 @@ function printHelp() {
   console.log('  atris campaign "<goal as a sentence>" --judge "<cmd>"   begin a campaign from one sentence; every flag below works here too');
   console.log('  atris campaign                         every campaign: state, money, and the next move');
   console.log('  atris campaign "<goal>"                draft a judge that fails today, start on a yes; same as campaign new');
-  console.log('  atris campaign new "<goal>" [--budget 20] [--owner <member>] [--yes] [--run]   --run keeps going after the start');
+  console.log('  atris campaign new "<goal>" [--budget 20] [--lead <member>] [--owner <member>] [--yes] [--run]   --run keeps going after the start');
+  console.log('  atris member chat <member> "start a campaign to <goal>"   in chat: that member drafts the judge, starts the campaign and leads it');
   console.log('  atris campaign start "<title>" --judge "<cmd>" [--budget <dollars>]   no --budget means no limit; --cloud needs one');
   console.log('        [--holdout <file>]   move held-out data out of the repo; the judge reads it from $ATRIS_CAMPAIGN_HOLDOUT');
   console.log('        [--lead <member>]   the member who manages it for you; it plans the work unless --owner names someone else');
@@ -1101,4 +1102,37 @@ function campaignCommand(args = [], deps = {}) {
   return ctx.fail(`unknown verb ${verb}. Verbs: ${Object.keys(VERBS).join(', ')}. To start a campaign, write the goal as a sentence: atris campaign "<goal>" [--judge "<cmd>"]`);
 }
 
-module.exports = { campaignCommand, renderShow, runJudgeCommand };
+// A goal sentence said to a member in chat: "start a campaign to <goal>",
+// "run a campaign for <goal>", "campaign: <goal>". Returns the goal, or ''
+// when the words ask for no campaign.
+const CHAT_GOAL = /^\s*(?:please\s+|can\s+you\s+|could\s+you\s+)?(?:(?:start|run|begin|open|lead|set\s+up|kick\s+off)\s+(?:me\s+)?a\s+(?:new\s+)?campaign|(?:new\s+)?campaign)\s*(?:[:,-]\s*|\s+(?:to|for|on|that|so\s+that|until)\s+)(\S[\s\S]*)$/i;
+
+function goalFromChat(words) {
+  const match = CHAT_GOAL.exec(String(words || '').replace(/\s+/g, ' '));
+  return match ? match[1].trim().replace(/[.!?]+$/, '') : '';
+}
+
+// The member takes the goal, drafts a judge that fails today on its own
+// engine, and starts the campaign with itself as lead. Nothing runs yet: the
+// campaign waits on the feed for the person to watch, talk to or run.
+// Returns null when the words ask for no campaign, else { goal, id, code }.
+async function campaignFromChat(member, words, deps = {}) {
+  const goal = goalFromChat(words);
+  if (!goal) return null;
+  let store = deps.store;
+  if (!store) {
+    moveToCheckoutRoot(false);
+    store = openCampaignStore(process.cwd());
+  }
+  const before = new Set(store.campaignIds());
+  const code = await campaignCommand(['new', goal, '--lead', member, '--as', member, '--yes'], { ...deps, store });
+  const id = store.campaignIds().find((known) => !before.has(known)) || null;
+  if (code === 0 && id) {
+    console.log(`\n${member} leads it. Watch it: atris feed cards`);
+    console.log(`Talk to ${member} about it: atris feed talk campaign:${id} "<your words>"`);
+    console.log(`Start the work: atris campaign run ${id}`);
+  }
+  return { goal, id, code };
+}
+
+module.exports = { campaignCommand, campaignFromChat, renderShow, runJudgeCommand };

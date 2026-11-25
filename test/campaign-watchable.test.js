@@ -6,10 +6,12 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
-const { campaignCommand } = require('../commands/campaign');
-const { closeCampaignStores, createMemoryStore, getCampaign, openCampaignStore } = require('../lib/campaign-store');
+const { campaignCommand, campaignFromChat } = require('../commands/campaign');
+const { closeCampaignStores, createMemoryStore, getCampaign, listCampaigns, openCampaignStore } = require('../lib/campaign-store');
 const feed = require('../lib/feed-core');
 const decisionFeed = require('../commands/decision-feed');
 const { project } = require('./helpers/feed-project');
@@ -524,4 +526,101 @@ test('talking on the campaign card reaches the lead', async (t) => {
   const handed = await feed.talk(ctx.root, cardId, 'Who has this?', { env: ctx.env, deps: ctx.deps });
   assert.equal(handed.lead, 'builder');
   assert.match(ctx.turns[2].prompt, /^You are builder, the member who leads this campaign/);
+});
+
+// ------------------------------------------- a lead starts one from chat
+
+test('a lead can start a campaign from a goal sentence in chat', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'campaign-chat-'));
+  const before = process.cwd();
+  t.after(() => {
+    process.chdir(before);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  for (const member of ['investing-lead', 'builder']) {
+    fs.mkdirSync(path.join(dir, 'atris', 'team', member), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'team', member, 'MEMBER.md'), `# ${member}\n`);
+  }
+  process.chdir(dir);
+
+  const store = createMemoryStore({ origin: 'laptop' });
+  const asked = [];
+  const judgeScript = 'echo "ℹ pass 0"\necho "ℹ fail 3"\nexit 1';
+  let draft = JSON.stringify({ title: 'Paper account trades by Friday', judge_script: judgeScript, why: 'counts the three trades the paper account must place', seats: ['builder'] });
+  const loopDeps = { ask: async (root, view, prompt) => { asked.push({ owner: view.owner, prompt }); return { ok: true, engine: 'fake', text: draft }; } };
+  const chat = async (member, words) => {
+    const lines = [];
+    const saved = { log: console.log, error: console.error };
+    console.log = (line) => lines.push(String(line));
+    console.error = (line) => lines.push(String(line));
+    try {
+      // The real judge runs here: the drafted script must truly fail today.
+      const result = await campaignFromChat(member, words, { store, loopDeps });
+      return { result, out: lines.join('\n') };
+    } finally {
+      console.log = saved.log;
+      console.error = saved.error;
+    }
+  };
+
+  // Ordinary chat starts nothing.
+  assert.equal((await chat('investing-lead', 'How is the paper account doing today?')).result, null);
+  assert.equal((await chat('investing-lead', 'I read about a campaign to plant trees')).result, null);
+  assert.equal(listCampaigns(store).length, 0);
+  assert.equal(asked.length, 0);
+
+  // A goal sentence in chat: the lead drafts the judge and starts the campaign as its lead.
+  const { result, out } = await chat('investing-lead', 'Start a campaign to get the paper account placing three trades by Friday.');
+  assert.equal(result.code, 0, out);
+  assert.equal(result.goal, 'get the paper account placing three trades by Friday');
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].owner, 'investing-lead', 'the lead drafts the judge on its own engine');
+  assert.match(asked[0].prompt, /Goal: get the paper account placing three trades by Friday/);
+
+  const views = listCampaigns(store);
+  assert.equal(views.length, 1);
+  const view = views[0];
+  assert.equal(view.id, result.id);
+  assert.equal(view.title, 'Paper account trades by Friday');
+  assert.equal(view.lead, 'investing-lead');
+  assert.equal(view.owner, 'investing-lead');
+  assert.equal(view.created_from, 'atris campaign start by investing-lead');
+  assert.deepEqual(view.seats.map((seat) => seat.member), ['builder']);
+
+  // The judge is a real script in the project, and it fails today.
+  assert.equal(view.judge, `sh atris/campaigns/${view.id}/judge.sh`);
+  assert.match(fs.readFileSync(path.join(dir, 'atris', 'campaigns', view.id, 'judge.sh'), 'utf8'), /ℹ fail 3/);
+  assert.equal(view.last_judge.passed, false);
+  assert.equal(view.answer.text, 'pass 0, fail 3');
+  assert.notEqual(view.state, 'done');
+  assert.equal(view.missions.length, 0, 'starting from chat runs no work yet');
+
+  // The chat says who leads it and how to watch and talk.
+  assert.match(out, /investing-lead leads it\. Watch it: atris feed cards/);
+  assert.match(out, new RegExp(`atris feed talk campaign:${view.id} `));
+
+  // The other ways of saying it, and another member leading its own.
+  for (const words of ['campaign: every screen has a dark mode', 'please run a campaign for faster first paint', 'Can you kick off a new campaign so that the report sends itself']) {
+    draft = JSON.stringify({ title: words.slice(-24), judge_script: judgeScript, why: 'not met yet' });
+    const next = await chat('builder', words);
+    assert.equal(next.result.code, 0, next.out);
+    assert.equal(getCampaign(store, next.result.id).lead, 'builder');
+  }
+  assert.equal(listCampaigns(store).length, 4);
+
+  // A judge that already passes today starts nothing, and the lead says why.
+  draft = JSON.stringify({ title: 'Already true', judge_script: 'echo "ℹ pass 1"\necho "ℹ fail 0"\nexit 0', why: 'nothing' });
+  const refused = await chat('investing-lead', 'start a campaign to keep the lights on');
+  assert.equal(refused.result.code, 1);
+  assert.equal(refused.result.id, null);
+  assert.match(refused.out, /already passes/);
+  assert.equal(listCampaigns(store).length, 4);
+
+  // The same path as one command, for a member working from a terminal.
+  draft = JSON.stringify({ title: 'Statements reconcile nightly', judge_script: judgeScript, why: 'not met yet' });
+  const typed = await command(store, ['new', 'statements reconcile every night', '--lead', 'investing-lead', '--yes', '--json'], { actor: 'investing-lead', loopDeps, runJudge: undefined });
+  assert.equal(typed.code, 0, typed.err);
+  const made = JSON.parse(typed.out.split('\n').pop());
+  assert.equal(made.campaign.lead, 'investing-lead');
+  assert.equal(made.draft.lead, 'investing-lead');
 });
