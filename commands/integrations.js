@@ -1151,15 +1151,9 @@ async function slackSend(channel, textParts) {
     process.exit(1);
   }
 
-  const token = await getAuthToken();
-
   console.log(`Sending to ${target}...`);
 
-  const result = await apiRequestJson('/integrations/slack/me/send', {
-    method: 'POST',
-    token,
-    body: { channel: target, text },
-  });
+  const result = await require('../lib/slack-send').send(target, text);
 
   if (!result.ok) {
     console.error(`Error: ${result.error || 'Failed to send'}`);

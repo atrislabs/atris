@@ -252,7 +252,7 @@ test('emit: ideas go through the propose rules; progress and results only from t
   const accept = feed.listCards(ctx.root, { env: ctx.env }).cards.find((c) => c.source.id === idea.card.source.id && /:accept$/.test(c.id));
   assert.ok(accept && accept.needs_decision);
   assert.equal(accept.proof.status, 'unverified', 'no receipt, so not verified');
-  assert.deepEqual(team.readEvents(ctx.root).map((e) => e.type), ['idea', 'progress', 'result']);
+  assert.deepEqual(team.readEvents(ctx.root).map((e) => e.type), ['idea', 'decision', 'progress', 'result']);
   assert.equal(done.event.member, 'scout');
 });
 
