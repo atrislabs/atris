@@ -328,6 +328,95 @@ test('element: a person\'s task for an outside helper is ready to claim, and a h
   assert.match(JSON.parse(late.stdout).error.message, /codex is not the one doing this work/);
 });
 
+test('element questions wait for a person, preserve the hold and keep their history', async (t) => {
+  const ctx = project(t);
+  const agent = { cwd: ctx.root, env: ctx.agentEnv, deps: ctx.deps };
+  const person = { cwd: ctx.root, env: ctx.env, deps: ctx.deps };
+  await captureRun(['connect', '--as', 'codex', '--json'], agent);
+  await captureRun(['connect', '--as', 'devin', '--json'], agent);
+  const task = JSON.parse((await captureRun(['task', 'Check the page title', '--to', 'codex', '--json'], person)).stdout);
+  await captureRun(['claim', task.card_id, '--as', 'codex', '--json'], agent);
+  assert.equal((await captureRun(['ask', task.card_id, '--as', 'devin', 'Which title?', '--json'], agent)).code, 1);
+  const asked = await captureRun(['ask', task.card_id, '--as', 'codex', 'Which title should I use?', '--json'], agent);
+  assert.equal(asked.code, 0, asked.stdout);
+  assert.match((await captureRun(['ask', task.card_id, '--as', 'codex', 'Another question?', '--json'], agent)).stdout, /Which title should I use/);
+  const ownerView = JSON.parse((await captureRun(['--json'], person)).stdout);
+  assert.equal(ownerView.focus.needs_decision, true);
+  assert.equal(ownerView.focus.why, 'Which title should I use?');
+  assert.equal((await captureRun(['yes', task.card_id, '--json'], person)).code, 1);
+  const leases = path.join(ctx.root, '.atris', 'state', 'feed', 'leases.json');
+  const data = JSON.parse(fs.readFileSync(leases, 'utf8'));
+  data[task.card_id].expires_at_ms = Date.now() - 1000;
+  fs.writeFileSync(leases, JSON.stringify(data));
+  assert.match((await captureRun(['claim', task.card_id, '--as', 'devin', '--json'], agent)).stdout, /waiting for the owner's answer/);
+  room.reply(ctx.root, task.card_id, 'I am checking too', { as: 'devin', env: ctx.agentEnv });
+  assert.equal(JSON.parse((await captureRun(['ask', task.card_id, '--as', 'codex', '--answer', '--json'], agent)).stdout).ask.answer, null);
+  assert.equal((await captureRun(['talk', task.card_id, 'Use the shorter title', '--json'], person)).code, 0);
+  const polled = JSON.parse((await captureRun(['ask', task.card_id, '--as', 'codex', '--answer', '--json'], agent)).stdout);
+  assert.equal(polled.ask.answer, 'Use the shorter title');
+  assert.ok(polled.ask.answered_at);
+  const again = JSON.parse((await captureRun(['claim', task.card_id, '--as', 'codex', '--json'], agent)).stdout);
+  assert.equal(again.handoff.ask.answer, 'Use the shorter title');
+  const receipt = JSON.parse((await captureRun(['receipt', task.card_id, '--json'], agent)).stdout);
+  assert.equal(receipt.asks.length, 1);
+  assert.equal(receipt.asks[0].answer, 'Use the shorter title');
+});
+
+test('element redirects work with history while preserving owner permissions', async (t) => {
+  const ctx = project(t);
+  const agent = { cwd: ctx.root, env: ctx.agentEnv, deps: ctx.deps };
+  const person = { cwd: ctx.root, env: ctx.env, deps: ctx.deps };
+  await captureRun(['connect', '--as', 'codex', '--json'], agent);
+  await captureRun(['connect', '--as', 'devin', '--json'], agent);
+  const task = JSON.parse((await captureRun(['task', 'Check the footer links', '--to', 'codex', '--json'], person)).stdout);
+  await captureRun(['claim', task.card_id, '--as', 'codex', '--json'], agent);
+  await captureRun(['progress', task.card_id, '--as', 'codex', 'Found two old links'], agent);
+  assert.equal((await captureRun(['redirect', task.card_id, '--as', 'devin', '--to', 'writer', '--json'], agent)).code, 1);
+  assert.equal((await captureRun(['redirect', task.card_id, '--as', 'codex', '--to', 'codex', '--json'], agent)).code, 1);
+  const passed = await captureRun(['redirect', task.card_id, '--as', 'codex', '--to', 'devin', '--note', 'They know this page', '--json'], agent);
+  assert.equal(passed.code, 0, passed.stdout);
+  const got = JSON.parse((await captureRun(['claim', task.card_id, '--as', 'devin', '--json'], agent)).stdout);
+  assert.deepEqual(got.handoff.passed_on, { from: 'codex', note: 'They know this page', progress: ['Found two old links'] });
+  const receipt = JSON.parse((await captureRun(['receipt', task.card_id, '--json'], agent)).stdout);
+  assert.equal(receipt.redirects[0].to, 'devin');
+  const localTask = JSON.parse((await captureRun(['task', 'Check the help page', '--to', 'codex', '--json'], person)).stdout);
+  const local = JSON.parse((await captureRun(['redirect', localTask.card_id, '--to', 'writer', '--json'], person)).stdout);
+  assert.equal(local.started, true, JSON.stringify(local));
+  const idea = feed.proposeCard(ctx.root, { as: 'codex', title: 'Check the pricing page', why: 'Keep prices clear', env: ctx.agentEnv });
+  assert.equal((await captureRun(['redirect', idea.card.id, '--to', 'devin', '--json'], person)).code, 0);
+  assert.match((await captureRun(['claim', idea.card.id, '--as', 'devin', '--json'], agent)).stdout, /waits for the owner's yes/);
+  const protectedTask = JSON.parse((await captureRun(['task', 'Refund the last order', '--to', 'codex', '--lane', 'money', '--json'], person)).stdout);
+  assert.equal((await captureRun(['redirect', protectedTask.card_id, '--to', 'devin', '--json'], person)).code, 0);
+  assert.match((await captureRun(['claim', protectedTask.card_id, '--as', 'devin', '--json'], agent)).stdout, /waits for the owner's yes/);
+});
+
+test('element completion offers only the next claimable card', async (t) => {
+  const ctx = project(t);
+  const agent = { cwd: ctx.root, env: ctx.agentEnv, deps: ctx.deps };
+  const person = { cwd: ctx.root, env: ctx.env, deps: ctx.deps };
+  await captureRun(['connect', '--as', 'codex', '--json'], agent);
+  const first = JSON.parse((await captureRun(['task', 'Check the first page', '--to', 'codex', '--json'], person)).stdout);
+  await captureRun(['task', 'Refund the first order', '--to', 'codex', '--lane', 'money', '--json'], person);
+  const next = JSON.parse((await captureRun(['task', 'Check the second page', '--to', 'codex', '--json'], person)).stdout);
+  await captureRun(['claim', first.card_id, '--as', 'codex', '--json'], agent);
+  const done = JSON.parse((await captureRun(['complete', first.card_id, '--as', 'codex', '--proof', 'checked the page', '--json'], agent)).stdout);
+  assert.equal(done.next_card.card, next.card_id);
+  assert.match(done.next_card.claim, /element claim/);
+  assert.equal(JSON.parse((await captureRun(['claim', '--as', 'codex', '--json'], agent)).stdout).card.id, next.card_id);
+});
+
+test('element connect includes personal lessons and live missions', async (t) => {
+  const ctx = project(t);
+  const agent = { cwd: ctx.root, env: ctx.agentEnv, deps: ctx.deps };
+  await captureRun(['connect', '--as', 'codex', '--json'], agent);
+  fs.writeFileSync(path.join(ctx.root, 'atris', 'team', 'codex', 'lessons.md'), '# Lessons\n- Check the footer\n');
+  const joined = JSON.parse((await captureRun(['connect', '--as', 'codex', '--json'], agent)).stdout);
+  assert.deepEqual(joined.context.your_lessons, ['Check the footer']);
+  assert.ok(Array.isArray(joined.context.missions));
+  assert.match(joined.commands.ask, /element ask/);
+  assert.match(joined.commands.redirect, /element redirect/);
+});
+
 test('element tail emits NDJSON events and element curve computes sparkline, loss and bottleneck', async (t) => {
   const ctx = project(t);
   ops.postIdempotent(ctx.root, { text: 'Shipped headless Element', env: ctx.env });
