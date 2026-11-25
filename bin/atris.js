@@ -617,7 +617,7 @@ function showHelpAll() {
   console.log('  log        - Add ideas to inbox (`atris log "note"`; `log --repl` for the editor; see also `wish`)');
   console.log('  wish       - Say one plain sentence, then Atris asks only for gaps or delegates it');
   console.log('  now        - Show atris/now.md, the current operating truth');
-  console.log('  99         - focus, meditation, health, and optional sync');
+  console.log('  99         - focus, meditation, health, friends and the board, and optional sync');
   console.log('  goal       - goal, distance, and what moved today (alias: wtf)');
   console.log('  script     - Start something from zero with a guide: list, start newsletter or service, status, next, done, card');
   console.log('  founder    - show weekly commit and completed-task improvement from receipts');
