@@ -663,6 +663,7 @@ function showHelpAll() {
   console.log('    atris autoland tick   # second check runs, task lands');
   console.log('  mission    - Goal + loop + member owner + verifier + receipt; --budget quick|long|deep sets bounded tiers');
   console.log('  decide     - Answer open mission asks and send the decision to the next tick');
+  console.log('  timestone  - Compare the paths of a hard decision, choose one, record what happened (scout, run, choose, result, outcome)');
   console.log('  campaign   - Long-running goals with a judge, a budget, and members in seats');
   console.log('  release    - Tag release, bump version, create GitHub release, draft /launch; atris release preflight before a v* tag');
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
@@ -2547,6 +2548,11 @@ if (command === 'guide') {
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'film') {
   Promise.resolve().then(() => require('../commands/film').filmCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'timestone') {
+  // Compare the paths of a hard decision; v1 runs the engine in the local Atris backend.
+  Promise.resolve().then(() => require('../commands/timestone').timestoneCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'balance') {
