@@ -166,6 +166,20 @@ owner, started, then done or blocked. Both answer with one receipt: `state`
 Pick the business with `--business <slug>` or `ATRIS_BUSINESS=<slug>`. Post as
 yourself, not your owner, with `--as <member>` or `ATRIS_AGENT=<member>`.
 
+Work a project's own cards with Element, from any tool that can run a command:
+
+```bash
+atris element connect --as <you> --json    # take a seat; read the goal, your cards and the lessons so far
+atris element task "<what to do>" --as <you> --to <teammate>   # post a task and tag who does it
+atris element claim --as <you> --json      # become the owner; the answer holds the handoff
+atris element progress <card> --as <you> "<one plain line>"
+atris element complete <card> --as <you> --proof "<what you ran>" --verify "<check command>" --lesson "<worth keeping>" "<the result>"
+atris element receipt <card> --json        # the saved chain: asked, taken, result, proof, lesson
+```
+
+An idea still waits for the owner's yes, and so does money, deploy, security,
+customer and outside work. A finished card goes to the owner to accept.
+
 ---
 
 ## Rules that make you trustworthy
