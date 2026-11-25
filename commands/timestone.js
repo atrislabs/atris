@@ -31,7 +31,7 @@ function showTimestoneHelp(log = console.log) {
     '  atris timestone sync-campaigns      list campaigns that finished and still need their outcome recorded',
     '  atris timestone outcome <id> --result worked|partly|failed --what "..." --by <name>',
     '',
-    'Runs on this computer with the Atris backend ($ATRIS_BACKEND_DIR, this repo, or ~/arena/atrisos-backend).',
+    'Runs on this computer with the Atris backend ($ATRIS_BACKEND_DIR, this repo, or the arena folder in your home).',
     `scout and run use "${DEFAULT_MODEL_CMD}" when you name no model and claude is installed.`,
     'Every verb takes --json. Add --help after a verb for all its options.',
   ].forEach((line) => log(line));
@@ -52,7 +52,7 @@ function repoWithEngine(cwd, exists) {
   }
 }
 
-// $ATRIS_BACKEND_DIR, else the repo you are in, else ~/arena/atrisos-backend.
+// $ATRIS_BACKEND_DIR, else the repo you are in, else the arena folder in your home.
 // A work copy has no venv of its own, so it borrows the main copy's Python.
 function findEngine({ env = process.env, cwd = process.cwd(), home = os.homedir(), exists = fs.existsSync } = {}) {
   const mainCopy = path.join(home, 'arena', 'atrisos-backend');
@@ -67,7 +67,7 @@ function findEngine({ env = process.env, cwd = process.cwd(), home = os.homedir(
     const python = pythonFor(root);
     return python ? { root, python, from: 'ATRIS_BACKEND_DIR' } : { error: NO_ENGINE };
   }
-  for (const [root, from] of [[repoWithEngine(cwd, exists), 'this repo'], [mainCopy, '~/arena/atrisos-backend']]) {
+  for (const [root, from] of [[repoWithEngine(cwd, exists), 'this repo'], [mainCopy, 'your arena folder']]) {
     if (!hasEngineScript(root, exists)) continue;
     const python = pythonFor(root);
     if (python) return { root, python, from };
