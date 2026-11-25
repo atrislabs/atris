@@ -13,6 +13,7 @@ const path = require('node:path');
 const { campaignCommand, campaignFromChat } = require('../commands/campaign');
 const { closeCampaignStores, createMemoryStore, getCampaign, listCampaigns, openCampaignStore } = require('../lib/campaign-store');
 const feed = require('../lib/feed-core');
+const room = require('../lib/feed-room');
 const decisionFeed = require('../commands/decision-feed');
 const { project } = require('./helpers/feed-project');
 const { cloudLink, syncCampaign } = require('../lib/campaign-sync');
@@ -449,6 +450,17 @@ test("an ask becomes a question card and a person's answer closes it", async (t)
   assert.equal(talked.code, 0, talked.out);
   assert.match(talked.out, /answered\. the campaign has your answer: Use the paper account first\./);
   assert.deepEqual(getCampaign(ctx.store, 'cmp-ask').asks, []);
+
+  // A comment is how a screen answers a question card. A team member's comment leaves it open; the person's closes it.
+  const fourth = JSON.parse((await ctx.campaign(['ask', 'cmp-ask', 'Cap each order at ten dollars?', '--json'], { actor: 'mission-lead' })).out).campaign.asks[0].id;
+  const fourthCard = `campaign:cmp-ask:ask:${fourth}`;
+  room.reply(ctx.root, fourthCard, 'I think ten is right.', { as: 'builder', kind: 'agree', env: ctx.agentEnv, deps: ctx.deps });
+  assert.equal(getCampaign(ctx.store, 'cmp-ask').asks.length, 1);
+  const commented = room.reply(ctx.root, fourthCard, 'Yes, cap it at ten.', { env: ctx.env, deps: ctx.deps });
+  assert.equal(commented.answered, true);
+  assert.equal(commented.card.id, 'campaign:cmp-ask');
+  assert.deepEqual(getCampaign(ctx.store, 'cmp-ask').asks, []);
+  assert.equal(ctx.store.read('cmp-ask').filter((event) => event.type === 'ask_answered').pop().data.answer, 'Yes, cap it at ten.');
 
   // And campaign answer from a person's own session closes one and takes its card away.
   const third = JSON.parse((await ctx.campaign(['ask', 'cmp-ask', 'Go live Monday?', '--json'], { actor: 'mission-lead' })).out).campaign.asks[0].id;
