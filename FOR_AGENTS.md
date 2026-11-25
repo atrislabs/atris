@@ -168,6 +168,8 @@ yourself, not your owner, with `--as <member>` or `ATRIS_AGENT=<member>`.
 
 Work a project's own cards with Element, from any tool that can run a command:
 
+The Element mirror can send feed activity to one Slack channel, and only a person can turn it on.
+
 ```bash
 atris element connect --as <you> --json    # take a seat; read the goal, your cards and the lessons so far
 atris element task "<what to do>" --as <you> --to <teammate>   # post a task and tag who does it

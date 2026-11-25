@@ -14,11 +14,11 @@ const swarm = require('../lib/element-swarm');
 const decisionFeed = require('./decision-feed');
 
 const ELEMENT_ACTIONS = new Set([
-  'next', 'yes', 'no', 'pass', 'talk', 'post', 'wait', 'tail', 'connect', 'task', 'claim', 'ask', 'redirect', 'progress', 'complete', 'receipt', 'curve', 'cmd', 'run', 'schedule', 'inspect', 'help',
+  'mirror', 'next', 'yes', 'no', 'pass', 'talk', 'post', 'wait', 'tail', 'connect', 'task', 'claim', 'ask', 'redirect', 'progress', 'complete', 'receipt', 'curve', 'cmd', 'run', 'schedule', 'inspect', 'help',
 ]);
 
 const VALUE_FLAGS = new Set([
-  '--filter', '--note', '--limit', '--cursor', '--since', '--as', '--member', '--engine',
+  '--channel', '--filter', '--note', '--limit', '--cursor', '--since', '--as', '--member', '--engine',
   '--id', '--after', '--timeout', '--interval', '--lease', '--wait', '--proof', '--file', '--window',
   '--description', '--every', '--to', '--now', '--port', '--why', '--detail', '--lane', '--lesson', '--verify',
 ]);
@@ -56,6 +56,8 @@ const HELP = [
   '       atris element run /<name> [<card>] [--as <member>] [--json] run a registered workflow and post its receipt into the thread',
   '       atris element schedule add --every 1h --to <member> "<msg>" | list | remove <id> | tick',
   '                                                                   repeating board messages (cron as a message to an agent)',
+  '       atris element mirror on --channel <channel> | off | status | tick [--dry] [--limit 20]',
+  '                                                                   mirror feed activity to one channel, only when a person turns it on',
   '       atris element inspect [--port 4100] [--no-open]             open the local Element web viewer on 127.0.0.1',
   '       atris element say | more | members | doctor | setup | theme all decision-feed commands work here too',
   '',
@@ -201,6 +203,25 @@ async function run(args = [], { cwd = process.cwd(), env = process.env, deps = {
   }
 
   try {
+    if (sub === 'mirror') {
+      const mirror = require('../lib/element-mirror');
+      const action = positional[1] || 'status';
+      let out;
+      if (action === 'on') out = mirror.on(root, flags.channel, env);
+      else if (action === 'off') out = mirror.off(root);
+      else if (action === 'status') out = mirror.status(root);
+      else if (action === 'tick') out = await mirror.tick(root, { dry: flags.dry === true, limit: flags.limit === undefined ? 20 : flags.limit, deps });
+      else throw new feed.FeedError(400, 'usage: atris element mirror on --channel <channel> | off | status | tick');
+      if (json) console.log(JSON.stringify(out, null, 2));
+      else if (action === 'tick') {
+        for (const line of out.lines) console.log(line);
+        if (out.error) console.log(out.error);
+        else if (!out.on && !out.dry) console.log('the mirror is off.');
+        else console.log(`${out.left} lines waiting. ${out.held_back} held back.`);
+      } else console.log(`mirror ${out.on ? 'on' : 'off'}${out.channel ? ` for ${out.channel}` : ''}${action === 'status' ? `, ${out.waiting} lines waiting, last sent ${out.last_sent_at || 'never'}` : ''}.`);
+      return out.ok === false ? 1 : 0;
+    }
+
     if (sub === 'next') {
       const out = focusPayload(root, { filter: flags.filter || 'all', env });
       if (json) console.log(JSON.stringify(out, null, 2));
