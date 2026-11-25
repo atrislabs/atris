@@ -380,9 +380,15 @@ test('the campaign card lists each step and who did it', async (t) => {
   assert.equal(line(after[after.length - 1]), 'state | keshav | paused the campaign');
   assert.equal(after[after.length - 1].who_type, 'person');
 
+  // A session that never named its member reads as a team member, never as a machine word.
+  await ctx.campaign(['resume', 'cmp-steps'], { actor: 'agent' });
+  const unnamed = ctx.campaignCards().find((item) => item.id === 'campaign:cmp-steps').steps.pop();
+  assert.equal(line(unnamed), 'state | a team member | resumed the campaign');
+  await ctx.campaign(['pause', 'cmp-steps']);
+
   // The terminal list shows the newest steps under the card, newest at the bottom.
   const listed = (await feedCommand(ctx, ['cards'])).out;
-  assert.match(listed, /builder \(agy\): worked on: Write the first named test/);
+  assert.match(listed, /builder: asked you: May I place a real order\?\n\s+keshav: paused the campaign\n\s+a team member: resumed the campaign/);
   assert.ok(listed.indexOf('judge: judge read 3 of 21') < listed.indexOf('keshav: paused the campaign'));
 });
 
