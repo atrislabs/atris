@@ -268,8 +268,11 @@ test('element claim keeps what is the owner\'s: ideas, protected work, another h
   assert.match(JSON.parse(waits.stdout).error.message, /waits for their yes/);
   fs.writeFileSync(path.join(ctx.root, 'atris', '.config'), JSON.stringify({ feed: { default_engine: 'codex' } }));
 
-  // A seat the owner switched off takes nothing, and connect does not switch it back on.
+  // A seat the owner switched off takes nothing, posts nothing, and connect does not switch it back on.
   require('../lib/member-switches').setMemberAwake('devin', false, ctx.root);
+  const mute = await captureRun(['task', 'Sort the footer links', '--as', 'devin', '--to', 'codex', '--json'], o);
+  assert.equal(mute.code, 1);
+  assert.match(JSON.parse(mute.stdout).error.message, /devin is off, so it cannot post a task/);
   const off = await captureRun(['claim', tagged.card_id, '--as', 'devin', '--json'], o);
   assert.equal(off.code, 1);
   assert.match(JSON.parse(off.stdout).error.message, /devin is off/);
