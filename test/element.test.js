@@ -360,6 +360,13 @@ test('element questions wait for a person, preserve the hold and keep their hist
   const receipt = JSON.parse((await captureRun(['receipt', task.card_id, '--json'], agent)).stdout);
   assert.equal(receipt.asks.length, 1);
   assert.equal(receipt.asks[0].answer, 'Use the shorter title');
+  // The answer hands the card back: the helper reports and finishes as before, and nothing still waits on the person.
+  assert.equal((await captureRun(['progress', task.card_id, '--as', 'codex', 'Using the shorter title'], agent)).code, 0);
+  const done = await captureRun(['complete', task.card_id, '--as', 'codex', '--proof', 'Read the page and the title is short', '--json'], agent);
+  assert.equal(done.code, 0, done.stdout);
+  const after = JSON.parse((await captureRun(['receipt', task.card_id, '--json'], agent)).stdout);
+  assert.equal(after.state, 'waiting for the owner to accept');
+  assert.equal(after.asks.length, 1);
 });
 
 test('element redirects work with history while preserving owner permissions', async (t) => {
