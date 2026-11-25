@@ -843,7 +843,8 @@ async function driveLoop(args, ctx, verb, view) {
     store: ctx.store,
     log: ctx.asJson ? () => {} : (line) => console.log(line),
     judge: (command) => ctx.judge(command, JUDGE_TIMEOUT_SECONDS, view.id),
-    lessons: (id) => require('../lib/campaign-cadence').readLessons(process.cwd(), id),
+    // Lessons from earlier rounds, then what the person said on the campaign's feed card.
+    lessons: (id) => [require('../lib/campaign-cadence').readLessons(process.cwd(), id), require('../lib/campaign-feed').wordsForPlanning(ctx.store, id)].filter(Boolean).join('\n'),
     brief: (id) => require('../lib/campaign-loop').readBrief(process.cwd(), id),
     ...(sync ? { sync } : {}),
     ...(ctx.loopDeps || {}),

@@ -151,9 +151,12 @@ const HELP = [
 function textCard(card) {
   const note = card.kind === 'post' || card.kind === 'ask';
   const waiting = card.source.type === 'session';
-  const mark = waiting ? 'waiting' : note ? card.kind : card.needs_decision ? 'decide' : card.state;
-  const lines = [`${mark.padEnd(8)}${card.title}`];
-  if (waiting) lines.push(`        ${card.body}`);
+  const campaign = card.source.type === 'campaign' ? card.campaign : null;
+  const mark = waiting ? 'waiting' : note ? card.kind : card.needs_decision ? (campaign ? 'answer' : 'decide') : campaign ? 'campaign' : card.state;
+  const lines = [`${mark.length < 8 ? mark.padEnd(8) : `${mark} `}${card.title}`];
+  if (waiting || campaign) lines.push(`        ${card.body}`);
+  // A campaign's card carries what happened last, newest at the bottom.
+  if (campaign && Array.isArray(card.steps)) for (const step of card.steps.slice(-5)) lines.push(`          ${step.who}${step.engine ? ` (${step.engine})` : ''}: ${step.text}`);
   if (card.why) lines.push(`        why: ${card.why}`);
   if (card.kind === 'result' || card.proof.status !== 'none') lines.push(`        proof: ${card.proof.status}`);
   if (card.run && card.run.status === 'queued') lines.push(`        waiting to start, number ${card.run.position} in line`);
@@ -222,6 +225,10 @@ function printText(command, out, { streamed = false } = {}) {
     if (!out.messages.length) console.log('no messages yet');
     return;
   }
+  if (command === 'decide' && out.ask_id) {
+    console.log(out.answered ? `answered. the campaign has your answer: ${out.answer}` : 'not closed: only a person can answer this.');
+    return;
+  }
   if (command === 'decide') {
     const outcome = out.outcome || {};
     const said = out.decision ? out.decision.choice : '';
@@ -242,6 +249,10 @@ function printText(command, out, { streamed = false } = {}) {
     for (const reply of out.replies) console.log(`${reply.author.name}: ${reply.text}`);
     if (!out.replies.length) console.log('no comments yet');
     if (out.truncated) console.log(`(${out.reply_count + (out.dropped || 0) - out.replies.length} older comment(s) not shown)`);
+    return;
+  }
+  if (command === 'talk' && out.ask_id) {
+    printText('decide', out);
     return;
   }
   if (command === 'talk') {
@@ -430,7 +441,11 @@ async function run(args = [], context = {}) {
     } else if (sub === 'decide') {
       const [, card, choice] = positional;
       if (!card || !choice) throw new feed.FeedError(400, 'usage: atris feed decide <card> approve|dismiss [--note "<text>"]');
-      out = feed.decide(root, card, choice, { note: flags.note, env, deps });
+      // A campaign question answered here also reaches the campaign's cloud copy when it has one.
+      const campaigns = require('../lib/campaign-feed');
+      out = campaigns.isCardId(card) && choice === 'approve' && flags.note
+        ? await campaigns.answerAskSynced(root, card, flags.note, { env, deps })
+        : feed.decide(root, card, choice, { note: flags.note, env, deps });
     } else if (sub === 'pass') {
       // --cards '[{"id": "...", "seen": false}]' lets the screen say which cards were never on screen.
       let items = positional.slice(1);

@@ -6,9 +6,13 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('node:path');
 
 const { campaignCommand } = require('../commands/campaign');
-const { createMemoryStore, getCampaign } = require('../lib/campaign-store');
+const { closeCampaignStores, createMemoryStore, getCampaign, openCampaignStore } = require('../lib/campaign-store');
+const feed = require('../lib/feed-core');
+const decisionFeed = require('../commands/decision-feed');
+const { project } = require('./helpers/feed-project');
 const { cloudLink, syncCampaign } = require('../lib/campaign-sync');
 const { chosenRunner } = require('../lib/campaign-loop');
 const { recordCampaignMissionStarted, recordCampaignTick } = require('../lib/campaign-missions');
@@ -224,4 +228,300 @@ test('run can use a chosen engine like agy or fable', async () => {
   assert.deepEqual(chosenRunner('auto'), { runner: 'auto', model: '' });
   // A name nobody knows goes through as written, so the mission start refuses it by name.
   assert.deepEqual(chosenRunner('no-such-engine'), { runner: 'no-such-engine', model: '' });
+});
+
+// ------------------------------------------------- the campaign's feed card
+
+// A scratch project with a team, its own feed and its own campaign store.
+function feedProject(t, members = ['mission-lead', 'builder']) {
+  const ctx = project(t, members);
+  const saved = process.env.ATRIS_CAMPAIGN_DB;
+  process.env.ATRIS_CAMPAIGN_DB = path.join(ctx.dir, 'campaigns.db');
+  ctx.env.ATRIS_CAMPAIGN_DB = process.env.ATRIS_CAMPAIGN_DB;
+  ctx.agentEnv.ATRIS_CAMPAIGN_DB = process.env.ATRIS_CAMPAIGN_DB;
+  ctx.store = openCampaignStore(ctx.root);
+  t.after(() => {
+    closeCampaignStores();
+    if (saved === undefined) delete process.env.ATRIS_CAMPAIGN_DB; else process.env.ATRIS_CAMPAIGN_DB = saved;
+  });
+  // The judge reads whatever the test sets next.
+  ctx.reading = { passed: false, exit: 1, summary: 'pass 0, fail 21', seconds: 0, reading: 0 };
+  ctx.campaign = (args, deps = {}) => command(ctx.store, args, { runJudge: () => ctx.reading, ...deps });
+  ctx.campaignCards = () => feed.listCards(ctx.root, { filter: 'all', limit: 100, env: ctx.env }).cards
+    .concat(feed.listCards(ctx.root, { filter: 'working', limit: 100, env: ctx.env }).cards)
+    .filter((card) => card.source.type === 'campaign')
+    .filter((card, index, all) => all.findIndex((other) => other.id === card.id) === index);
+  return ctx;
+}
+
+// What `atris feed <args>` prints.
+async function feedCommand(ctx, args, env = ctx.env) {
+  const lines = [];
+  const saved = { log: console.log, error: console.error };
+  console.log = (line) => lines.push(String(line));
+  console.error = (line) => lines.push(String(line));
+  try {
+    const code = await decisionFeed.run(args, { cwd: ctx.root, env, deps: ctx.deps, write: (text) => lines.push(String(text)) });
+    return { code, out: lines.join('\n') };
+  } finally {
+    console.log = saved.log;
+    console.error = saved.error;
+  }
+}
+
+test('a campaign keeps one feed card with its score', async (t) => {
+  const ctx = feedProject(t);
+  assert.deepEqual(ctx.campaignCards(), [], 'no campaign, no card');
+
+  const started = await ctx.campaign(['start', 'Take investing live', '--judge', 'npm test', '--lead', 'mission-lead', '--id', 'cmp-invest']);
+  assert.equal(started.code, 0, started.err);
+  let cards = ctx.campaignCards();
+  assert.equal(cards.length, 1, 'starting a campaign puts one card on the feed');
+  const first = cards[0];
+  assert.equal(first.id, 'campaign:cmp-invest');
+  assert.equal(first.title, 'Take investing live');
+  assert.equal(first.author.name, 'mission-lead');
+  assert.deepEqual(first.campaign.score, { passed: 0, total: 21, done: false, text: '0 of 21' });
+  assert.match(first.body, /^Score 0 of 21 · resting · led by mission-lead$/);
+
+  // Each judge reading changes that same card.
+  ctx.reading = { passed: false, exit: 1, summary: 'pass 7, fail 14', seconds: 0, reading: 7 / 21 };
+  assert.equal((await ctx.campaign(['judge', 'cmp-invest'])).code, 1);
+  cards = ctx.campaignCards();
+  assert.equal(cards.length, 1, 'a second reading never makes a second card');
+  assert.equal(cards[0].id, first.id);
+  assert.equal(cards[0].campaign.score.text, '7 of 21');
+  assert.match(cards[0].body, /^Score 7 of 21 · /);
+  assert.equal(cards[0].created_at, first.created_at, 'the card is as old as the campaign');
+  assert.equal(feed.readCard(ctx.root, first.id, { env: ctx.env }).campaign.score.text, '7 of 21');
+
+  // The list a person reads in the terminal shows it once, with the score.
+  const listed = await feedCommand(ctx, ['cards']);
+  assert.equal(listed.code, 0, listed.out);
+  assert.equal(listed.out.match(/Take investing live/g).length, 1);
+  assert.match(listed.out, /campaign\s+Take investing live\n\s+Score 7 of 21 · resting · led by mission-lead/);
+
+  // While missions run the card sits with the work in progress, still once.
+  ctx.store.append({ campaign_id: 'cmp-invest', type: 'mission_started', actor: 'builder', data: { mission_id: 'm-1', member: 'builder', objective: 'Wire the broker' } });
+  const moving = feed.listCards(ctx.root, { filter: 'working', env: ctx.env });
+  assert.deepEqual(moving.cards.map((card) => card.id), [first.id]);
+  assert.equal(moving.counts.working, 1);
+  assert.equal(ctx.campaignCards().length, 1);
+  assert.match(ctx.campaignCards()[0].body, /^Score 7 of 21 · working now · /);
+  ctx.store.append({ campaign_id: 'cmp-invest', type: 'mission_ended', actor: 'builder', data: { mission_id: 'm-1', outcome: 'kept', cost_usd: 0 } });
+
+  // A passing judge finishes the campaign on the same card.
+  ctx.reading = { passed: true, exit: 0, summary: 'pass 21, fail 0', seconds: 0, reading: 1 };
+  assert.equal((await ctx.campaign(['judge', 'cmp-invest'])).code, 0);
+  cards = ctx.campaignCards();
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].id, first.id);
+  assert.equal(cards[0].state, 'done');
+  assert.deepEqual(cards[0].campaign.score, { passed: 21, total: 21, done: true, text: '21 of 21' });
+  assert.match(cards[0].body, /^Score 21 of 21 · done · /);
+
+  // A second campaign gets its own card; the first still has exactly one.
+  ctx.reading = { passed: false, exit: 1, summary: 'still red', seconds: 0 };
+  await ctx.campaign(['start', 'Ship the scoreboard', '--judge', 'npm test', '--id', 'cmp-board']);
+  cards = ctx.campaignCards();
+  assert.deepEqual(cards.map((card) => card.id).sort(), ['campaign:cmp-board', 'campaign:cmp-invest']);
+  assert.equal(cards.find((card) => card.id === 'campaign:cmp-board').campaign.score.text, 'not passing yet');
+
+  // Nothing about a campaign card can be approved, passed or dismissed away.
+  assert.equal(cards[0].can_decide, false);
+  assert.throws(() => feed.decide(ctx.root, first.id, 'approve', { env: ctx.env }), /nothing to decide on a campaign card/);
+  assert.deepEqual(feed.passCards(ctx.root, [first.id], { env: ctx.env }).skipped, [first.id]);
+  assert.equal(feed.dismissCards(ctx.root, [first.id], { env: ctx.env }).skipped[0].id, first.id);
+  assert.equal(ctx.campaignCards().length, 2);
+});
+
+test('the campaign card lists each step and who did it', async (t) => {
+  const ctx = feedProject(t);
+  await ctx.campaign(['start', 'Take investing live', '--judge', 'npm test', '--lead', 'mission-lead', '--seat', 'builder', '--id', 'cmp-steps'], { actor: 'mission-lead' });
+  const missions = fakeMissions(ctx.store, 'cmp-steps');
+  const ran = await ctx.campaign(['run', 'cmp-steps', '--max-steps', '2', '--runner', 'agy'], { actor: 'mission-lead', loopDeps: missions.loopDeps });
+  assert.equal(ran.code, 0, ran.err);
+  ctx.reading = { passed: false, exit: 1, summary: 'pass 3, fail 18', seconds: 0, reading: 3 / 21 };
+  await ctx.campaign(['judge', 'cmp-steps'], { actor: 'mission-lead' });
+  await ctx.campaign(['ask', 'cmp-steps', 'May I place a real order?'], { actor: 'builder' });
+
+  const card = ctx.campaignCards().find((item) => item.id === 'campaign:cmp-steps');
+  const steps = card.steps;
+  const line = (step) => `${step.kind} | ${step.who}${step.engine ? ` on ${step.engine}` : ''} | ${step.text}`;
+  assert.deepEqual(steps.map(line), [
+    'start | mission-lead | started the campaign',
+    'judge | judge | judge read 0 of 21',
+    'mission | builder | planned: Write the first named test',
+    'plan | mission-lead on fake | planned the next missions',
+    'mission | builder on agy | started: Write the first named test',
+    'mission | builder on agy | worked on: Write the first named test',
+    'mission | builder | finished: Write the first named test (kept)',
+    'judge | judge | judge read 3 of 21',
+    'ask | builder | asked you: May I place a real order?',
+  ]);
+  // Newest last, and every step says when and who.
+  const times = steps.map((step) => Date.parse(step.at));
+  assert.deepEqual(times, times.slice().sort((a, b) => a - b));
+  for (const step of steps) {
+    assert.ok(step.who, `a step with nobody behind it: ${step.text}`);
+    assert.ok(['member', 'person', 'system'].includes(step.who_type));
+  }
+  assert.equal(steps.filter((step) => step.kind === 'mission').every((step) => step.mission_id), true);
+  assert.equal(card.steps_total, steps.length);
+  assert.deepEqual(card.progress, { text: 'builder: asked you: May I place a real order?', at: steps[steps.length - 1].at });
+  assert.equal(card.story[card.story.length - 1], 'builder: asked you: May I place a real order?');
+
+  // A person's own step is theirs by name, and it lands at the end.
+  await ctx.campaign(['pause', 'cmp-steps']);
+  const after = ctx.campaignCards().find((item) => item.id === 'campaign:cmp-steps').steps;
+  assert.equal(after.length, steps.length + 1);
+  assert.equal(line(after[after.length - 1]), 'state | keshav | paused the campaign');
+  assert.equal(after[after.length - 1].who_type, 'person');
+
+  // The terminal list shows the newest steps under the card, newest at the bottom.
+  const listed = (await feedCommand(ctx, ['cards'])).out;
+  assert.match(listed, /builder \(agy\): worked on: Write the first named test/);
+  assert.ok(listed.indexOf('judge: judge read 3 of 21') < listed.indexOf('keshav: paused the campaign'));
+});
+
+test("an ask becomes a question card and a person's answer closes it", async (t) => {
+  const ctx = feedProject(t);
+  await ctx.campaign(['start', 'Take investing live', '--judge', 'npm test', '--lead', 'mission-lead', '--id', 'cmp-ask']);
+  const asked = await ctx.campaign(['ask', 'cmp-ask', 'May I place a real order for ten dollars?', '--json'], { actor: 'mission-lead' });
+  const askId = JSON.parse(asked.out).campaign.asks[0].id;
+  const cardId = `campaign:cmp-ask:ask:${askId}`;
+
+  // The ask shows as a question waiting on the person, beside the campaign's own card.
+  let cards = ctx.campaignCards();
+  assert.deepEqual(cards.map((card) => card.id).sort(), ['campaign:cmp-ask', cardId].sort());
+  const question = cards.find((card) => card.id === cardId);
+  assert.equal(question.kind, 'question');
+  assert.equal(question.title, 'May I place a real order for ten dollars?');
+  assert.equal(question.author.name, 'mission-lead');
+  assert.equal(question.needs_decision, true);
+  assert.equal(feed.listCards(ctx.root, { env: ctx.env }).counts.needs_decision, 1);
+  assert.deepEqual(cards.find((card) => card.id === 'campaign:cmp-ask').campaign.open_asks, [cardId]);
+  assert.match(cards.find((card) => card.id === 'campaign:cmp-ask').body, /waiting on your answer/);
+  assert.match((await feedCommand(ctx, ['cards'])).out, /answer\s+May I place a real order for ten dollars\?/);
+
+  // A team member's session cannot answer it: not on the feed, not with campaign answer.
+  assert.throws(() => feed.decide(ctx.root, cardId, 'approve', { note: 'yes', env: ctx.agentEnv }), /Only a person can answer a campaign question/);
+  await assert.rejects(feed.talk(ctx.root, cardId, 'yes, go ahead', { env: ctx.agentEnv, deps: ctx.deps }), /Only a person can answer a campaign question/);
+  await assert.rejects(feed.talk(ctx.root, cardId, 'yes, go ahead', { as: 'mission-lead', env: ctx.env, deps: ctx.deps }), /Only a person can answer a campaign question/);
+  const byMember = await ctx.campaign(['answer', 'cmp-ask', askId, 'yes'], { actor: 'mission-lead' });
+  assert.match(byMember.out, /not closed: only a person can answer/);
+  assert.equal(getCampaign(ctx.store, 'cmp-ask').asks.length, 1);
+  assert.equal(ctx.campaignCards().some((card) => card.id === cardId), true, 'the question is still on the feed');
+
+  // A question takes words: a bare yes and a dismiss are both refused.
+  assert.throws(() => feed.decide(ctx.root, cardId, 'approve', { env: ctx.env }), /takes words/);
+  assert.throws(() => feed.decide(ctx.root, cardId, 'dismiss', { env: ctx.env }), /stays until you answer it/);
+  assert.equal(getCampaign(ctx.store, 'cmp-ask').asks.length, 1);
+
+  // The person answers on the feed, and the ask closes.
+  const decided = await feedCommand(ctx, ['decide', cardId, 'approve', '--note', 'Yes, ten dollars and no more.']);
+  assert.equal(decided.code, 0, decided.out);
+  assert.match(decided.out, /answered\. the campaign has your answer: Yes, ten dollars and no more\./);
+  let view = getCampaign(ctx.store, 'cmp-ask');
+  assert.deepEqual(view.asks, []);
+  assert.notEqual(view.state, 'needs_you');
+  const answer = ctx.store.read('cmp-ask').find((event) => event.type === 'ask_answered' && event.actor.startsWith('human:'));
+  assert.deepEqual(answer.data, { ask_id: askId, answer: 'Yes, ten dollars and no more.' });
+  assert.equal(answer.actor, 'human:owner');
+  cards = ctx.campaignCards();
+  assert.deepEqual(cards.map((card) => card.id), ['campaign:cmp-ask'], 'the question card is gone once answered');
+  assert.deepEqual(cards[0].campaign.open_asks, []);
+  assert.equal(cards[0].steps[cards[0].steps.length - 1].text, 'answered: Yes, ten dollars and no more.');
+  assert.equal(feed.listCards(ctx.root, { env: ctx.env }).counts.needs_decision, 0);
+  assert.throws(() => feed.readCard(ctx.root, cardId, { env: ctx.env }), /already answered/);
+
+  // Words typed on the question card are an answer too.
+  const second = JSON.parse((await ctx.campaign(['ask', 'cmp-ask', 'Which broker?', '--json'], { actor: 'mission-lead' })).out).campaign.asks[0].id;
+  const talked = await feedCommand(ctx, ['talk', `campaign:cmp-ask:ask:${second}`, 'Use the paper account first.']);
+  assert.equal(talked.code, 0, talked.out);
+  assert.match(talked.out, /answered\. the campaign has your answer: Use the paper account first\./);
+  assert.deepEqual(getCampaign(ctx.store, 'cmp-ask').asks, []);
+
+  // And campaign answer from a person's own session closes one and takes its card away.
+  const third = JSON.parse((await ctx.campaign(['ask', 'cmp-ask', 'Go live Monday?', '--json'], { actor: 'mission-lead' })).out).campaign.asks[0].id;
+  assert.equal(ctx.campaignCards().length, 2);
+  const byPerson = await ctx.campaign(['answer', 'cmp-ask', third, 'Yes, Monday.']);
+  assert.match(byPerson.out, new RegExp(`answered ${third}: Yes, Monday\\.`));
+  assert.deepEqual(ctx.campaignCards().map((card) => card.id), ['campaign:cmp-ask']);
+});
+
+test('talking on the campaign card reaches the lead', async (t) => {
+  const ctx = feedProject(t, ['investing-lead', 'builder']);
+  await ctx.campaign(['start', 'Take investing live', '--judge', 'npm test', '--lead', 'investing-lead', '--id', 'cmp-talk']);
+  const cardId = 'campaign:cmp-talk';
+  ctx.deps.answer = () => 'We are at 0 of 21. I will plan around the paper account first.';
+
+  const talked = await feedCommand(ctx, ['talk', cardId, 'Stay on the paper account until I say so.']);
+  assert.equal(talked.code, 0, talked.out);
+  assert.equal(talked.out, 'investing-lead: We are at 0 of 21. I will plan around the paper account first.');
+
+  // The lead is the one who answered, on its own engine, knowing the campaign and the words.
+  assert.equal(ctx.turns.length, 1);
+  assert.equal(ctx.turns[0].engine, 'codex');
+  assert.match(ctx.turns[0].prompt, /^You are investing-lead, the member who leads this campaign/);
+  assert.match(ctx.turns[0].prompt, /Goal: Take investing live/);
+  assert.match(ctx.turns[0].prompt, /Score: 0 of 21\./);
+  assert.match(ctx.turns[0].prompt, /Owner: Stay on the paper account until I say so\./);
+
+  // Both sides are saved on the campaign, in order.
+  const said = feed.listMessages(ctx.root, cardId, { env: ctx.env }).messages;
+  assert.deepEqual(said.map((m) => [m.from.type, m.from.name, m.text]), [
+    ['user', 'You', 'Stay on the paper account until I say so.'],
+    ['agent', 'investing-lead', 'We are at 0 of 21. I will plan around the paper account first.'],
+  ]);
+  const kept = JSON.parse(ctx.store.getMeta('campaign_talk:cmp-talk'));
+  assert.deepEqual(kept.map((entry) => entry.from), ['user:owner', 'agent:investing-lead']);
+  assert.equal(kept[1].engine, 'codex');
+  const card = feed.readCard(ctx.root, cardId, { env: ctx.env });
+  assert.equal(card.message_count, 2);
+  assert.equal(card.last_message_at, kept[1].at);
+  assert.match((await feedCommand(ctx, ['messages', cardId])).out, /You: Stay on the paper account[^\n]*\ninvesting-lead: We are at 0 of 21/);
+
+  // What the person said steers the next plan.
+  const prompts = [];
+  const plan = { skipReconcile: true, cli: async () => ({ code: 0, out: '', err: '' }), ask: async (root, view, prompt) => { prompts.push(prompt); return { ok: true, engine: 'fake', text: '[]' }; } };
+  await ctx.campaign(['propose', 'cmp-talk'], { loopDeps: plan });
+  assert.match(prompts[0], /The person said this on the campaign card[^\n]*\n- Stay on the paper account until I say so\./);
+
+  // A second message carries the conversation so far to the lead.
+  ctx.deps.answer = () => 'Understood. Nothing real is placed until you say so.';
+  const again = await feed.talk(ctx.root, cardId, 'Good. Tell me before anything real.', { env: ctx.env, deps: ctx.deps });
+  assert.equal(again.lead, 'investing-lead');
+  assert.equal(again.reply.text, 'Understood. Nothing real is placed until you say so.');
+  assert.match(ctx.turns[1].prompt, /investing-lead: We are at 0 of 21[^\n]*\nOwner: Good\. Tell me before anything real\./);
+  assert.equal(feed.listMessages(ctx.root, cardId, { env: ctx.env }).messages.length, 4);
+
+  // A team member's session cannot speak as the owner; the lead can write by hand, and only the lead.
+  await assert.rejects(feed.talk(ctx.root, cardId, 'ship it', { env: ctx.agentEnv, deps: ctx.deps }), /Only a person can talk to the lead as the owner/);
+  await assert.rejects(feed.talk(ctx.root, cardId, 'I will take it', { as: 'builder', env: ctx.agentEnv, deps: ctx.deps }), /Only investing-lead, who leads this campaign/);
+  const byHand = await feed.talk(ctx.root, cardId, 'The broker is wired to paper.', { as: 'investing-lead', env: ctx.agentEnv, deps: ctx.deps });
+  assert.equal(byHand.message.from.name, 'investing-lead');
+  assert.equal(ctx.turns.length, 2, 'writing by hand asks no engine');
+  assert.equal(feed.listMessages(ctx.root, cardId, { env: ctx.env }).messages.length, 5);
+
+  // A password in the message is refused before anything is saved or sent.
+  // Built here so no key-shaped text sits in this file.
+  const keyShaped = ['sk', 'live', 'abcdefghijklmnopqrstuvwx'].join('_');
+  await assert.rejects(feed.talk(ctx.root, cardId, `use ${keyShaped} for the broker`, { env: ctx.env, deps: ctx.deps }));
+  assert.equal(feed.listMessages(ctx.root, cardId, { env: ctx.env }).messages.length, 5);
+
+  // A lead that is switched off does not answer, the person is told, and the words are still kept.
+  require('../lib/member-switches').setMemberAwake('investing-lead', false, ctx.root);
+  const off = await feed.talk(ctx.root, cardId, 'Are you there?', { env: ctx.env, deps: ctx.deps });
+  assert.equal(off.reply, null);
+  assert.match(off.reply_skipped, /investing-lead is off/);
+  assert.equal(ctx.turns.length, 2);
+  assert.equal(feed.listMessages(ctx.root, cardId, { env: ctx.env }).messages.length, 6);
+
+  // When the lead changes, the new lead answers.
+  await ctx.campaign(['lead', 'cmp-talk', 'builder']);
+  ctx.deps.answer = () => 'I lead this now.';
+  const handed = await feed.talk(ctx.root, cardId, 'Who has this?', { env: ctx.env, deps: ctx.deps });
+  assert.equal(handed.lead, 'builder');
+  assert.match(ctx.turns[2].prompt, /^You are builder, the member who leads this campaign/);
 });
