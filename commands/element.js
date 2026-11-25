@@ -14,7 +14,7 @@ const swarm = require('../lib/element-swarm');
 const decisionFeed = require('./decision-feed');
 
 const ELEMENT_ACTIONS = new Set([
-  'next', 'yes', 'no', 'pass', 'talk', 'post', 'wait', 'tail', 'connect', 'task', 'claim', 'progress', 'complete', 'receipt', 'curve', 'cmd', 'run', 'schedule', 'inspect', 'help',
+  'next', 'yes', 'no', 'pass', 'talk', 'post', 'wait', 'tail', 'connect', 'task', 'claim', 'ask', 'redirect', 'progress', 'complete', 'receipt', 'curve', 'cmd', 'run', 'schedule', 'inspect', 'help',
 ]);
 
 const VALUE_FLAGS = new Set([
@@ -42,6 +42,8 @@ const HELP = [
   '                                                                   post a task; tag who does it, or it goes to the best fit',
   '       atris element claim [<card>] --as <member> [--lease 30m] [--wait 30s] [--json]',
   '                                                                   become the owner of a task and get its handoff (no double-claim)',
+  '       atris element ask <card> --as <member> "<question>" [--answer] [--json]',
+  '       atris element redirect <card> --to <teammate> [--as <member>] [--note "<why>"] [--json]',
   '       atris element progress <card> --as <member> "<one plain line>"',
   '                                                                   say where the work is, on the same card',
   '       atris element complete <card> --as <member> --proof "<what passed>" [--verify "<check>"] [--lesson "<kept>"] ["<summary>"]',
@@ -301,6 +303,20 @@ async function run(args = [], { cwd = process.cwd(), env = process.env, deps = {
       return out.claimed ? 0 : 1;
     }
 
+    if (sub === 'ask') {
+      const out = swarm.ask(root, positional[1], { as: flags.as, text: positional.slice(2).join(' '), answer: flags.answer === true, env, deps });
+      if (json) console.log(JSON.stringify(out, null, 2));
+      else console.log(out.ask ? `${out.ask.text}${out.ask.answer ? `\nanswer: ${out.ask.answer}` : ''}` : 'no question yet.');
+      return 0;
+    }
+
+    if (sub === 'redirect') {
+      const out = swarm.redirect(root, positional[1], { as: flags.as, to: flags.to, note: flags.note, env, deps });
+      if (json) console.log(JSON.stringify(out, null, 2));
+      else console.log(`passed to ${out.redirect.to}.`);
+      return 0;
+    }
+
     if (sub === 'progress') {
       const out = swarm.progress(root, positional[1], { as: flags.as, text: positional.slice(2).join(' ').trim(), env, deps });
       if (json) console.log(JSON.stringify(out, null, 2));
@@ -483,6 +499,17 @@ async function run(args = [], { cwd = process.cwd(), env = process.env, deps = {
         cardId = out.focus.id;
       }
       if (!message) throw new feed.FeedError(400, 'usage: atris element talk [<card>] "<words>"');
+      if (!flags.as && !feed.viewerOf(env).agent && cardId.startsWith('task:')) {
+        const k = feed._internal;
+        const { row } = k.cardAndTask(root, k.openWrite(), cardId);
+        const ask = k.obj(k.feedOf(row.metadata).ask);
+        if (ask.text && !ask.answered_at) {
+          const out = require('../lib/feed-room').reply(root, cardId, message, { env, deps });
+          if (json) console.log(JSON.stringify(out, null, 2));
+          else console.log('answer saved.');
+          return 0;
+        }
+      }
       return decisionFeed.run(['talk', cardId, message, ...forwardedFlags], { cwd, env, deps });
     }
 

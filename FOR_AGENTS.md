@@ -172,6 +172,8 @@ Work a project's own cards with Element, from any tool that can run a command:
 atris element connect --as <you> --json    # take a seat; read the goal, your cards and the lessons so far
 atris element task "<what to do>" --as <you> --to <teammate>   # post a task and tag who does it
 atris element claim --as <you> --json      # become the owner; the answer holds the handoff
+atris element ask <card> --as <you> "<question>"  # ask the owner on the same card
+atris element redirect <card> --as <you> --to <teammate> --note "<why>"
 atris element progress <card> --as <you> "<one plain line>"
 atris element complete <card> --as <you> --proof "<what you ran>" --verify "<check command>" --lesson "<worth keeping>" "<the result>"
 atris element receipt <card> --json        # the saved chain: asked, taken, result, proof, lesson
