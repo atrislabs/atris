@@ -15,7 +15,7 @@ const { decide, paysDollars } = require('../lib/campaign-core');
 const { campaignDbPath, getCampaign, listCampaigns, newCampaignId, openCampaignStore } = require('../lib/campaign-store');
 const { findHoldout, moveHoldoutBack, moveHoldoutIn, scrub } = require('../lib/campaign-holdout');
 const { confirmedReading, judgeRanData, judgeReading, outputTail } = require('../lib/campaign-reading');
-const { CLOUD_FEATURES, cloudLink, cloudRunStatus, runInCloud, sendPersonAction, syncCampaign, takeCampaignToken } = require('../lib/campaign-sync');
+const { CLOUD_FEATURES, CLOUD_MAX_BUDGET, cloudLink, cloudRunStatus, runInCloud, sendPersonAction, syncCampaign, takeCampaignToken } = require('../lib/campaign-sync');
 const { campaignHome, changedProtected, checkoutTop, headCommit, planProtect, readProtect, saveProtect } = require('../lib/campaign-protect');
 const schedules = require('../lib/campaign-schedule');
 
@@ -86,7 +86,9 @@ function money(value) {
 // number, so the campaign gets a ceiling nothing real reaches, and show and
 // list leave its money lines out.
 const NO_LIMIT_BUDGET = 1e9;
-const noLimit = (view) => view.budget.total >= NO_LIMIT_BUDGET;
+// The cloud holds a no-limit campaign at its own top (lib/campaign-sync.js), so
+// a copy pulled from there reads as no limit here too.
+const noLimit = (view) => view.budget.total >= CLOUD_MAX_BUDGET;
 
 // The flags this command understands, so positional words are what is left.
 const VALUE_FLAGS = ['--mission-minutes', '--basis', '--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect', '--brief', '--every', '--steps'];
