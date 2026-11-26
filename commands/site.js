@@ -25,7 +25,8 @@ async function check(argv) {
   const root = process.cwd();
   const list = lang().htmlFilesIn(target);
   if (!list.length) { console.error(`no html pages at ${target}`); return 2; }
-  const files = list.map((file) => ({ path: file, ...lang().checkFile(file, { root, label: shown(file) }) }));
+  const siteRoot = fs.statSync(target).isDirectory() ? path.resolve(target) : null;
+  const files = list.map((file) => ({ path: file, ...lang().checkFile(file, { root, label: shown(file), siteRoot }) }));
   if (hasFlag(argv, '--render')) {
     let renderCheck;
     try { ({ renderCheck } = require('../lib/page-render')); } catch (e) {

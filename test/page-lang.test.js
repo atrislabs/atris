@@ -16,7 +16,7 @@ const page = (body, head = '<header><h1>Writing coach</h1></header>') => `<main>
 const rules = (text) => checkContentPage(text, 'p.html', { root }).findings.map((f) => `${f.rule}@${f.line}`);
 
 test('a good content page passes every rule', () => {
-  const good = page(`<section>\n<h2>40% more drafts</h2>\n${PROSE}\n<cite>survey.csv</cite>\n</section>\n<section>\n<h2>Ask for a seat</h2>\n<form action="/ask" method="post">\n<label for="email">Email</label>\n<input id="email" name="email" type="email" required>\n<button type="submit">Ask for a seat</button>\n<output>That email did not reach us, so please send it again.</output>\n</form>\n<img src="class.png" alt="The class at work">\n</section>`);
+  const good = page(`<section>\n<h2>40% more drafts</h2>\n${PROSE}\n<cite>survey.csv</cite>\n</section>\n<section>\n<h2>Ask for a seat</h2>\n<form action="/ask" method="post">\n<label for="email">Email</label>\n<input id="email" name="email" type="email" required>\n<button type="submit">Ask for a seat</button>\n<output>That email did not reach us, so please send it again.</output>\n</form>\n<img src="class.png" alt="The class at work">\n</section>\n<section>\n<h2>Sign in</h2>\n<form action="/in" method="post">\n<input type="hidden" name="csrf" value="abc123">\n<label for="pw">Password</label>\n<input id="pw" name="pw" type="password">\n<input type="submit" value="Sign in">\n<output>That password did not match, so please try again.</output>\n</form>\n</section>`);
   assert.deepStrictEqual(rules(good), []);
 });
 

@@ -113,3 +113,17 @@ test('publish --build checks the built folder and uploads only when it passes', 
   assert.strictEqual(await upload([app('app-good', compilePage(GOOD)), '--slug', 'demo', '--build']), 0);
   assert.strictEqual(uploads, before + 1);
 });
+
+test('a page whose styles or words the check could not see never reads as every rule passes', async () => {
+  const glow = '.card{box-shadow:0 0 60px 20px #a855f7}';
+  const raw = (head, body = '<p class="card">Each student wrote a draft every week, and the teacher read every one of them.</p>') => `<!doctype html><html lang="en"><head>${head}</head><body><main>${body}</main></body></html>`;
+  folder('site-sheets', { 'index.html': raw('<link rel="stylesheet" href="/css/site.css">'), 'css/site.css': glow, 'typo.html': raw('<link rel="stylesheet" href="css/sty1es.css">') });
+  const res = await cli(['check', 'site-sheets']);
+  assert.match(res.err, /refused site-sheets\/index\.html[\s\S]*a glow/);
+  assert.match(res.out, /ok site-sheets\/typo\.html: no rule failed, but not checked: css\/sty1es\.css is not there/);
+  const err = [];
+  assert.strictEqual(await publish.run(['site-sheets', '--slug', 'demo'], { ...quiet, error: (s) => err.push(s), fetch }), 1);
+  assert.match(err.join('\n'), /line 1: a style sheet that is not in the folder: "css\/sty1es\.css"/);
+  folder('spa', { 'index.html': raw('<script src="app.js"></script>', '<div id="root"></div>'), 'app.js': '' });
+  assert.match((await cli(['check', 'spa'])).out, /not checked: a script draws this page/);
+});

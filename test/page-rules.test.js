@@ -578,6 +578,16 @@ const ATTACKS = [
   ['page-noise', page('<svg class="t"><image href="/img/film-grain.png"/></svg>'), true],
   ['page-noise', page('<p>Hi</p>', 'body::before { content: url(/img/grain.webp); position: fixed; inset: 0; }'), true],
   ['page-noise', page('<canvas id="h" role="img" aria-label="Visits"></canvas><script>const d = x.createImageData(24, 7); rows.forEach((v, i) => { d.data[i * 4 + 3] = v; }); x.putImageData(d, 0, 0);\n\n\n\n\nconst pick = () => rows[Math.floor(Math.random() * rows.length)];</script>'), false],
+  // css the browser reads differently from a naive reader: a rule that does not hold on a desktop
+  // leaves the text shown, and a rule that does hold hides it
+  ...['@media (max-width:600px){@media (min-width:100px){#a{display:none}}}', '@media (hover:none){#a{display:none}}', '@media (width >= 1400px){#a{display:none}}',
+    '@media (1400px <= width){#a{display:none}}', '@media (orientation:portrait){#a{display:none}}', '@media (width <= 600px){#a{display:none}}']
+    .map((css) => ['page-word-quiet', page('<p id="a">It runs quietly in the background.</p>', css), true]),
+  ['page-word-quiet', page('<p id="a">It runs quietly in the background.</p>', '', '<style media="print">#a{display:none}</style>'), true],
+  ['page-word-quiet', page('<p id="a">It runs quietly in the background.</p>', '@media (width >= 600px){#a{display:none}}'), false],
+  ['page-word-quiet', page('<p id="a">It runs quietly in the background.</p>', '.q::before{content:"/*"} #a{display:none}'), false],
+  ['page-word-quiet', page('<p id="a">It runs quietly in the background.</p>', '.q::before{content:"\\\\"} #a{display:none}'), false],
+  ['page-word-quiet', page("<main><img alt=don't src=x.png><p>It runs quietly, it's here.</p></main>"), true],
 ];
 
 test('every rule has a failing page and a twin, and a twin that hides the problem is still caught', () => {

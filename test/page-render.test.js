@@ -15,8 +15,27 @@ test('the probe copy keeps the doctype first, loads files from the page folder a
   const out = injectProbe('<!doctype html><html><head><title>t</title></head><body><p>hi</p></body></html>', '/pages/site', {});
   assert.match(out, /^<!doctype html><html><head><base data-atris-probe href="file:\/\/\/pages\/site\/"><title>/);
   assert.match(out, /<script data-atris-probe>\(function probe[\s\S]*<\/script>$/);
-  // a page with its own base keeps it
-  assert.doesNotMatch(injectProbe('<base href="https://x.test/"><main></main>', '/p', {}), /<base data-atris-probe/);
+  // the page's own base wins where it points, read against the page's folder; the word base in a
+  // comment, a script or a custom element is not a base
+  assert.match(injectProbe('<base href="https://x.test/"><main></main>', '/p', {}), /<base data-atris-probe href="https:\/\/x\.test\/">/);
+  assert.match(injectProbe('<head><base href="assets/"></head><main></main>', '/p', {}), /<base data-atris-probe href="file:\/\/\/p\/assets\/">/);
+  for (const html of ['<!-- no <base> here --><main></main>', '<script>var x = "<base";</script>', '<base-card>x</base-card>', '<base target="_blank">']) {
+    assert.match(injectProbe(html, '/p', {}), /<base data-atris-probe href="file:\/\/\/p\/">/, html);
+  }
+});
+
+test('an interrupted check stops the browser it started and removes its profile', { skip: process.platform === 'win32' ? 'the stand-in browser is a shell script' : false }, async () => {
+  // a browser that never ends: the check is interrupted while it waits
+  const sleeper = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'page-render-sleep-')), 'chrome');
+  fs.writeFileSync(sleeper, '#!/bin/sh\nsleep 60\n', { mode: 0o755 });
+  const { spawnSync } = require('node:child_process');
+  const script = `process.env.CHROME_PATH = ${JSON.stringify(sleeper)}; require(${JSON.stringify(require.resolve('../lib/page-render'))}).renderCheck(${JSON.stringify(__filename)}, { widths: [1280] }); setTimeout(() => process.kill(process.pid, 'SIGINT'), 500);`;
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'page-render-tmp-'));
+  const run = spawnSync(process.execPath, ['-e', script], { env: { ...process.env, TMPDIR: tmp }, timeout: 20000 });
+  assert.equal(run.status, 130);
+  assert.deepEqual(fs.readdirSync(tmp).filter((f) => f.startsWith('atris-render-')), []);
+  fs.rmSync(tmp, { recursive: true, force: true });
+  fs.rmSync(path.dirname(sleeper), { recursive: true, force: true });
 });
 
 test('reading a dumped page returns the measurements and the page without the probe', () => {
@@ -61,6 +80,14 @@ test('a word a script writes into the page is caught once rendered', { skip }, a
   assert.equal(r.ran, true, r.reason);
   assert.deepEqual(failed(r), ['render-page-rules']);
   assert.ok(r.findings.some((f) => /page-word-quiet/.test(f.text)), r.findings.map((f) => f.text).join('\n'));
+});
+
+test('a form page built in plain passes at both widths', { skip }, async () => {
+  const { compilePage } = require('../lib/page-lang');
+  const form = '<main>\n<header><h1>Sign up</h1></header>\n<form>\n<label for="e">Email</label>\n<input id="e" type="email">\n<button type="submit">Create account</button>\n<output>That email did not work.</output>\n</form>\n</main>\n';
+  const r = await check(compilePage(form));
+  assert.equal(r.ran, true, r.reason);
+  assert.deepEqual(r.findings.map((f) => f.text), []);
 });
 
 test('a clean page passes every rule at both widths', { skip }, async () => {
