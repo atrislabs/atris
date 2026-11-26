@@ -4,7 +4,7 @@
 //
 //   atris site <dir|doc.md> [--out dist] [--theme atris|terminal|paper] [--title T] [--serve]
 //   atris site <page.html> [--look <name>] [--out dist]
-//   atris site check <file|dir> [--json] [--render]
+//   atris site check <file|dir> [--json] [--render] | atris site check --mode
 //   atris site rules [--json]
 //   atris site looks | atris site look pick <name>
 //   atris site publish <dir> --slug <slug> [--profile strict|app] [--spa] [--no-claim] [--build] [--json]
@@ -20,8 +20,9 @@ const shown = (file) => lang().shown(file);
 const report = (...a) => lang().report(...a);
 
 async function check(argv) {
+  if (hasFlag(argv, '--mode')) { console.log(require('../lib/page-rules').pageMode(process.cwd())); return 0; }
   const target = argv.find((a) => !a.startsWith('-'));
-  if (!target) { console.error('  atris site check <file|dir> [--json] [--render]'); return 2; }
+  if (!target) { console.error('  atris site check <file|dir> [--json] [--render]\n  atris site check --mode'); return 2; }
   const root = process.cwd();
   const list = lang().htmlFilesIn(target);
   if (!list.length) { console.error(`no html pages at ${target}`); return 2; }
@@ -48,7 +49,7 @@ function rules(argv) {
   const { GRAMMAR } = lang();
   const sheet = require('../lib/page-rules').ruleSheet();
   if (hasFlag(argv, '--json')) {
-    console.log(JSON.stringify({ grammar: GRAMMAR.map((r) => ({ id: r.id, line: r.line })), page: sheet }, null, 2));
+    console.log(JSON.stringify({ grammar: GRAMMAR.map((r) => ({ id: r.id, line: r.line })), page: sheet, mode: require('../lib/page-rules').pageMode(process.cwd()) }, null, 2));
     return 0;
   }
   const out = [
@@ -60,6 +61,13 @@ function rules(argv) {
     '',
     'content page',
     ...GRAMMAR.map((r) => `  ${r.id}: ${r.line}`),
+    '',
+    'upload check',
+    '  publish and deploy check every html page after any build.',
+    '  watch mode, the default: they print what fails and upload anyway.',
+    '  block mode: they upload nothing until every page passes. the landing gate holds new pages the same way.',
+    `  this project is in ${require('../lib/page-rules').pageMode(process.cwd())} mode. atris site check --mode prints it.`,
+    `  ${require('../lib/page-lang').BLOCK_LINE}. atris init turns it on for a new project.`,
   ];
   for (const [group, list] of Object.entries(sheet)) {
     out.push('', `page rules: ${group}`, ...list.map((r) => `  ${r.id}: ${r.line}`));
@@ -131,6 +139,7 @@ async function run(argv) {
     atris site atris/wiki --title "Atris Wiki" --serve
     atris site <page.html> [--look <name>] [--out dist]
     atris site check <file|dir> [--json] [--render]
+    atris site check --mode
     atris site rules [--json]
     atris site looks
     atris site look pick <name>
@@ -147,7 +156,9 @@ async function run(argv) {
 
   publish uploads any built web folder through the hosted-sites api. deploy is
   the older site setup flow; --fullstack deploys a node server with render.
-  Both check every html page in the folder after any build and upload nothing if one fails.
+  Both check every html page in the folder after any build. In watch mode, the default,
+  they say what fails and upload anyway. In block mode they upload nothing if one fails.
+  atris site rules says how to turn block mode on.
 `);
     return input === 'help' || hasFlag(argv, '--help') ? 0 : 2;
   }

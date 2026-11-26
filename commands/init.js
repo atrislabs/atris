@@ -421,6 +421,14 @@ function initAtris() {
   if (!fs.existsSync(targetDir)) {
     fs.mkdirSync(targetDir, { recursive: true });
     detail('✓ Created atris/ folder');
+    // A new project has no old pages to protect, so its page check blocks from the start.
+    // An existing project keeps watch mode until it turns blocking on itself.
+    const rulesFile = path.join(cwd, '.atris', 'slop.rules.json');
+    if (!fs.existsSync(rulesFile)) {
+      fs.mkdirSync(path.dirname(rulesFile), { recursive: true });
+      fs.writeFileSync(rulesFile, `${JSON.stringify({ pages: 'block' }, null, 2)}\n`);
+      markReady('workspace', '.atris/slop.rules.json', '✓ Turned the page check to block mode in .atris/slop.rules.json');
+    }
   } else {
     detail('✓ atris/ folder already exists');
   }

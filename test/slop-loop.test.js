@@ -57,6 +57,10 @@ test('addProjectRule writes and dedups by id', (t) => {
   const r1 = loaded.find((r) => r.id === 'r1');
   assert.equal(r1.sev, 'error');
   assert.ok(r1.re.test('bbb'));
+  // the object form keeps the page check's own settings beside the rules
+  fs.writeFileSync(path.join(dir, '.atris', 'slop.rules.json'), JSON.stringify({ pages: 'block', off: ['page-glow'] }));
+  addProjectRule({ id: 'r3', pattern: 'ddd', why: 'third' }, dir);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'slop.rules.json'), 'utf8')), { pages: 'block', off: ['page-glow'], rules: [{ id: 'r3', pattern: 'ddd', why: 'third' }] });
 });
 
 test('a malformed project rule is skipped, not fatal', (t) => {

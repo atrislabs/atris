@@ -133,12 +133,12 @@ function loadProjectRules(root = process.cwd()) {
 
 function addProjectRule(rule, root = process.cwd()) {
   const file = path.join(root, PROJECT_RULES_FILE);
-  let arr = [];
-  try { const raw = JSON.parse(fs.readFileSync(file, 'utf8')); arr = Array.isArray(raw) ? raw : (raw.rules || []); } catch {}
-  arr = arr.filter((r) => r.id !== rule.id);
-  arr.push(rule);
+  let raw = [];
+  try { raw = JSON.parse(fs.readFileSync(file, 'utf8')) || []; } catch {}
+  // the object form also holds "off" and "pages" for the page check; keep them
+  const arr = (Array.isArray(raw) ? raw : (raw.rules || [])).filter((r) => r.id !== rule.id).concat(rule);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(arr, null, 2) + '\n');
+  fs.writeFileSync(file, JSON.stringify(Array.isArray(raw) ? arr : { ...raw, rules: arr }, null, 2) + '\n');
   return file;
 }
 

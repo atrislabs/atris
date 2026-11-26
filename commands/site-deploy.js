@@ -825,7 +825,7 @@ async function run(argv, deps = {}) {
     return 2;
   }
 
-  const checkPages = (files) => require('../lib/page-lang').checkBeforeUpload(root, { files, log, err: errorLog });
+  const checkPages = (files) => require('../lib/page-lang').checkBeforeUpload(root, { files, log, err: errorLog }).refused;
 
   if (options.fullstack) {
     let packagePlan;

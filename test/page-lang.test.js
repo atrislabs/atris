@@ -16,7 +16,7 @@ const page = (body, head = '<header><h1>Writing coach</h1></header>') => `<main>
 const rules = (text) => checkContentPage(text, 'p.html', { root }).findings.map((f) => `${f.rule}@${f.line}`);
 
 test('a good content page passes every rule', () => {
-  const good = page(`<section>\n<h2>40% more drafts</h2>\n${PROSE}\n<cite>survey.csv</cite>\n</section>\n<section>\n<h2>Ask for a seat</h2>\n<form action="/ask" method="post">\n<label for="email">Email</label>\n<input id="email" name="email" type="email" required>\n<button type="submit">Ask for a seat</button>\n<output>That email did not reach us, so please send it again.</output>\n</form>\n<img src="class.png" alt="The class at work">\n</section>\n<section>\n<h2>Sign in</h2>\n<form action="/in" method="post">\n<input type="hidden" name="csrf" value="abc123">\n<label for="pw">Password</label>\n<input id="pw" name="pw" type="password">\n<input type="submit" value="Sign in">\n<output>That password did not match, so please try again.</output>\n</form>\n</section>`);
+  const good = page(`<section>\n<h2>40% more drafts</h2>\n${PROSE}\n<cite>survey.csv</cite>\n</section>\n<section>\n<h2>Ask for a seat</h2>\n<form action="/ask" method="post" aria-label="Ask for a seat">\n<label for="email" lang="en">Email</label>\n<input id="email" name="email" type="email" autocomplete="email" maxlength="80" required>\n<button type="submit">Ask for a seat</button>\n</form>\n<p role="alert">That email did not reach us, so please send it again.</p>\n<img src="class.png" alt="The class at work">\n</section>\n<section>\n<h2>Sign in</h2>\n<form action="/in" method="post">\n<input type="hidden" name="csrf" value="abc123">\n<label for="pw">Password</label>\n<input id="pw" name="pw" type="password">\n<input type="submit" value="Sign in">\n<output>That password did not match, so please try again.</output>\n</form>\n</section>`);
   assert.deepStrictEqual(rules(good), []);
 });
 
@@ -26,8 +26,12 @@ test('each grammar rule refuses its bad page at the line', () => {
     ['lang-root', page(`<!-- a note -->\n${PROSE}`), 3],
     ['lang-tags', page(`<div>${PROSE}</div>`), 3],
     ['lang-attrs', page(`<section class="hero">\n${PROSE}\n</section>`), 3],
-    ['lang-heading', page(PROSE, '<header><h1>Writing coach</h1><p>Better essays every week for your school.</p></header>'), 2],
+    ['lang-attrs', page(`<section onclick="go()">\n${PROSE}\n</section>`), 3],
+    ['lang-attrs', page(`<section data-variant="hero">\n${PROSE}\n</section>`), 3],
+    ['lang-attrs', page(`<p><a href="javascript:go()">Go to the next page</a></p>`), 3],
     ['lang-heading', page(`<h1>Another title here</h1>\n${PROSE}`), 3],
+    ['lang-heading', page(`<h2>Notes</h2>\n<h1>Writing coach</h1>\n${PROSE}`, ''), 3],
+    ['lang-heading', page(PROSE, '<header><p>Each draft.</p></header>'), 2],
     ['lang-source', page(`<section>\n<h2>40% more drafts</h2>\n${PROSE}\n<cite>missing.csv</cite>\n</section>`), 4],
     ['lang-image', page(`<section>\n${PROSE}\n<img src="nothing.png" alt="The class">\n</section>`), 6],
     ['lang-image', page(`<section>\n${PROSE}\n<img src="class.png">\n</section>`), 6],
@@ -35,6 +39,10 @@ test('each grammar rule refuses its bad page at the line', () => {
     ['lang-form', page('<form action="/a">\n<label for="e">Email</label>\n<input id="e" name="e">\n<button type="submit">Send the note</button>\n</form>'), 3],
   ];
   for (const [id, text, line] of cases) assert.ok(rules(text).includes(`${id}@${line}`), `${id} at line ${line}: ${rules(text).join(', ')}`);
+  // only a class or a style hears that the look is not theirs; a page with no header is fine
+  const fixes = checkContentPage(page(`<section class="a" onclick="b">\n${PROSE}\n</section>\n<section onclick="b">\n${PROSE}\n</section>`), 'p.html', { root }).findings.filter((f) => f.rule === 'lang-attrs').map((f) => f.fix);
+  assert.deepStrictEqual(fixes, ['remove it. the look is not yours to set', 'remove it. a content page holds words and structure only']);
+  assert.deepStrictEqual(rules(page(`<section>\n<h2>Notes</h2>\n${PROSE}\n</section>`, '<h1>Writing coach</h1>')), []);
 });
 
 test('a built page must still be what was built, in plain or a picked look', () => {
@@ -73,26 +81,35 @@ function generate(r) {
   const title = () => { const w = Array.from({ length: 3 + Math.floor(r() * 3) }, word); return w[0][0].toUpperCase() + w.join(' ').slice(1); };
   const sections = [];
   for (let s = 0; s < 1 + Math.floor(r() * 4); s++) {
-    const kind = pick(['prose', 'table', 'form', 'list', 'stat']);
-    if (kind === 'prose') sections.push(`<section>\n<h2>${title()}</h2>\n${para()}\n${para()}\n</section>`);
-    if (kind === 'stat') sections.push(`<section>\n<h2>${1 + Math.floor(r() * 90)}% more ${pick(WORDS)}s</h2>\n${para()}\n${para()}\n<cite>https://example.org/${pick(WORDS)}</cite>\n</section>`);
+    const kind = pick(['prose', 'table', 'form', 'list', 'stat', 'terms', 'more']);
+    const wrap = pick(['section', 'article', 'aside']);
+    if (kind === 'prose') sections.push(`<${wrap} aria-label="${pick(WORDS)}" lang="${pick(['en', 'fr', 'de'])}">\n<h2>${title()}</h2>\n${para()}\n<blockquote cite="https://example.org/${pick(WORDS)}">${para()}</blockquote>\n<p>${sentence()} Press <kbd>${pick(WORDS)}</kbd>, see <abbr title="${title()}">${pick(WORDS)}</abbr> and <em>${pick(WORDS)}</em>, water is H<sub>2</sub>O and E is mc<sup>2</sup>.</p>\n<hr>\n</${wrap}>`);
+    if (kind === 'terms') {
+      const terms = Array.from({ length: 1 + Math.floor(r() * 3) }, () => `<dt>${title()}</dt>\n<dd>${sentence()}</dd>`).join('\n');
+      sections.push(`<section>\n<h2>${title()}</h2>\n${para()}\n${para()}\n<dl>\n${terms}\n</dl>\n</section>`);
+    }
+    if (kind === 'more') sections.push(`<section>\n<h2>${title()}</h2>\n${para()}\n${para()}\n<details${r() < 0.5 ? ' open' : ''}>\n<summary>${title()}</summary>\n${para()}\n</details>\n<address><a href="https://example.org/${pick(WORDS)}" rel="noopener" target="_blank" title="${title()}">${title()}</a></address>\n</section>`);
+    if (kind === 'stat') sections.push(`<${wrap}>\n<h2>${1 + Math.floor(r() * 90)}% more ${pick(WORDS)}s</h2>\n${para()}\n${para()}\n<cite>https://example.org/${pick(WORDS)}</cite>\n</${wrap}>`);
     if (kind === 'table') {
       const rows = Array.from({ length: Math.floor(r() * 5) }, () => `<tr><th>${title()}</th><td>${Math.floor(r() * 99999).toLocaleString('en-US')}</td></tr>`).join('\n');
-      sections.push(`<section>\n<h2>${title()}</h2>\n<table>\n<caption>${title()}</caption>\n<thead><tr><th>${pick(WORDS)}</th><th>${pick(WORDS)}</th></tr></thead>\n<tbody>\n${rows}\n</tbody>\n</table>\n<cite>https://example.org/data</cite>\n</section>`);
+      sections.push(`<section>\n<h2>${title()}</h2>\n<table>\n<caption>${title()}</caption>\n<thead><tr><th scope="col" id="c${s}">${pick(WORDS)}</th><th scope="col">${pick(WORDS)}</th></tr></thead>\n<tbody>\n${rows}\n</tbody>\n</table>\n<cite>https://example.org/data</cite>\n</section>`);
     }
     if (kind === 'list') {
       const items = Array.from({ length: Math.floor(r() * 4) }, () => `<li>${sentence()}</li>`).join('\n');
-      const tag = pick(['ul', 'ol']);
-      sections.push(`<section>\n<h2>${title()}</h2>\n${para()}\n${para()}\n<${tag}>\n${items}\n</${tag}>\n</section>`);
+      const tag = pick(['ul', 'ol start="3" reversed']);
+      sections.push(`<section>\n<h2>${title()}</h2>\n${para()}\n${para()}\n<${tag}>\n${items}\n</${tag.split(' ')[0]}>\n</section>`);
     }
     if (kind === 'form') {
       const id = `f${s}`;
-      const field = pick([`<input id="${id}" name="${id}" type="text" required>`, `<textarea id="${id}" name="${id}"></textarea>`, `<select id="${id}" name="${id}"><option value="a">${title()}</option></select>`]);
-      sections.push(`<section>\n<h2>${title()}</h2>\n<form action="/send" method="post">\n<label for="${id}">${title()}</label>\n${field}\n<button type="submit">${title()}</button>\n<output>${sentence()}</output>\n</form>\n</section>`);
+      const field = pick([`<input id="${id}" name="${id}" type="text" inputmode="numeric" pattern="[0-9]+" minlength="2" maxlength="9" autocomplete="off" required>`, `<input id="${id}" name="${id}" type="number" min="1" max="9" step="1">`, `<textarea id="${id}" name="${id}" aria-describedby="h${id}"></textarea>`, `<select id="${id}" name="${id}" multiple><option value="a" selected>${title()}</option></select>`]);
+      const fails = pick([`<output>${sentence()}</output>\n</form>`, `<p role="alert">${sentence()}</p>\n</form>`, `</form>\n<p aria-live="polite">${sentence()}</p>`]);
+      sections.push(`<section>\n<h2>${title()}</h2>\n<form action="/send" method="post">\n<label for="${id}">${title()}</label>\n${field}\n<button type="submit">${title()}</button>\n${fails}\n</section>`);
     }
   }
   const footer = r() < 0.5 ? `\n<footer>\n${para()}\n${para()}\n</footer>` : '';
-  return `<main>\n<header>\n<h1>${title()}</h1>\n</header>\n${sections.join('\n')}${footer}\n</main>\n`;
+  const head = r() < 0.5 ? `<header>\n<h1>${title()}</h1>\n</header>` : `<h1>${title()}</h1>`;
+  const art = r() < 0.3 ? `\n<figure>\n<picture>\n<source srcset="https://example.org/${pick(WORDS)}.webp" type="image/webp">\n<img src="https://example.org/${pick(WORDS)}.png" alt="${title()}" width="640" height="480">\n</picture>\n</figure>` : '';
+  return `<main lang="en">\n${head}${art}\n${sections.join('\n')}${footer}\n</main>\n`;
 }
 
 test('any valid content page built in plain passes every page rule', () => {
@@ -120,7 +137,14 @@ test('the landing gate holds a new page to every rule and leaves an edited old p
   fs.writeFileSync(path.join(repo, 'new.html'), page(`<div>${PROSE}</div>`));
   git('add', '.');
   const { candidatePolicyGate } = require('../lib/auto-accept-certified');
-  const res = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['old.html', 'new.html'] } });
+  const task = { workspace_root: repo, metadata: { changed_files: ['old.html', 'new.html'] } };
+  // watch mode, the default: the failing new page is an advisory and the work lands
+  const watched = candidatePolicyGate(task);
+  assert.strictEqual(watched.ok, true, (watched.offenders || []).join(', '));
+  assert.ok(watched.gate.advisories.some((a) => a.reason === 'new_page_check_watch' && a.file === 'new.html' && a.rule === 'lang-tags'));
+  fs.mkdirSync(path.join(repo, '.atris'));
+  fs.writeFileSync(path.join(repo, '.atris', 'slop.rules.json'), '{ "pages": "block" }\n');
+  const res = candidatePolicyGate(task);
   assert.strictEqual(res.reason, 'slop_gate');
   assert.ok(res.offenders.includes('new.html:3 lang-tags'), res.offenders.join(', '));
   assert.ok(!res.offenders.some((o) => o.startsWith('old.html')), res.offenders.join(', '));

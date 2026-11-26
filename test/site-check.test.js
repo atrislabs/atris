@@ -36,7 +36,9 @@ let uploads = 0;
 const deploy = require('../commands/site-deploy');
 const quiet = { log() {}, error() {} };
 const fetch = async () => { uploads++; return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify({ verified: true }) }; };
-const upload = (argv) => publish.run(argv, { ...quiet, fetch, apiBase: 'http://127.0.0.1:9', loadCredentials: () => ({ token: 't' }) });
+const upload = (argv, deps = {}) => publish.run(argv, { ...quiet, fetch, apiBase: 'http://127.0.0.1:9', loadCredentials: () => ({ token: 't' }), ...deps });
+const rulesFile = path.join(root, '.atris', 'slop.rules.json');
+const blocking = async (fn) => { fs.mkdirSync(path.dirname(rulesFile), { recursive: true }); fs.writeFileSync(rulesFile, '{ "pages": "block" }\n'); try { return await fn(); } finally { fs.rmSync(rulesFile); } };
 
 test('check refuses a bad page line by line on stderr and passes a good one', async () => {
   folder('pages', { 'bad.html': BAD, 'good.html': GOOD });
@@ -48,6 +50,8 @@ test('check refuses a bad page line by line on stderr and passes a good one', as
   assert.deepStrictEqual([good.code, good.out], [0, 'ok pages/good.html: every rule passes']);
   const json = JSON.parse((await cli(['check', 'pages', '--json'])).out);
   assert.deepStrictEqual(json.files.map((f) => [f.file, f.kind, f.ok]), [['pages/bad.html', 'content', false], ['pages/good.html', 'content', true]]);
+  // one call gives the data and the words a plain run prints
+  assert.deepStrictEqual(json.files.map((f) => f.text), [bad.err, good.out]);
 });
 
 test('check always says which rules the project switched off', async () => {
@@ -61,6 +65,8 @@ test('check always says which rules the project switched off', async () => {
 test('rules prints every rule the check enforces', async () => {
   const res = await cli(['rules']);
   for (const id of [...PAGE_RULES.map((r) => r.id), 'lang-root', 'lang-form']) assert.ok(res.out.includes(`  ${id}: `), id);
+  assert.match(res.out, /this project is in watch mode[\s\S]*put "pages": "block" in \.atris\/slop\.rules\.json/);
+  assert.deepStrictEqual([(await cli(['check', '--mode'])).out, (await blocking(() => cli(['check', '--mode']))).out], ['watch', 'block']);
 });
 
 test('only a person at a terminal can pick a look', async () => {
@@ -79,7 +85,19 @@ test('a content page builds to index.html in a look', async () => {
   assert.ok(!fs.existsSync(path.join(root, 'built2')));
 });
 
-test('publish and deploy upload nothing unless every page passes', async () => {
+test('in watch mode publish says what would fail and uploads as before', async () => {
+  const before = uploads;
+  const dir = folder('site-watch', { 'index.html': BAD });
+  const out = [], err = [];
+  assert.strictEqual(await upload([dir, '--slug', 'demo', '--json'], { log: (s) => out.push(s), error: (s) => err.push(s) }), 0);
+  assert.strictEqual(uploads, before + 1);
+  assert.match(err.join('\n'), /^page check in watch mode: the upload goes ahead\. in block mode these lines would stop it\.\nwould refuse site-watch\/index\.html \(2 lines to fix\)\nline 4: /);
+  const json = JSON.parse(out.join('\n'));
+  assert.deepStrictEqual([json.verified, json.page_check.mode, json.page_check.ok, json.page_check.files[0].file], [true, 'watch', false, 'site-watch/index.html']);
+  assert.strictEqual(await deploy.run([dir, '--name', 'demo', '--dry-run'], quiet), 0);
+});
+
+test('in block mode publish and deploy upload nothing unless every page passes', () => blocking(async () => {
   const before = uploads;
   const plain = compilePage(GOOD);
   const refusals = [
@@ -102,9 +120,9 @@ test('publish and deploy upload nothing unless every page passes', async () => {
   recordPick(root, 'paper');
   assert.strictEqual(await upload(['site-look', '--slug', 'demo']), 0);
   assert.strictEqual(uploads, before + 2);
-});
+}));
 
-test('publish --build checks the built folder and uploads only when it passes', async () => {
+test('publish --build checks the built folder and in block mode uploads only when it passes', () => blocking(async () => {
   const before = uploads;
   const build = "node -e \"require('fs').mkdirSync('dist');require('fs').copyFileSync('page.html','dist/index.html')\"";
   const app = (name, page) => folder(name, { 'package.json': JSON.stringify({ scripts: { build } }), 'page.html': page });
@@ -112,7 +130,7 @@ test('publish --build checks the built folder and uploads only when it passes', 
   assert.strictEqual(uploads, before);
   assert.strictEqual(await upload([app('app-good', compilePage(GOOD)), '--slug', 'demo', '--build']), 0);
   assert.strictEqual(uploads, before + 1);
-});
+}));
 
 test('a page whose styles or words the check could not see never reads as every rule passes', async () => {
   const glow = '.card{box-shadow:0 0 60px 20px #a855f7}';
@@ -122,7 +140,7 @@ test('a page whose styles or words the check could not see never reads as every 
   assert.match(res.err, /refused site-sheets\/index\.html[\s\S]*a glow/);
   assert.match(res.out, /ok site-sheets\/typo\.html: no rule failed\. not checked: css\/sty1es\.css is not there/);
   const err = [];
-  assert.strictEqual(await publish.run(['site-sheets', '--slug', 'demo'], { ...quiet, error: (s) => err.push(s), fetch }), 1);
+  assert.strictEqual(await blocking(() => publish.run(['site-sheets', '--slug', 'demo'], { ...quiet, error: (s) => err.push(s), fetch })), 1);
   assert.match(err.join('\n'), /line 1: a style sheet that is not in the folder: "css\/sty1es\.css"/);
   folder('spa', { 'index.html': raw('<script src="app.js"></script>', '<div id="root"></div>'), 'app.js': '' });
   assert.match((await cli(['check', 'spa'])).out, /not checked: a script draws this page/);
