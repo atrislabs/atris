@@ -24,18 +24,27 @@ test('the probe copy keeps the doctype first, loads files from the page folder a
   }
 });
 
+// Every folder a test makes is removed when the run ends, on a pass, a failed assert or an early exit.
+const made = [];
+function temp(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  made.push(dir);
+  return dir;
+}
+const cleanup = () => { for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); };
+test.after(cleanup);
+process.on('exit', cleanup);
+
 test('an interrupted check stops the browser it started and removes its profile', { skip: process.platform === 'win32' ? 'the stand-in browser is a shell script' : false }, async () => {
   // a browser that never ends: the check is interrupted while it waits
-  const sleeper = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'page-render-sleep-')), 'chrome');
+  const sleeper = path.join(temp('page-render-sleep-'), 'chrome');
   fs.writeFileSync(sleeper, '#!/bin/sh\nsleep 60\n', { mode: 0o755 });
   const { spawnSync } = require('node:child_process');
   const script = `process.env.CHROME_PATH = ${JSON.stringify(sleeper)}; require(${JSON.stringify(require.resolve('../lib/page-render'))}).renderCheck(${JSON.stringify(__filename)}, { widths: [1280] }); setTimeout(() => process.kill(process.pid, 'SIGINT'), 500);`;
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'page-render-tmp-'));
+  const tmp = temp('page-render-tmp-');
   const run = spawnSync(process.execPath, ['-e', script], { env: { ...process.env, TMPDIR: tmp }, timeout: 20000 });
   assert.equal(run.status, 130);
   assert.deepEqual(fs.readdirSync(tmp).filter((f) => f.startsWith('atris-render-')), []);
-  fs.rmSync(tmp, { recursive: true, force: true });
-  fs.rmSync(path.dirname(sleeper), { recursive: true, force: true });
 });
 
 test('reading a dumped page returns the measurements and the page without the probe', () => {
@@ -56,7 +65,7 @@ const BROWSER = findBrowser();
 const skip = BROWSER ? false : 'no browser found on this computer; install Chrome or set CHROME_PATH to run it';
 
 function page(html) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'page-render-test-'));
+  const dir = temp('page-render-test-');
   fs.writeFileSync(path.join(dir, 'page.html'), html);
   return { file: path.join(dir, 'page.html'), done: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }

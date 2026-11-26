@@ -11,7 +11,10 @@ const { PAGE_RULES } = require('../lib/page-rules');
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-site-check-'));
 const home = process.cwd();
 process.chdir(root);
-test.after(() => { process.chdir(home); fs.rmSync(root, { recursive: true, force: true }); });
+// the exit hook also cleans up when a run stops early, where test.after never runs
+const cleanup = () => { process.chdir(home); fs.rmSync(root, { recursive: true, force: true }); };
+test.after(cleanup);
+process.on('exit', cleanup);
 
 const PROSE = '<p>Each student wrote a draft every week, and the teacher read every one of them.</p>\n<p>The drafts got shorter and clearer as the term went on, and nobody wrote for them.</p>';
 const GOOD = `<main>\n<header><h1>Writing coach</h1></header>\n<section>\n<h2>Notes</h2>\n${PROSE}\n</section>\n</main>\n`;
@@ -47,7 +50,7 @@ test('check refuses a bad page line by line on stderr and passes a good one', as
   assert.match(bad.err, /^refused pages\/bad\.html \(2 things to fix\)\nline 4: /);
   assert.match(bad.err, /line 6: a tag not on the allowed list: "<div>"/);
   const good = await cli(['check', 'pages/good.html']);
-  assert.deepStrictEqual([good.code, good.out], [0, 'ok pages/good.html: every rule passes']);
+  assert.deepStrictEqual([good.code, good.out], [0, 'ok pages/good.html: every page rule passes. the browser rules did not run: atris site check pages/good.html --render runs them']);
   const json = JSON.parse((await cli(['check', 'pages', '--json'])).out);
   assert.deepStrictEqual(json.files.map((f) => [f.file, f.kind, f.ok]), [['pages/bad.html', 'content', false], ['pages/good.html', 'content', true]]);
   // one call gives the data and the words a plain run prints
@@ -176,4 +179,31 @@ test('a site atris builds from clean markdown passes the upload check in every t
     assert.strictEqual(await upload([`md-${theme}`, '--slug', 'demo']), 0, theme);
   }
   assert.strictEqual(uploads, before + 3);
+});
+
+// A pass without --render must not read as if the browser rules ran.
+const { RENDER_RULES } = require('../lib/page-render');
+
+test('a pass without --render says the browser rules did not run and how to run them', async () => {
+  folder('plain', { 'good.html': GOOD });
+  const res = await cli(['check', 'plain/good.html']);
+  assert.strictEqual(res.code, 0);
+  assert.match(res.out, /^ok plain\/good\.html: every page rule passes\. the browser rules did not run: atris site check plain\/good\.html --render runs them$/);
+  assert.doesNotMatch(res.out, /every rule passes/);
+});
+
+test('the machine output carries whether the browser rules ran as a field', async () => {
+  folder('plain', { 'good.html': GOOD });
+  const json = JSON.parse((await cli(['check', 'plain/good.html', '--json'])).out);
+  assert.deepStrictEqual(json.files.map((f) => [f.file, f.ok, f.rendered]), [['plain/good.html', true, false]]);
+});
+
+test('rules lists every browser rule as one that needs --render', async () => {
+  assert.strictEqual(RENDER_RULES.length, 7);
+  const res = await cli(['rules']);
+  const at = res.out.indexOf('browser rules, run only with atris site check <file> --render');
+  assert.ok(at !== -1, res.out);
+  for (const r of RENDER_RULES) assert.ok(res.out.indexOf(`  ${r.id}: `, at) > at, r.id);
+  const json = JSON.parse((await cli(['rules', '--json'])).out);
+  assert.deepStrictEqual(json.browser.map((r) => [r.id, r.needs]), RENDER_RULES.map((r) => [r.id, '--render']));
 });

@@ -40,6 +40,7 @@ async function check(argv) {
       res.findings.push(...(r.findings || []));
       res.results.push(...(r.results || []));
       res.ok = res.findings.length === 0;
+      res.rendered = true;
     }
   }
   return report(files.map(({ path: _p, ...res }) => res), { json: hasFlag(argv, '--json') });
@@ -48,14 +49,16 @@ async function check(argv) {
 function rules(argv) {
   const { GRAMMAR } = lang();
   const sheet = require('../lib/page-rules').ruleSheet();
+  // the browser rules only run when the page is opened in a browser, so they are listed apart
+  const browser = require('../lib/page-render').RENDER_RULES;
   if (hasFlag(argv, '--json')) {
-    console.log(JSON.stringify({ grammar: GRAMMAR.map((r) => ({ id: r.id, line: r.line })), page: sheet, mode: require('../lib/page-rules').pageMode(process.cwd()) }, null, 2));
+    console.log(JSON.stringify({ grammar: GRAMMAR.map((r) => ({ id: r.id, line: r.line })), page: sheet, browser: browser.map((r) => ({ id: r.id, line: r.why, needs: '--render' })), mode: require('../lib/page-rules').pageMode(process.cwd()) }, null, 2));
     return 0;
   }
   const out = [
     'order of work',
     '  write the content first as plain html, starting at <main>, with no class, style or script.',
-    '  run atris site check <file> until every rule passes.',
+    '  run atris site check <file> until every rule passes, then once more with --render before the page is done.',
     '  build it in a few looks for the owner\'s board: atris site <file> --look <name> --out <dir>.',
     '  never pick a look. only the owner picks one: atris site look pick <name>.',
     '',
@@ -72,6 +75,7 @@ function rules(argv) {
   for (const [group, list] of Object.entries(sheet)) {
     out.push('', `page rules: ${group}`, ...list.map((r) => `  ${r.id}: ${r.line}`));
   }
+  out.push('', 'browser rules, run only with atris site check <file> --render', ...browser.map((r) => `  ${r.id}: ${r.why}`));
   console.log(out.join('\n'));
   return 0;
 }
