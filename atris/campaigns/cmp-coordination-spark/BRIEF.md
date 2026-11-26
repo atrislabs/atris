@@ -35,3 +35,15 @@ The campaign's additional delivery challenge drops the receiver's acknowledgemen
 ```sh
 python3 -B atris/campaigns/cmp-coordination-spark/challenge.py
 ```
+
+## Continuing the loop
+
+The standing coordination watch runs daily on the Mac. Each round reruns the fixed cases, the dropped acknowledgement challenge and the claim regressions. It then draws a fresh reproducible ordering of 24 calls, including repeated keys, identical text, two reviewers and two restarts. The oracle reads the final receiver rows and checks every intended author and receipt. The campaign stores each reading. A failed reading keeps its seed and queues one local investigation for Replay Lead. A healthy round spends no model credits.
+
+Replay a seed printed by the standing campaign:
+
+```sh
+python3 -B atris/campaigns/cmp-coordination-spark/round.py --seed 20261126
+```
+
+Inspect the watch with `atris campaign show cmp-spark-coordination-watch`. Pausing this campaign makes its daily check skip work until resumed.
