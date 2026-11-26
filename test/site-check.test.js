@@ -127,3 +127,19 @@ test('a page whose styles or words the check could not see never reads as every 
   folder('spa', { 'index.html': raw('<script src="app.js"></script>', '<div id="root"></div>'), 'app.js': '' });
   assert.match((await cli(['check', 'spa'])).out, /not checked: a script draws this page/);
 });
+
+test('a site atris builds from clean markdown passes the upload check in every theme', async () => {
+  const before = uploads;
+  folder('md', {
+    'hours.md': '# Hours\n\nWe open at seven every morning and close when the bread runs out, which is most days by two in the afternoon.\n\nOn Sundays we bake rye only, and the door opens an hour later.\n\n## Prices\n\n- Sourdough, four dollars\n- Rye, five dollars\n',
+    'team.md': '# Team\n\nThree bakers share the ovens and take turns starting the dough at four in the morning, every single day of the year.\n\nAna runs the counter on weekdays and knows every regular by name.\n',
+    'orders.md': '# Orders\n\nWe take orders for parties of ten or more if you write to us two days ahead of the party.\n\nPick up is at the side door, and we keep the order warm until noon.\n',
+  });
+  for (const theme of ['atris', 'terminal', 'paper']) {
+    assert.strictEqual((await cli(['md', '--out', `md-${theme}`, '--theme', theme, '--title', 'Bakery'])).code, 0);
+    const html = fs.readFileSync(path.join(root, `md-${theme}`, 'hours.html'), 'utf8');
+    for (const words of ['On Sundays we bake rye only', 'Rye, five dollars']) assert.ok(html.includes(words), words);
+    assert.strictEqual(await upload([`md-${theme}`, '--slug', 'demo']), 0, theme);
+  }
+  assert.strictEqual(uploads, before + 3);
+});

@@ -124,4 +124,17 @@ test('the landing gate holds a new page to every rule and leaves an edited old p
   assert.strictEqual(res.reason, 'slop_gate');
   assert.ok(res.offenders.includes('new.html:3 lang-tags'), res.offenders.join(', '));
   assert.ok(!res.offenders.some((o) => o.startsWith('old.html')), res.offenders.join(', '));
+  // a moved page, a template partial and an ignored file in a named folder are not new pages
+  git('commit', '-qm', 'new');
+  git('checkout', '-qb', 'move', 'master');
+  git('mv', 'old.html', 'moved.html');
+  fs.mkdirSync(path.join(repo, 'docs', 'coverage'), { recursive: true });
+  fs.writeFileSync(path.join(repo, '.gitignore'), 'docs/coverage/\n');
+  fs.writeFileSync(path.join(repo, 'docs', 'coverage', 'index.html'), page(`<div>${PROSE}</div>`));
+  fs.writeFileSync(path.join(repo, 'docs', 'readme.md'), 'Notes for the docs.\n');
+  fs.writeFileSync(path.join(repo, 'card.component.html'), '<div class="user">\n<span>{{ user.name }}</span>\n</div>\n');
+  git('add', '.');
+  const moved = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['moved.html', 'docs', 'card.component.html'] } });
+  assert.strictEqual(moved.ok, true, (moved.offenders || []).join(', '));
+  assert.ok(moved.gate.advisories.some((a) => a.reason === 'new_html_not_a_page' && a.file === 'card.component.html'));
 });
