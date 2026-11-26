@@ -102,7 +102,7 @@ function saveState(state) {
 
 // ── Auto-register ───────────────────────────────────────
 
-async function ensureRegistered() {
+async function ensureRegistered({ preserveIdentity = false } = {}) {
   const state = loadState();
   const hubUrl = getHubUrl();
   const hubId = getHubId();
@@ -116,6 +116,11 @@ async function ensureRegistered() {
     process.exit(1);
   }
 
+  // A keyed retry is scoped to the original member. Creating a replacement
+  // member for a saved key would turn the retry into another operation.
+  if (preserveIdentity && state.api_key && (state.hub_id !== hubId || (state.hub_url && state.hub_url !== hubUrl))) {
+    throw new Error('the saved Fleet identity belongs to a different hub');
+  }
   // Re-use existing key if valid
   if (state.api_key && state.hub_id === hubId) {
     try {
@@ -123,7 +128,10 @@ async function ensureRegistered() {
         Authorization: `Bearer ${state.api_key}`,
       });
       if (check.status === 200) return state;
-    } catch {}
+    } catch (error) {
+      if (preserveIdentity) throw error;
+    }
+    if (preserveIdentity) throw new Error('could not confirm the original Fleet identity for this retry');
   }
 
   // Register fresh
@@ -243,19 +251,28 @@ async function fleetClaim(state, taskKey) {
   }
 }
 
-async function fleetDone(state, taskKey, result = '') {
+async function fleetDone(state, taskKey, result = '', operationKey = null, json = false) {
   const hubUrl = getHubUrl();
   const hubId = getHubId();
-  const res = await request('POST', `${hubUrl}/api/${hubId}/channels/general/posts`, {
-    content: result || `Done: ${taskKey}`,
-    kind: 'result',
-    task_key: taskKey,
-  }, authHeaders(state));
-  if (res.status < 300) {
-    console.log(`✓ Reported done: ${taskKey}`);
-  } else {
-    console.error('✗ Failed:', res.data);
+  const content = result || `Done: ${taskKey}`;
+  const channel = `${hubUrl}/api/${encodeURIComponent(hubId)}/channels/general`;
+  const route = operationKey ? 'report/once' : 'posts';
+  const payload = operationKey
+    ? { task_key: taskKey, status: 'done', content, idempotency_key: operationKey }
+    : { content, kind: 'result', task_key: taskKey };
+  const res = await request('POST', `${channel}/${route}`, payload, authHeaders(state));
+  if (res.status >= 300) {
+    console.error('could not record the result:', res.data);
+    process.exitCode = 1;
+    return;
   }
+  if (operationKey && !res.data?.post_id) {
+    console.error('the hub did not confirm the result. retry with the same key.');
+    process.exitCode = 1;
+    return;
+  }
+  if (json) console.log(JSON.stringify(res.data));
+  else console.log(`✓ Reported done: ${taskKey}`);
 }
 
 async function fleetMembers(state) {
@@ -741,7 +758,18 @@ async function fleetMemberLifecycle(subcommand, scopeArgs, { json } = {}) {
 
 async function fleet(args = []) {
   const scope = parseScopeFlag(args);
-  const argv = scope.args.filter((a) => !String(a).startsWith('-'));
+  let argv = scope.args.filter((a) => !String(a).startsWith('-'));
+  let operationKey = null;
+  if (scope.args.some((arg) => arg === '--idempotency-key' || arg.startsWith('--idempotency-key='))) {
+    const parsed = require('../lib/business-target').parseArgs(scope.args, { values: ['idempotency_key'] });
+    operationKey = parsed.flags.idempotency_key;
+    if (parsed.error || !operationKey || parsed.flags.business || !['done', 'report'].includes(parsed.pos[0]?.toLowerCase())) {
+      console.error(parsed.error || 'use --idempotency-key with fleet done or fleet report');
+      process.exitCode = 1;
+      return;
+    }
+    argv = parsed.flags.help ? ['help'] : parsed.pos;
+  }
   const flags = scope.args.filter((a) => String(a).startsWith('-'));
   const subcommand = (argv[0] || 'status').toLowerCase();
   const rest = argv.slice(1).join(' ');
@@ -756,7 +784,7 @@ async function fleet(args = []) {
     console.log('  fleet post <msg>   post message to board (global)');
     console.log('  fleet task <prompt> create a task for agents (global)');
     console.log('  fleet claim <key>  claim a task (global)');
-    console.log('  fleet done <key>   report task complete (global)');
+    console.log('  fleet done <key> [result] [--idempotency-key <intent>]   report task complete (global)');
     console.log('  fleet members      who is online');
     console.log('  fleet prune [min]  remove stale members (default 60m)');
     console.log('  fleet watch [sec]  live-tail the board (default 10s)');
@@ -787,7 +815,7 @@ async function fleet(args = []) {
     return;
   }
 
-  const state = await ensureRegistered();
+  const state = await ensureRegistered({ preserveIdentity: Boolean(operationKey) });
 
   switch (subcommand) {
     case 'status':
@@ -828,9 +856,9 @@ async function fleet(args = []) {
       break;
     case 'done':
     case 'report':
-      if (!rest) { console.error('Usage: atris fleet done <task_key> [result]'); return; }
-      const [key, ...resultParts] = rest.split(' ');
-      await fleetDone(state, key, resultParts.join(' '));
+      if (!rest) { console.error('Usage: atris fleet done <task_key> [result]'); process.exitCode = 1; return; }
+      const [key, ...resultParts] = argv.slice(1);
+      await fleetDone(state, key, resultParts.join(' '), operationKey, json);
       break;
     case 'members':
     case 'who':

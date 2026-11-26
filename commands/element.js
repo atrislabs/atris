@@ -20,7 +20,7 @@ const ELEMENT_ACTIONS = new Set([
 const VALUE_FLAGS = new Set([
   '--channel', '--filter', '--note', '--limit', '--cursor', '--since', '--as', '--member', '--engine',
   '--id', '--after', '--timeout', '--interval', '--lease', '--wait', '--proof', '--file', '--window',
-  '--description', '--every', '--to', '--now', '--port', '--why', '--detail', '--lane', '--lesson', '--verify',
+  '--description', '--every', '--to', '--now', '--port', '--why', '--detail', '--lane', '--lesson', '--verify', '--claim-id',
 ]);
 
 const HELP = [
@@ -46,7 +46,7 @@ const HELP = [
   '       atris element redirect <card> --to <teammate> [--as <member>] [--note "<why>"] [--json]',
   '       atris element progress <card> --as <member> "<one plain line>"',
   '                                                                   say where the work is, on the same card',
-  '       atris element complete <card> --as <member> --proof "<what passed>" [--verify "<check>"] [--lesson "<kept>"] ["<summary>"]',
+  '       atris element complete <card> --as <member> [--claim-id <id from handoff>] --proof "<what passed>" [--verify "<check>"] [--lesson "<kept>"] ["<summary>"]',
   '                                                                   hand in a checked result, save the lesson, release the card',
   '       atris element receipt <card> [--json]                       the saved chain: who asked, who took it, the result, proof and lesson',
   '       atris element curve [--file <path>] [--limit 100] [--window 10] [--json]',
@@ -348,8 +348,9 @@ async function run(args = [], { cwd = process.cwd(), env = process.env, deps = {
     if (sub === 'complete') {
       const cardId = positional[1];
       const text = positional.slice(2).join(' ').trim();
-      const out = swarm.complete(root, cardId, { as: flags.as, proof: flags.proof, text, lesson: flags.lesson || '', verify: flags.verify || '', env, deps });
+      const out = swarm.complete(root, cardId, { as: flags.as, claimId: flags['claim-id'], proof: flags.proof, text, lesson: flags.lesson || '', verify: flags.verify || '', env, deps });
       if (json) console.log(JSON.stringify(out, null, 2));
+      else if (out.replayed) console.log(`the result was already saved on ${cardId}.`);
       else console.log(`completed ${cardId}. ${out.next}`);
       return 0;
     }
@@ -359,6 +360,7 @@ async function run(args = [], { cwd = process.cwd(), env = process.env, deps = {
       if (json) console.log(JSON.stringify(out, null, 2));
       else {
         console.log(`${out.title}  (${out.state})`);
+        if (out.completion_status === 'uncertain') console.log('the check was interrupted. review its outcome before starting another claim.');
         console.log(`asked by ${out.posted_by || 'nobody on record'}, done by ${out.owner || 'nobody yet'}`);
         for (const [name, ok] of Object.entries(out.steps)) console.log(`${ok ? 'yes' : 'no '}  ${name}`);
       }
