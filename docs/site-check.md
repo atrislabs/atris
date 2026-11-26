@@ -8,19 +8,47 @@ atris site check dist --json
 atris site check page.html --render
 ```
 
+Run every site command from the project root. The rules file `.atris/slop.rules.json`, the look picks and the build are all read from the folder the command runs in. A rules file in a parent folder is not read.
+
 ## What it checks
 
-A plain run reads the page as text. It runs the page rules on every page and the content page grammar on content pages. `--json` prints each file with `ok`, `results`, `findings`, `off`, `notChecked`, `rendered` and the same words in `text`.
+A plain run reads the page as text. It runs the page rules on every page and the content page grammar on content pages.
 
-A plain pass does not cover the browser rules. It says so on the pass line: `every page rule passes. the browser rules did not run`.
+A plain pass does not cover the browser rules. The pass line says so and names the command that runs them:
 
-`--render` opens each page in an installed Chrome, Chromium, Edge or Brave (`CHROME_PATH` picks one) at 390 and 1280 pixels wide. It adds the browser rules: sideways scrolling, cut off text, text that only a scroll shows, motion that never ends, buttons too small to tap and faults that only appear once scripts run. A full pass then reads `every rule passes`. With no browser it says the browser check did not run and exits 1.
+```
+ok page.html: every page rule passes. the browser rules did not run: atris site check page.html --render runs them
+```
+
+The command in that line is ready to paste. A path that starts with a dash gets `./` in front. On mac and linux a path with a space or a shell character, or one that starts with `=` or `~`, is put in single quotes. On Windows such a path is put in double quotes.
+
+`--render` opens each page in an installed Chrome, Chromium, Edge or Brave (`CHROME_PATH` picks one) at 390 and 1280 pixels wide. It adds the browser rules: sideways scrolling, cut off text, text that only a scroll shows, motion that never ends, buttons too small to tap and faults that only appear once scripts run. A full pass then reads `ok page.html: every rule passes`.
+
+A page a script draws gets a note on its pass line. Without `--render` the note says its words and look were not read. With `--render` the note goes away once the browser sees words. If the browser saw no words after the wait the note reads `a script draws this page and the browser saw no words after the wait. its words were not read`.
+
+When `--render` is asked and the browser cannot run, the pass line ends with `the browser rules did not run` and a second line gives the reason: `the browser check did not run on page.html: <reason>`. The command exits 1. The reasons are:
+
+- No browser was found. Install one or set `CHROME_PATH`.
+- The browser stopped with an error and printed nothing: `the browser <path> stopped with code <n> and printed nothing. check CHROME_PATH`, or `stopped with signal <name>` when something killed it.
+- The page did not finish loading in time at one width.
+
+`--json` prints each file with `ok`, `results`, `findings`, `off`, `notChecked`, `rendered` and the same words in `text`. `rendered` is true only when the browser rules ran. `reason` is there when `--render` was asked and the browser did not run.
 
 ## The rule list
 
-`atris site rules` prints every rule in force, grouped, with the order of work and the upload mode. `--json` gives the same list as `grammar`, `page`, `browser` and `mode`. Read the list there. This page does not copy it.
+`atris site rules` prints every rule in force, grouped, with the order of work and the upload mode. It lists 7 content page rules, 25 page rules in three groups and 7 browser rules that only run with `--render`. `--json` gives the same list as `grammar`, `page`, `browser`, `mode` and `off`. Read the list there. This page does not copy it.
 
-A project switches one page rule off with `{ "off": ["page-glow"] }` in `.atris/slop.rules.json`. A switched-off rule is still named in every report.
+A project switches one page rule off with `{ "off": ["page-glow"] }` in `.atris/slop.rules.json`. A switched-off rule is still named: on a passing check (`switched off in .atris/slop.rules.json: page-glow`), on a passing upload, in the upload's `page_check` field and in `site rules`, as text and in `off` in `--json`.
+
+## A rules file that cannot be read
+
+When `.atris/slop.rules.json` is there and is not valid json, or does not hold a json object, every site command names it on stderr:
+
+```
+.atris/slop.rules.json could not be read: <why>
+```
+
+`site check` still checks the pages. `site check --mode` prints only that line and exits 1. `site rules` says the project's mode is unknown until the file can be read. In `--json` its `mode` is `unknown`. Publish and deploy upload nothing. See [site-publish.md](site-publish.md#page-check).
 
 ## Content pages
 

@@ -37,12 +37,24 @@ atris site publish . --slug my-app --build --profile app
 
 After any build and before anything is uploaded, publish checks every html page in the folder with the same rules as `atris site check` ([site-check.md](site-check.md)). Built pages are also held to the look they were built in: a page edited after its build, a look the owner never picked or a linked style sheet missing from the folder each count as a fault. `atris site deploy` runs the same check before its upload and before `--dry-run` prints its plan.
 
-The project picks what a failing page does in `.atris/slop.rules.json`. `atris site check --mode` prints the mode in force.
+The project picks what a failing page does in `.atris/slop.rules.json`. `atris site check --mode` prints the mode in force. Run publish and deploy from the project root: the rules file, the look picks and the build are read from the folder the command runs in. A rules file in a parent folder is not read.
 
 - **Watch** is the default. The check writes what would fail to stderr under `page check in watch mode: the upload goes ahead`. The upload goes on as before.
 - **Block** is on with `"pages": "block"`. A failing page stops the upload: the check prints `refused <file>` with one line per fault, then `page check in block mode: nothing was uploaded.` and the command exits 1. `atris init` turns block mode on for a new project.
 
-To switch one page rule off, list its id under `off`, like `{ "pages": "block", "off": ["page-glow"] }`. The report still names every rule that is switched off. The content page grammar cannot be switched off.
+To switch one page rule off, list its id under `off`, like `{ "pages": "block", "off": ["page-glow"] }`. The content page grammar cannot be switched off. A passing upload still names every rule that is switched off, since a page may pass only because one is off:
+
+```
+page check in block mode: switched off in .atris/slop.rules.json: page-glow
+```
+
+A rules file that is there and cannot be read stops the upload in either mode, since the owner's choice of mode is then unknown. Publish, deploy and `deploy --dry-run` print one line and exit 1:
+
+```
+.atris/slop.rules.json could not be read: <why>. nothing was uploaded: fix the file or remove it
+```
+
+After an upload `atris site publish --json` carries the check in `page_check`: `mode` (`watch` or `block`), `ok`, `off` (the switched-off rules) and `files` (each failing page with its findings and the same words in `text`). A refused upload prints the refusal on stderr and no `page_check`.
 
 ## File handling
 
@@ -189,6 +201,7 @@ The hosted-sites lane serves files only. These Next.js features are not supporte
 | `site home page is missing: index.html` | | No `index.html` in the published folder. | Add `index.html` or point at the correct build output. |
 | `site files exceed upload limits:` | | A file exceeds 2 MB or the folder has more than 200 pages. | Shrink or split assets; reduce page count. |
 | `page check in block mode: nothing was uploaded.` | | A page broke a page rule and the project is in block mode. | Fix each named line, check again with `atris site check <dir>`, then publish. |
+| `.atris/slop.rules.json could not be read: ...` | | The rules file in the folder the command runs in is not valid json or not a json object. | Fix the file or remove it, then publish again. |
 
 ## Verification tip
 
