@@ -120,7 +120,7 @@ test('a page whose styles or words the check could not see never reads as every 
   folder('site-sheets', { 'index.html': raw('<link rel="stylesheet" href="/css/site.css">'), 'css/site.css': glow, 'typo.html': raw('<link rel="stylesheet" href="css/sty1es.css">') });
   const res = await cli(['check', 'site-sheets']);
   assert.match(res.err, /refused site-sheets\/index\.html[\s\S]*a glow/);
-  assert.match(res.out, /ok site-sheets\/typo\.html: no rule failed, but not checked: css\/sty1es\.css is not there/);
+  assert.match(res.out, /ok site-sheets\/typo\.html: no rule failed\. not checked: css\/sty1es\.css is not there/);
   const err = [];
   assert.strictEqual(await publish.run(['site-sheets', '--slug', 'demo'], { ...quiet, error: (s) => err.push(s), fetch }), 1);
   assert.match(err.join('\n'), /line 1: a style sheet that is not in the folder: "css\/sty1es\.css"/);
