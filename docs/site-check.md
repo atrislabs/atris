@@ -8,13 +8,13 @@ atris site check dist --json
 atris site check page.html --render
 ```
 
-Run every site command from the project root. The rules file `.atris/slop.rules.json`, the look picks and the build are all read from the folder the command runs in. A rules file in a parent folder is not read.
+Run every site command from the project root. The rules file `.atris/slop.rules.json`, the theme picks in `.atris/theme.json` and the build are all read from the folder the command runs in. A rules file in a parent folder is not read.
 
 ## What it checks
 
 A plain run reads the page as text. It runs the page rules on every page and the content page grammar on content pages.
 
-A class name counts as a style only on a page whose styles the check could not all read, such as a remote sheet or a utility framework built in the browser. On such a page or on a page a script draws, each rule that passed reads `null` in `--json` instead of `true`.
+A class name counts as a style only on a page whose styles the check could not all read: a remote sheet, or a script file the check does not open on a page with a class no read sheet defines. That script is named as not read. A class name can add a finding and never hides words from the rules. On such a page or on a page a script draws, each rule that passed reads `null` in `--json` instead of `true`.
 
 A plain pass does not cover the browser rules. The pass line says so and names the command that runs them:
 
@@ -31,9 +31,10 @@ A page a script draws gets a note on its pass line. Without `--render` the note 
 When `--render` is asked and the browser cannot run, the pass line ends with `the browser rules did not run` and a second line gives the reason: `the browser check did not run on page.html: <reason>`. The command exits 1. The reasons are:
 
 - No browser was found. Install one or set `CHROME_PATH`.
+- `CHROME_PATH <path> is not a file`: the set path is named and no other browser is picked in its place.
 - The browser stopped and printed nothing: `the browser <path> stopped with code <n> and printed nothing. check CHROME_PATH`, or `stopped with signal <name>` when something killed it.
 - The page did not finish loading in time at one width.
-- The browser did not finish within 30 seconds at one width. A slow machine sets a longer wait with `"renderSeconds": 60` in `.atris/slop.rules.json`. The time a page has to load grows with it.
+- The browser did not finish within 30 seconds at one width.
 
 `--json` prints each file with `ok`, `results`, `findings`, `off`, `notChecked`, `rendered` and the same words in `text`. Each finding has a `level`: `error` for a fault to fix and `warn` for a note for the reviewer, with `maybe` saying why it may be fine. `rendered` is true only when the browser rules ran. `reason` is there when `--render` was asked and the browser did not run.
 
@@ -56,7 +57,7 @@ A project switches one page rule off with `{ "off": ["page-glow"] }` in `.atris/
 
 ## A rules file that cannot be read
 
-When `.atris/slop.rules.json` is there and is not valid json, or does not hold a json object, every site command names it on stderr. The same goes for a `pages` value that is neither `"block"` nor `"watch"`, an `off` that is not a list and a `renderSeconds` that is not a number above 0. A plain list, the form `atris slop rules --add` writes, is fine and means watch mode.
+When `.atris/slop.rules.json` is there and is not valid json, or does not hold a json object, every site command names it on stderr. The same goes for a `pages` value that is neither `"block"` nor `"watch"` and an `off` that is not a list. A plain list, the form `atris slop rules --add` writes, is fine and means watch mode.
 
 ```
 .atris/slop.rules.json could not be read: <why>
@@ -68,9 +69,7 @@ When `.atris/slop.rules.json` is there and is not valid json, or does not hold a
 
 A content page is plain html that starts at `<main>`, with no class, style or script. The words and structure are yours. The tool adds the look.
 
-`atris site <page.html> --look <name> --out <dir>` checks the page and then writes `<dir>/index.html` in that look. `plain` is built in. Other looks live at `atris/looks/<name>.css` and only the owner picks one, at a terminal, with `atris site look pick <name>`. `atris site look` lists the looks and which are picked.
-
-A theme (`--theme`) colours a markdown site. A look (`--look`) is the owner's stylesheet for a content page. No look may take a built-in theme's name. `--look paper` is refused.
+`atris site <page.html> --theme <name> --out <dir>` checks the page and then writes `<dir>/index.html` in that theme, the same themes `atris theme list` shows for markdown sites. Without `--theme` it builds in `plain`. A theme gives the page its colours and fonts through elements only. The built page must pass every page rule too. A theme with a banned font is refused. Only the owner picks a theme for content pages, at a terminal, with `atris theme pick <name>`. The pick is kept in `.atris/theme.json` and `atris theme list` says which themes are picked.
 
 ## Before upload
 

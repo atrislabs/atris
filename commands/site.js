@@ -1,13 +1,11 @@
 // atris site, turn a folder of markdown (docs, your wiki, memory) into a
 // beautiful, navigable static site in the design system. Built on lib/site.js.
-// A content page (plain html starting at <main>) is checked and built in a look (lib/page-lang.js).
-// A theme colours a markdown site. A look is the owner's stylesheet for a content page.
+// A content page (plain html starting at <main>) is checked and built in plain or a theme (lib/page-lang.js).
 //
 //   atris site <dir|doc.md> [--out dist] [--theme atris|terminal|paper] [--title T] [--serve]
-//   atris site <page.html> [--look <name>] [--out dist]
+//   atris site <page.html> [--theme <name>] [--out dist]
 //   atris site check <file|dir> [--json] [--render]
 //   atris site rules [--json]
-//   atris site look | atris site look pick <name>
 //   atris site publish <dir> --slug <slug> [--profile strict|app] [--spa] [--no-claim] [--build] [--json]
 
 const fs = require('fs');
@@ -20,7 +18,7 @@ const lang = () => require('../lib/page-lang');
 const shown = (file) => lang().shown(file);
 const report = (...a) => lang().report(...a);
 
-// Every site command reads .atris/slop.rules.json, the look picks and the build from the folder it
+// Every site command reads .atris/slop.rules.json, the theme picks and the build from the folder it
 // runs in. A rules file that is there and cannot be read is named on stderr.
 function rulesNote(root) {
   const problem = require('../lib/page-rules').rulesProblem(root);
@@ -98,24 +96,7 @@ function rules(argv) {
   return 0;
 }
 
-// atris site look lists the looks. atris site look pick <name> records the owner's pick.
-function look(argv) {
-  const root = process.cwd();
-  if (argv.length) {
-    const name = argv[1];
-    if (argv[0] !== 'pick' || !name) { console.error('  atris site look\n  atris site look pick <name>'); return 2; }
-    if (name === 'plain') { console.log('plain is built in and needs no pick.'); return 0; }
-    const { useInteractiveTerminalUi } = require('../lib/computer-core');
-    if (!useInteractiveTerminalUi()) { console.error('only the owner picks a look, at a terminal. no pick was recorded.'); return 1; }
-    try { lang().recordPick(root, name); } catch (e) { console.error(e.message); return 2; }
-    console.log(`picked ${name}. pages built in it can be published.`);
-    return 0;
-  }
-  for (const look of lang().listLooks(root)) console.log(`${look.name}: ${look.state}`);
-  return 0;
-}
-
-// A content page becomes <out>/index.html in a look, after every page rule passes.
+// A content page becomes <out>/index.html in plain or a theme, after every page rule passes.
 function buildPage(input, argv) {
   const L = lang();
   const root = process.cwd();
@@ -123,22 +104,16 @@ function buildPage(input, argv) {
   const file = path.resolve(input);
   const res = L.checkFile(file, { root, label: shown(file) });
   if (!res.ok) return report([res]);
-  const look = flag(argv, '--look') || 'plain';
+  const theme = flag(argv, '--theme') || 'plain';
   let css;
-  try { css = L.readLook(root, look); } catch (e) { console.error(e.message); return 2; }
-  const bad = L.lookSelectorProblems(css);
-  if (bad.length) {
-    console.error(`refused look ${look} (${bad.length} selector${bad.length === 1 ? '' : 's'} to fix)`);
-    for (const b of bad) console.error(`line ${b.line}: a class or id selector: "${b.text}". style elements and attributes only; content has no classes.`);
-    return 1;
-  }
-  const html = L.compilePage(fs.readFileSync(file, 'utf8'), { look, lookCss: css });
-  const built = require('../lib/page-rules').checkPage(html, `look ${look}`, { root });
-  if (L.mustFix(built).length) return report([{ file: `${shown(file)} in look ${look}`, ok: false, findings: built.findings, off: built.off }]);
+  try { css = L.themeCss(root, theme); } catch (e) { console.error(e.message); return 2; }
+  const html = L.compilePage(fs.readFileSync(file, 'utf8'), { look: theme, lookCss: css });
+  const built = require('../lib/page-rules').checkPage(html, `theme ${theme}`, { root });
+  if (L.mustFix(built).length) return report([{ file: `${shown(file)} in ${theme}`, ok: false, findings: built.findings, off: built.off }]);
   const outDir = path.resolve(flag(argv, '--out') || 'dist');
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, 'index.html'), html);
-  console.log(`built ${shown(path.join(outDir, 'index.html'))} in look ${look}`);
+  console.log(`built ${shown(path.join(outDir, 'index.html'))} in ${theme}`);
   return 0;
 }
 
@@ -152,7 +127,6 @@ async function run(argv) {
   if (argv[0] === 'deploy') return require('./site-deploy').run(argv.slice(1));
   if (argv[0] === 'check') return check(argv.slice(1));
   if (argv[0] === 'rules') return rules(argv.slice(1));
-  if (argv[0] === 'look') return look(argv.slice(1));
 
   const input = argv.find((a) => !a.startsWith('-'));
   if (!input || input === 'help' || hasFlag(argv, '--help')) {
@@ -161,11 +135,9 @@ async function run(argv) {
 
     atris site <dir|doc.md> [--out dist] [--theme atris|terminal|paper] [--title T]
     atris site atris/wiki --title "Atris Wiki" --serve
-    atris site <page.html> [--look <name>] [--out dist]
+    atris site <page.html> [--theme <name>] [--out dist]
     atris site check <file|dir> [--json] [--render]
     atris site rules [--json]
-    atris site look
-    atris site look pick <name>
     atris site publish <dir> --slug <slug> [--profile strict|app] [--spa] [--no-claim] [--build] [--json]
     atris site deploy <dir> --name <slug> [--spa] [--dry-run] --yes
     atris site deploy <dir> --fullstack --name <slug> [--dry-run] --yes
@@ -175,10 +147,7 @@ async function run(argv) {
 
   A content page is plain html that starts at <main>. check runs every page rule on it
   and --render adds the browser rules. rules prints them all. building it writes
-  <out>/index.html in a look.
-  A theme (--theme) colours a markdown site. A look (--look) is the owner's stylesheet
-  for a content page and never takes a theme's name.
-  Looks live at atris/looks/<name>.css. Only the owner picks one, at a terminal.
+  <out>/index.html in plain, or in a --theme the owner picked with atris theme pick.
 
   publish uploads any built web folder through the hosted-sites api. deploy is
   the older site setup flow; --fullstack deploys a node server with render.

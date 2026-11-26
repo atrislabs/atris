@@ -3,7 +3,8 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { checkContentPage, compilePage, builtProblems, recordPick, PLAIN_CSS, lookSelectorProblems } = require('../lib/page-lang');
+const { checkContentPage, compilePage, builtProblems, recordPick, themeCss } = require('../lib/page-lang');
+const { upsertProjectTheme } = require('../lib/theme');
 const { checkPage } = require('../lib/page-rules');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-page-lang-'));
@@ -45,28 +46,22 @@ test('each grammar rule refuses its bad page at the line', () => {
   assert.deepStrictEqual(rules(page(`<section>\n<h2>Notes</h2>\n${PROSE}\n</section>`, '<h1>Writing coach</h1>')), []);
 });
 
-test('a built page must still be what was built, in plain or a picked look', () => {
+test('a built page must still be what was built, in plain or a picked theme', () => {
   const content = page(PROSE);
   const plain = compilePage(content);
   assert.deepStrictEqual(builtProblems(plain, root), []);
   assert.strictEqual(builtProblems(plain.replace('every week', 'each week'), root)[0].rule, 'built-edited');
   assert.strictEqual(builtProblems(plain.replace('<style>', '<style>p{color:#333}'), root)[0].rule, 'built-edited');
-  fs.mkdirSync(path.join(root, 'atris', 'looks'), { recursive: true });
-  const css = 'body{font-family:Georgia,serif}';
-  fs.writeFileSync(path.join(root, 'atris', 'looks', 'serif.css'), css);
-  const serif = compilePage(content, { look: 'serif', lookCss: css });
-  assert.strictEqual(builtProblems(serif, root)[0].rule, 'built-look-unpicked');
-  recordPick(root, 'serif');
-  assert.deepStrictEqual(builtProblems(serif, root), []);
-  fs.writeFileSync(path.join(root, 'atris', 'looks', 'serif.css'), `${css}h1{font-size:3em}`);
-  recordPick(root, 'serif');
-  assert.strictEqual(builtProblems(serif, root)[0].rule, 'built-look-unpicked');
-  // a look never shares a name with a built-in theme, so --look and --theme never mean the same word
-  fs.writeFileSync(path.join(root, 'atris', 'looks', 'paper.css'), css);
-  assert.throws(() => recordPick(root, 'paper'), /^Error: paper is the name of a built-in theme/);
-  fs.rmSync(path.join(root, 'atris', 'looks', 'paper.css'));
-  assert.deepStrictEqual(lookSelectorProblems('main > h1, a[href^="http"], p:first-child{x:y}'), []);
-  assert.strictEqual(lookSelectorProblems('.hero{x:y}\n#top{x:y}').length, 2);
+  const paper = compilePage(content, { look: 'paper', lookCss: themeCss(root, 'paper') });
+  assert.strictEqual(builtProblems(paper, root)[0].rule, 'built-look-unpicked');
+  recordPick(root, 'paper');
+  assert.deepStrictEqual(builtProblems(paper, root), []);
+  // the pick sits in .atris/theme.json beside the themes and a theme changed after it needs a new pick
+  upsertProjectTheme('paper', { color: { accent: '#0000ff' } }, root);
+  assert.deepStrictEqual(builtProblems(paper, root), []);
+  const changed = compilePage(content, { look: 'paper', lookCss: themeCss(root, 'paper') });
+  assert.strictEqual(builtProblems(changed, root)[0].rule, 'built-look-unpicked');
+  assert.throws(() => themeCss(root, 'nope'), /^Error: no theme named nope\. atris theme list shows the themes$/);
 });
 
 // --- the compile invariant: any valid content page built in plain passes every page rule ---
@@ -125,7 +120,6 @@ test('any valid content page built in plain passes every page rule', () => {
     const built = checkPage(compilePage(content), 'gen.html', { root });
     assert.deepStrictEqual(built.findings.map((f) => `${f.rule}@${f.line} ${f.text}`), [], `case ${i} built in plain:\n${content}`);
   }
-  assert.deepStrictEqual(lookSelectorProblems(PLAIN_CSS), []);
 });
 
 test('the landing gate holds a new page to every rule and leaves an edited old page to the line scan', (t) => {
@@ -176,9 +170,16 @@ test('the landing gate holds a new page to every rule and leaves an edited old p
   fs.writeFileSync(path.join(repo, 'card.html'), '<p>Each student stays quiet in the room for the hour.</p>\n');
   fs.writeFileSync(path.join(repo, 'glass.html'), '<!doctype html><html lang="en"><head><style>\n.c{backdrop-filter:blur(10px)}\n</style></head><body><main><p class="c">Each student wrote a draft every week and the teacher read them.</p></main></body></html>\n');
   fs.writeFileSync(path.join(repo, 'spa.html'), '<!doctype html><html lang="en"><head><script src="app.js"></script></head><body><div id="root"></div></body></html>\n');
-  git('add', 'card.html', 'glass.html', 'spa.html');
-  const piece = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['card.html', 'glass.html', 'spa.html'] } });
-  assert.deepStrictEqual(piece.offenders, ['card.html:1 page-word-quiet', 'glass.html:2 page-glass']);
+  fs.writeFileSync(path.join(repo, 'caps.html'), '<!doctype html><html lang="en"><head><style>\n.e{text-transform:uppercase}\n</style></head><body><main>\n<p class="e">Each student wrote a draft every week and the teacher read them.</p></main></body></html>\n');
+  git('add', 'card.html', 'glass.html', 'spa.html', 'caps.html');
+  const pieceTask = { workspace_root: repo, metadata: { changed_files: ['card.html', 'glass.html', 'spa.html', 'caps.html'] } };
+  const piece = candidatePolicyGate(pieceTask);
+  assert.deepStrictEqual(piece.offenders, ['card.html:1 page-word-quiet', 'glass.html:2 page-glass', 'caps.html:4 page-all-caps']);
+  // in watch mode the line rule holds the file and the page rule that replaces it adds no second line
+  fs.writeFileSync(path.join(repo, '.atris', 'slop.rules.json'), '{}\n');
+  const pieceWatch = candidatePolicyGate(pieceTask);
+  assert.deepStrictEqual(pieceWatch.gate.advisories.filter((a) => a.reason === 'new_page_check_watch').map((a) => `${a.file}:${a.line} ${a.rule}`), ['card.html:1 page-word-quiet']);
+  fs.writeFileSync(path.join(repo, '.atris', 'slop.rules.json'), '{ "pages": "block" }\n');
   assert.ok(piece.gate.advisories.some((a) => a.reason === 'new_page_not_read' && a.file === 'spa.html' && /a script draws this page/.test(a.detail)), JSON.stringify(piece.gate.advisories));
   // with no base branch to compare against the new page check cannot run: block mode holds and says so
   git('commit', '-qm', 'move');

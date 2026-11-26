@@ -611,9 +611,8 @@ const ATTACKS = [
   ['page-subtitle', page('<h2>Spring fair</h2><p class="meta">May 3, by Ana Lee</p><p>We set up forty stalls on the green.</p>'), 'note'],
   ['page-subtitle', page('<h1>Terms</h1><p>Last updated November 1, 2026.</p><h2>Use</h2><p>Be kind.</p>'), 'note'],
   ['page-subtitle', page('<main><h1>Account settings</h1><h2>Profile</h2><label for="n">Full name</label><input id="n" type="text"><button type="button">Save</button></main>'), false],
-  // a tailwind class hides text on a desktop only when its variant holds there, and a breakpoint wins over the base class
-  ...['max-md:hidden', 'data-[state=closed]:hidden', 'aria-expanded:hidden', '2xl:hidden', 'md:flex hidden'].map((cls) => ['page-word-quiet', page(`<p class="${cls}">It runs quietly in the background.</p>`), true]),
-  ...['md:hidden', 'hidden', 'flex lg:hidden'].map((cls) => ['page-word-quiet', page(`<p class="${cls}">It runs quietly in the background.</p>`, '', TW), false]),
+  // a class name guessed as a style can add a finding and never hides words from the rules
+  ['page-word-quiet', page('<p class="hidden">It runs quietly in the background.</p>', '', TW), true],
   // a class name is read as a style only when the page loads styles the check cannot read
   ['page-word-quiet', page('<p class="hidden">It runs quietly in the background.</p>'), true],
   ['page-explanatory', page('<h1>Fish</h1><p>Salt the water well before the fish goes in.</p><p>Tip: salt it until it tastes like the sea.</p>'), false],
@@ -655,6 +654,10 @@ const ATTACKS = [
   // the random source of a noise texture is read in the block that writes the pixels
   ['page-noise', page('<canvas id="c"></canvas><script>var id = "c" + Math.random(); function plot(x, y) { ctx.fillRect(x, y, 1, 1); }</script>'), false],
   ['page-noise', page(`<canvas id="c"></canvas><script>for (let i = 0; i < 9; i++) { const v = Math.random(); ${'ctx.x = 1; '.repeat(30)}ctx.fillRect(i, v, 1, 1); }</script>`), true],
+  ['page-noise', page('<canvas id="c"></canvas><script>for (;;) { var v = Math.random() * 255; for (var c = 0; c < 3; c++) { d.data[i + c] = v; } }</script>'), true],
+  ['page-noise', page('<canvas id="c"></canvas><script>{ const setup = 1; }\nimg.data[0] = 255;</script>'), false],
+  // a local script the check never opens may write the styles its class names stand for
+  ['page-all-caps', page('<h1 class="uppercase tracking-widest">Hours</h1>', '', '<script src="app.js"></script>'), true],
   // a number cited by the text clears only its own entry. a step word reads like a plain number
   ['page-numbered-sections', page('<h2>01 Plan</h2><p>a</p><h2>02 Build</h2><p>b</p><footer><p>Tickets for section 1 of the stadium are sold out.</p></footer>'), true],
   ['page-numbered-sections', page('<p>Step 1 Mix</p><p>Step 2 Bake</p>'), 'note'],

@@ -6,6 +6,7 @@
 //   atris theme init          scaffold a starter .atris/theme.json
 //   atris theme list          list built-in + project themes
 //   atris theme show <name>   print a resolved theme
+//   atris theme pick <name>   the owner picks a theme for content pages, at a terminal
 
 const readline = require('readline');
 const {
@@ -201,13 +202,26 @@ async function run(argv) {
     return 0;
   }
 
+  // a page built in a theme can be published only after the owner picks the theme, at a terminal
+  if (sub === 'pick') {
+    const name = rest[0];
+    if (!name) { console.error('  atris theme pick <name>'); return 2; }
+    if (name === 'plain') { console.log('plain is built in and needs no pick.'); return 0; }
+    const { useInteractiveTerminalUi } = require('../lib/computer-core');
+    if (!useInteractiveTerminalUi()) { console.error('only the owner picks a theme for content pages, at a terminal. no pick was recorded.'); return 1; }
+    try { require('../lib/page-lang').recordPick(process.cwd(), name); } catch (e) { console.error(e.message); return 2; }
+    console.log(`picked ${name}. content pages built in it can be published.`);
+    return 0;
+  }
+
   // list (default)
   const project = loadProjectThemes();
   const all = mergedThemes(HTML_THEMES);
+  const { pickState } = require('../lib/page-lang');
   console.log('\n  atris themes:\n');
   for (const name of Object.keys(all)) {
     const tag = project[name] ? 'project' : 'built-in';
-    console.log(`  ${sw(all[name].color.accent)} ${name.padEnd(12)} accent ${all[name].color.accent}  bg ${all[name].color.bg}  (${tag})`);
+    console.log(`  ${sw(all[name].color.accent)} ${name.padEnd(12)} accent ${all[name].color.accent}  bg ${all[name].color.bg}  (${tag}, ${pickState(process.cwd(), name)} for content pages)`);
   }
   console.log(`\n  make your own by feel:  atris theme create`);
   console.log(`  themes live in ${PROJECT_THEME_FILE}. Used by deck, html, and site.\n`);

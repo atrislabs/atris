@@ -50,16 +50,13 @@ test('an interrupted check stops the browser it started and removes its profile'
   assert.deepEqual(fs.readdirSync(tmp).filter((f) => f.startsWith('atris-render-')), []);
 });
 
-test('the owner sets how long the browser may take. a browser past it is stopped with the setting named', { skip: process.platform === 'win32' ? 'the stand-in browser is a shell script' : false }, async () => {
-  const dir = temp('page-render-wait-');
-  const sleeper = path.join(dir, 'chrome');
+test('a browser past the wait is stopped and the wait is named', { skip: process.platform === 'win32' ? 'the stand-in browser is a shell script' : false }, async () => {
+  const sleeper = path.join(temp('page-render-wait-'), 'chrome');
   fs.writeFileSync(sleeper, '#!/bin/sh\nsleep 60\n', { mode: 0o755 });
-  fs.mkdirSync(path.join(dir, '.atris'));
-  fs.writeFileSync(path.join(dir, '.atris', 'slop.rules.json'), JSON.stringify({ renderSeconds: 1.5 }));
   const started = Date.now();
-  const r = await renderCheck(__filename, { widths: [1280], root: dir, env: { CHROME_PATH: sleeper } });
+  const r = await renderCheck(__filename, { widths: [1280], seconds: 1.5, env: { CHROME_PATH: sleeper } });
   assert.ok(Date.now() - started < 10000);
-  assert.equal(r.reason, 'the browser did not finish within 1.5 seconds at 1280px. a slow machine can wait longer with "renderSeconds" in .atris/slop.rules.json');
+  assert.equal(r.reason, 'the browser did not finish within 1.5 seconds at 1280px');
 });
 
 test('reading a dumped page returns the measurements and the page without the probe', () => {
@@ -84,6 +81,8 @@ test('with no browser the check says what to install', async () => {
   const r = await renderCheck(__filename, { env: { PATH: '' }, platform: 'linux' });
   assert.equal(r.ran, false);
   assert.equal(r.reason, 'no browser found on this computer. install Chrome, Chromium, Edge or Brave, or set CHROME_PATH');
+  // a CHROME_PATH that is not a file is named, never swapped for another browser
+  assert.equal((await renderCheck(__filename, { env: { CHROME_PATH: '/nope/not-a-browser', PATH: '' }, platform: 'linux' })).reason, 'CHROME_PATH /nope/not-a-browser is not a file');
 });
 
 const BROWSER = findBrowser();

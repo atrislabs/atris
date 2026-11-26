@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const site = require('../commands/site');
 const publish = require('../lib/site-publish');
-const { compilePage, recordPick } = require('../lib/page-lang');
+const { compilePage, recordPick, themeCss } = require('../lib/page-lang');
 const { PAGE_RULES } = require('../lib/page-rules');
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-site-check-'));
@@ -92,19 +92,18 @@ test('rules prints every rule the check enforces', async () => {
   assert.doesNotMatch(res.out + (await cli(['--help'])).out, /--mode/);
 });
 
-test('only a person at a terminal can pick a look', async () => {
-  folder('atris/looks', { 'serif.css': 'body{font-family:Georgia,serif}' });
-  const res = await cli(['look', 'pick', 'serif']);
-  assert.strictEqual(res.code, 1);
-  assert.ok(!fs.existsSync(path.join(root, 'atris', 'looks', 'picked.json')));
-  assert.match((await cli(['look'])).out, /serif: not picked/);
-  assert.doesNotMatch((await cli(['--help'])).out, /site looks/);
+test('only a person at a terminal can pick a theme for content pages', async () => {
+  const theme = require('../commands/theme');
+  const saved = console.error;
+  console.error = () => {};
+  try { assert.strictEqual(await theme.run(['pick', 'atris']), 1); } finally { console.error = saved; }
+  assert.ok(!fs.existsSync(path.join(root, '.atris', 'theme.json')));
 });
 
-test('a content page builds to index.html in a look', async () => {
-  const res = await cli(['pages/good.html', '--look', 'serif', '--out', 'built']);
+test('a content page builds to index.html in a theme', async () => {
+  const res = await cli(['pages/good.html', '--theme', 'atris', '--out', 'built']);
   assert.strictEqual(res.code, 0);
-  assert.match(fs.readFileSync(path.join(root, 'built', 'index.html'), 'utf8'), /<meta name="atris-page" content="serif sha256:/);
+  assert.match(fs.readFileSync(path.join(root, 'built', 'index.html'), 'utf8'), /<meta name="atris-page" content="atris sha256:/);
   assert.strictEqual((await cli(['pages/bad.html', '--out', 'built2'])).code, 1);
   assert.ok(!fs.existsSync(path.join(root, 'built2')));
 });
@@ -135,7 +134,7 @@ test('in block mode publish and deploy upload nothing unless every page passes',
     [folder('site-bad', { 'index.html': BAD }), /refused site-bad\/index\.html/],
     [folder('site-edited', { 'index.html': plain.replace('every week', 'each week') }), /edited after it was built\. rebuild it from the content page\./],
     [folder('site-head', { 'index.html': plain.replace('</head>', '<style>p{color:red}</style>\n</head>') }), /edited after it was built/],
-    [folder('site-look', { 'index.html': compilePage(GOOD, { look: 'serif', lookCss: 'body{font-family:Georgia,serif}' }) }), /look serif has no pick on record in this folder\. only the owner picks a look\./],
+    [folder('site-look', { 'index.html': compilePage(GOOD, { look: 'atris', lookCss: themeCss(root, 'atris') }) }), /theme atris has no pick on record in \.atris\/theme\.json\. only the owner picks a theme for content pages, with atris theme pick <name> at a terminal\./],
   ];
   for (const [dir, said] of refusals) {
     const err = [];
@@ -151,7 +150,7 @@ test('in block mode publish and deploy upload nothing unless every page passes',
   fs.symlinkSync(path.join(root, 'site-bad', 'index.html'), path.join(root, 'site-clean', 'link.html'));
   assert.strictEqual(await upload(['site-clean', '--slug', 'demo']), 0);
   assert.strictEqual(uploads, before + 1);
-  recordPick(root, 'serif');
+  recordPick(root, 'atris');
   assert.strictEqual(await upload(['site-look', '--slug', 'demo']), 0);
   assert.strictEqual(uploads, before + 2);
 }));
@@ -303,7 +302,7 @@ test('a passing upload still names the rules the project switched off, on screen
   assert.deepStrictEqual(JSON.parse(out.join('\n')).page_check, { mode: 'block', ok: true, off: ['page-subtitle'], files: [], not_checked: [] });
 });
 
-// Every site command reads the rules file, the look picks and the build from the folder it runs in.
+// Every site command reads the rules file, the theme picks and the build from the folder it runs in.
 test('check and build agree on a switched-off rule from any folder', async () => {
   folder('agree', { 'web/page.html': SUB, '.atris/slop.rules.json': '{ "off": ["page-subtitle"] }' });
   process.chdir(path.join(root, 'agree'));
@@ -314,12 +313,12 @@ test('check and build agree on a switched-off rule from any folder', async () =>
   } finally { process.chdir(root); }
 });
 
-test('a page built in a picked look passes the upload check from the folder where it was picked and built', async () => {
-  folder('picked', { '.atris/slop.rules.json': '{ "pages": "block" }', 'web/page.html': GOOD, 'web/atris/looks/serif.css': 'body{font-family:Georgia,serif}' });
+test('a page built in a picked theme passes the upload check from the folder where it was picked and built', async () => {
+  folder('picked', { '.atris/slop.rules.json': '{ "pages": "block" }', 'web/page.html': GOOD });
   process.chdir(path.join(root, 'picked', 'web'));
   try {
-    recordPick(process.cwd(), 'serif');
-    assert.strictEqual((await cli(['page.html', '--look', 'serif', '--out', 'dist'])).code, 0);
+    recordPick(process.cwd(), 'atris');
+    assert.strictEqual((await cli(['page.html', '--theme', 'atris', '--out', 'dist'])).code, 0);
     const err = [];
     assert.strictEqual(await deploy.run(['dist', '--name', 'demo', '--dry-run'], { ...quiet, error: (s) => err.push(s) }), 0);
     assert.strictEqual(err.join('\n'), '');
