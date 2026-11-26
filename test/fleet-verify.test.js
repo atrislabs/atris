@@ -101,8 +101,10 @@ test('resumes a missing target and verifies the committed pair in fresh snapshot
 
 test('times out an arbitrary check and never blindly reruns the uncertain operation', async t => {
   const f = fixture(t);
-  const target = f.repo('slow', { 'check.js': f.record('once') + 'setTimeout(() => {}, 10000)' });
-  f.save({ version: 1, timeout_seconds: 1, targets: [target], joint: { cwd: 'slow', verify: ['node', '-v'] } });
+  const target = f.repo('slow', { 'check.js': f.record('once') + 'setTimeout(() => {}, 60000)' });
+  // The deadline includes the Git checkout and process startup. Leave time
+  // for the verifier to write its witness before exercising the timeout.
+  f.save({ version: 1, timeout_seconds: 10, targets: [target], joint: { cwd: 'slow', verify: ['node', '-v'] } });
   const first = await f.invoke().result;
   assert.equal(first.code, 1);
   assert.equal(first.data.targets[0].state, 'uncertain');
