@@ -1,6 +1,6 @@
 # Site check
 
-`atris site check <file|dir>` answers one question: would this page pass the screen standard? It reads every html page it is given and prints one line per fault with the line number, what is wrong and the fix. A page that passes prints `ok`. It exits 0 when every page passes, 1 when one fails and 2 when it finds no html page.
+`atris site check <file|dir>` answers one question: would this page pass the screen standard? It reads every html page it is given and prints one line per fault with the line number, what is wrong and the fix. A page that passes prints `ok`. Notes for the reviewer print after these lines and never fail a page. It exits 0 when every page passes, 1 when one fails and 2 when it finds no html page.
 
 ```bash
 atris site check page.html
@@ -32,7 +32,18 @@ When `--render` is asked and the browser cannot run, the pass line ends with `th
 - The browser stopped and printed nothing: `the browser <path> stopped with code <n> and printed nothing. check CHROME_PATH`, or `stopped with signal <name>` when something killed it.
 - The page did not finish loading in time at one width.
 
-`--json` prints each file with `ok`, `results`, `findings`, `off`, `notChecked`, `rendered` and the same words in `text`. `rendered` is true only when the browser rules ran. `reason` is there when `--render` was asked and the browser did not run.
+`--json` prints each file with `ok`, `results`, `findings`, `off`, `notChecked`, `rendered` and the same words in `text`. Each finding has a `level`: `error` for a fault to fix and `warn` for a note for the reviewer, with `maybe` saying why it may be fine. `rendered` is true only when the browser rules ran. `reason` is there when `--render` was asked and the browser did not run.
+
+## Notes for the reviewer
+
+A rule blocks only when the file itself proves the fault: the character, the banned word, a css value or a shape of markup. A hit that decides what words mean or what an element is for from a list of phrases or from class, id or icon names is a guess. A guess prints as a note for the reviewer:
+
+```
+ok page.html: every page rule passes. the browser rules did not run: atris site check page.html --render runs them
+page.html:7 for the reviewer: text about the page or a helper caption: "This page lists every draft". it may be fine: <why>.
+```
+
+A note never fails a page. The check exits 0, `ok` stays true and publish, deploy and the landing gate go ahead in every mode. The count in `N things to fix` counts only the faults. They print before the notes. `site rules` marks each rule that only leaves notes and each rule with a part that does. The landing gate keeps the notes for a new page in `page_notes` on its record.
 
 ## The rule list
 
@@ -70,6 +81,6 @@ A content page is plain html that starts at `<main>`, with no class, style or sc
 
 ## Adding a rule
 
-Add one object to the array in the file for its group. It needs an `id` that starts with `page-`, the `group`, a one line `line` for the rule list, `why` and `fix` for the report, `said` naming who asked for it (add the source to `SAID` in `shared.js`) and `check(ctx, hit)`, which calls `hit(line, text)` for each fault.
+Add one object to the array in the file for its group. It needs an `id` that starts with `page-`, the `group`, a one line `line` for the rule list, `why` and `fix` for the report, `said` naming who asked for it (add the source to `SAID` in `shared.js`) and `check(ctx, hit)`, which calls `hit(line, text)` for each fault. A rule that guesses from phrases or names gets `level: 'warn'` and a `maybe` line. A rule with one guessed part calls `hit(line, text, 'warn')` for that part and has a `maybe` line too.
 
-Then add its rows to `test/page-rules.test.js`. `CASES` needs a failing page and a twin that writes the same fault another way. `ATTACKS` takes more ways around the rule that must fire and honest pages like them that must pass. The clean control pages must still pass. `scripts/screen-bench.js` scores the rules against a labelled bench folder, by default `~/.atris/screen-bench-dev`.
+Then add its rows to `test/page-rules.test.js`. `CASES` needs a failing page and a twin that writes the same fault another way. `ATTACKS` takes more ways around the rule that must block (`true`) or leave a note (`'note'`) and honest pages like them that must pass (`false`). The clean control pages must still pass. `scripts/screen-bench.js` scores the rules against a labelled bench folder, by default `~/.atris/screen-bench-dev`.

@@ -12,7 +12,7 @@ tags:
 
 Start with the taste files that [../taste/SKILL.md](../taste/SKILL.md) points to for what the people you work for like. This file holds the full visual rules for building it.
 
-The enforced rules for any page: `atris site rules` prints them and `atris site check <file>` and then `atris site check <file> --render` answer yes or no for each one. Run both before you call a page done and fix every line they print. Where this file and the check disagree, the check wins.
+The enforced rules for any page: `atris site rules` prints them and `atris site check <file>` and then `atris site check <file> --render` answer yes or no for each one. Run both before you call a page done. Fix every must-fix line and judge each note for the reviewer. Where this file and the check disagree, the check wins.
 
 The taste organ of the Atris system. Opinionated: these are Keshav's principles, not general best practices. Prevents ai-generated frontend from looking generic, and improves itself (see "self-improve" at the bottom, it is part of the job, not optional).
 
@@ -189,7 +189,7 @@ This skill compounds or it dies. The contract, every frontend session:
 - did you name the moves in craft vocabulary (vertical rhythm, negative space, bolder/quieter)?
 - did you use anti-attractors (named what to avoid, seeded a reference, set a constraint)?
 - if agent-facing: does it have agentic affordances (clear errors, structured output, stable exit codes)?
-- ran `atris site check <file>` and then `atris site check <file> --render` on every page and fixed every line it printed? ran the design gate? (`npm run audit:design` / `atris slop`)
+- ran `atris site check <file>` and then `atris site check <file> --render` on every page, fixed every must-fix line and judged each note for the reviewer? ran the design gate? (`npm run audit:design` / `atris slop`)
 - new operator correction this session? then a new lesson row exists in the canonical and it is committed.
 - would a designer clock this as ai-generated?
 

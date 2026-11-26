@@ -45,7 +45,7 @@ async function check(argv) {
       if (!r || !r.ran) { res.reason = (r && r.reason) || why || 'no reason given'; continue; }
       res.findings.push(...(r.findings || []));
       res.results.push(...(r.results || []));
-      res.ok = res.findings.length === 0;
+      res.ok = lang().mustFix(res).length === 0;
       res.rendered = true;
       // the browser read the words a script drew. the note that they were not read no longer holds.
       // when it saw no words either, the note says what the run found instead
@@ -75,6 +75,7 @@ function rules(argv) {
     'order of work',
     '  write the content first as plain html, starting at <main>, with no class, style or script.',
     '  run atris site check <file> until every page rule passes, then once more with --render before the page is done.',
+    '  a line marked for the reviewer is a note: a guess from words or names. it never fails a page. judge each one.',
     '  build it in a few looks for the owner\'s board: atris site <file> --look <name> --out <dir>.',
     '  never pick a look. only the owner picks one: atris site look pick <name>.',
     '',
@@ -90,7 +91,9 @@ function rules(argv) {
   ];
   if (off.length) out.push('', `switched off in .atris/slop.rules.json: ${off.join(', ')}`);
   for (const [group, list] of Object.entries(sheet)) {
-    out.push('', `page rules: ${group}`, ...list.map((r) => `  ${r.id}: ${r.line}`));
+    // a rule that only guesses, or the part of a rule that guesses, leaves notes and never blocks
+    const mark = (r) => r.level === 'warn' ? ' (every hit is a note for the reviewer and never blocks)' : r.level === 'mixed' ? ` (part of it is a note for the reviewer and never blocks: ${r.maybe})` : '';
+    out.push('', `page rules: ${group}`, ...list.map((r) => `  ${r.id}: ${r.line}${mark(r)}`));
   }
   out.push('', 'browser rules, run only with atris site check <file> --render', ...browser.map((r) => `  ${r.id}: ${r.why}`));
   console.log(out.join('\n'));
@@ -133,7 +136,7 @@ function buildPage(input, argv) {
   }
   const html = L.compilePage(fs.readFileSync(file, 'utf8'), { look, lookCss: css });
   const built = require('../lib/page-rules').checkPage(html, `look ${look}`, { root });
-  if (built.findings.length) return report([{ file: `${shown(file)} in look ${look}`, ok: false, findings: built.findings, off: built.off }]);
+  if (L.mustFix(built).length) return report([{ file: `${shown(file)} in look ${look}`, ok: false, findings: built.findings, off: built.off }]);
   const outDir = path.resolve(flag(argv, '--out') || 'dist');
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, 'index.html'), html);

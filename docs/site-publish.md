@@ -1,8 +1,8 @@
 # Site publish
 
-Upload a built static web folder to Atris hosted sites. The command walks every file, sends one publish request to the hosted-sites API, and prints the live URL when the server confirms the site is up.
+Upload a built static web folder to Atris hosted sites. The command walks every file, sends one publish request to the hosted-sites API and prints the live URL when the server confirms the site is up.
 
-Your site is served at `https://{slug}.atris.ai/` on its own origin. Each publish replaces the entire page set, so always upload the full build output. You must be logged in (`atris login`); the CLI reads your bearer token from `~/.atris/credentials.json`.
+Your site is served at `https://{slug}.atris.ai/` on its own origin. Each publish replaces the entire page set. Always upload the full build output. You must be logged in (`atris login`); the CLI reads your bearer token from `~/.atris/credentials.json`.
 
 ## Usage
 
@@ -15,7 +15,7 @@ atris site publish <dir> --slug <slug> [--profile strict|app] [--spa] [--no-clai
 | Flag | Default | Description |
 |------|---------|-------------|
 | `<dir>` | (required) | Folder to publish. Must contain `index.html` at the root. |
-| `--slug <slug>` | (required) | Subdomain name. Lowercase letters, digits, and hyphens only. No hyphen at either end. |
+| `--slug <slug>` | (required) | Subdomain name. Lowercase letters, digits and hyphens only. No hyphen at either end. |
 | `--profile strict\|app` | Server default (`strict`) | Content security policy profile. Omitted from the request when not set. |
 | `--spa` | off | Tell the server to route unknown extensionless paths to `index.html` for client-side routers. |
 | `--no-claim` | claim on | Skip subdomain registration. Use when `{slug}.atris.ai` already exists. |
@@ -41,6 +41,7 @@ The project picks what a failing page does in `.atris/slop.rules.json`. `atris s
 
 - **Watch** is the default. The check writes what would fail to stderr under `page check in watch mode: the upload goes ahead`. The upload goes on as before.
 - **Block** is on with `"pages": "block"`. A failing page stops the upload: the check prints `refused <file>` with one line per fault, then `page check in block mode: nothing was uploaded.` and the command exits 1. `atris init` turns block mode on for a new project.
+- A note for the reviewer never stops an upload in either mode. A passing upload prints its notes on stderr. See [site-check.md](site-check.md#notes-for-the-reviewer).
 
 To switch one page rule off, list its id under `off`, like `{ "pages": "block", "off": ["page-glow"] }`. The content page grammar cannot be switched off. A passing upload still names every rule that is switched off, since a page may pass only because one is off:
 
@@ -58,7 +59,7 @@ After an upload `atris site publish --json` carries the check in `page_check`: `
 
 ## File handling
 
-The walker skips `node_modules` and `.git` directories, `.DS_Store`, any name starting with `.` (dotfiles and dotfolders), and symbolic links. Paths are normalized to use forward slashes and never start with `/`.
+The walker skips `node_modules` and `.git` directories, `.DS_Store`, any name starting with `.` (dotfiles and dotfolders) and symbolic links. Paths are normalized to use forward slashes and never start with `/`.
 
 **Text files** (read as UTF-8, `is_base64: false`):
 
@@ -103,9 +104,9 @@ The server enforces the same caps. Extensionless URLs on the live site resolve t
 
 ## Content security profiles
 
-**Strict** is the server default and suits static sites: HTML, CSS, images, and fonts from the same origin, Google Fonts, and API calls to `https://api.atris.ai`. Inline scripts and styles are allowed. External script CDNs, `unsafe-eval`, and broad `connect-src` are blocked. Pick strict for marketing pages, docs, and simple static exports that do not need third-party JavaScript.
+**Strict** is the server default and suits static sites: HTML, CSS, images and fonts from the same origin, Google Fonts and API calls to `https://api.atris.ai`. Inline scripts and styles are allowed. External script CDNs, `unsafe-eval` and broad `connect-src` are blocked. Pick strict for marketing pages, docs and simple static exports that do not need third-party JavaScript.
 
-**App** loosens the policy for interactive frontends: CDN script hosts (esm.sh, jsdelivr, unpkg, skypack, cdnjs, jspm), `unsafe-eval`, blob workers, `connect-src` and `wss:` to any HTTPS origin, and classic script tags from CDNs. Pick app for React or Vite SPAs, Next.js static exports with client hydration, or any site that fetches external APIs, uses `localStorage`, or loads modules from a CDN.
+**App** loosens the policy for interactive frontends: CDN script hosts (esm.sh, jsdelivr, unpkg, skypack, cdnjs, jspm), `unsafe-eval`, blob workers, `connect-src` and `wss:` to any HTTPS origin and classic script tags from CDNs. Pick app for React or Vite SPAs, Next.js static exports with client hydration, or any site that fetches external APIs, uses `localStorage` or loads modules from a CDN.
 
 ## Output
 
@@ -121,7 +122,7 @@ publish id: <publish id>
 
 With `--json`, it prints the full API response object (including `publish_id`, `previous_publish_id`, `slug`, `pages`, `verified` and `urls`) plus a `page_check` field: `{ "mode": "watch" | "block", "ok": true | false, "files": [...] }`, where each failing file has `file`, `findings` and the report lines in `text`. When block mode refuses a page, nothing is uploaded and `--json` prints the check report (`{ "files": [...] }`) instead.
 
-When `verified` is not `true`, the human output still shows `verified: no`, and the CLI also writes `site is not live: verified no` to stderr.
+When `verified` is not `true`, the human output still shows `verified: no`. The CLI also writes `site is not live: verified no` to stderr.
 
 ## Exit codes
 
@@ -141,7 +142,7 @@ Build or copy your site so `index.html` sits at the folder root, then publish:
 atris site publish ./my-site --slug my-site
 ```
 
-Strict profile is fine for hand-written HTML, CSS, and local assets.
+Strict profile is fine for hand-written HTML, CSS and local assets.
 
 ### Vite React app
 
@@ -186,7 +187,7 @@ Or from the project root:
 atris site publish . --slug my-next-app --profile app --build
 ```
 
-The hosted-sites lane serves files only. These Next.js features are not supported: server-side rendering, API routes, server actions, middleware, and the image optimizer. For server-side apps, a site's `proxy_target` can point at a Render host, but that path is not yet automated by this command.
+The hosted-sites lane serves files only. These Next.js features are not supported: server-side rendering, API routes, server actions, middleware and the image optimizer. For server-side apps a site's `proxy_target` can point at a Render host. That path is not yet automated by this command.
 
 ## Troubleshooting
 
@@ -196,7 +197,7 @@ The hosted-sites lane serves files only. These Next.js features are not supporte
 | `invalid_csp_profile` | 400 | Profile name is not `strict` or `app`. | Fix `--profile strict` or `--profile app`. |
 | `subdomain_grant_unavailable` | 503 | Server cannot register the subdomain (missing Render credentials). | Retry with `--no-claim` if the subdomain already exists, or wait for ops to restore credentials. |
 | `subdomain_grant_failed:<status>` | 502 | Render rejected the subdomain request. | Check the status code; retry later or use `--no-claim` if the subdomain is already live. |
-| `site is not live: verified no` | 200 | Publish accepted but the site did not pass live checks. | Open the preview URL, fix broken assets or routing, and publish again. |
+| `site is not live: verified no` | 200 | Publish accepted but the site did not pass live checks. | Open the preview URL, fix broken assets or routing and publish again. |
 | `not logged in. run atris login first.` | | No bearer token in credentials. | Run `atris login`. |
 | `site home page is missing: index.html` | | No `index.html` in the published folder. | Add `index.html` or point at the correct build output. |
 | `site files exceed upload limits:` | | A file exceeds 2 MB or the folder has more than 200 pages. | Shrink or split assets; reduce page count. |

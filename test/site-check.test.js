@@ -377,3 +377,42 @@ test('rules lists every browser rule as one that needs --render', async () => {
   const json = JSON.parse((await cli(['rules', '--json'])).out);
   assert.deepStrictEqual(json.browser.map((r) => [r.id, r.needs]), RENDER_RULES.map((r) => [r.id, '--render']));
 });
+
+// a guess about what words mean is shown to the reviewer and never stops a page
+const NOTED = GOOD.replace('</section>', '<p>This page lists every draft the class wrote this term, newest first.</p>\n</section>');
+test('a page with only notes for the reviewer passes check, the upload check and the landing gate in block mode', () => blocking(async () => {
+  folder('noted', { 'page.html': NOTED, 'both.html': NOTED.replace('<h2>Notes</h2>', '<h2>Notes</h2>\n<div>Hi</div>') });
+  const res = await cli(['check', 'noted/page.html']);
+  assert.strictEqual(res.code, 0, res.err);
+  assert.match(res.out, /^ok noted\/page\.html: every page rule passes\. the browser rules did not run[^\n]*\nnoted\/page\.html:7 for the reviewer: text about the page[^\n]*: "This page lists[^\n]*"\. it may be fine: [^\n]+\.$/);
+  const json = JSON.parse((await cli(['check', 'noted/page.html', '--json'])).out).files[0];
+  assert.deepStrictEqual([json.ok, json.findings.map((f) => [f.rule, f.level])], [true, [['page-explanatory', 'warn']]]);
+  // must-fix lines come first and only they are counted
+  const both = await cli(['check', 'noted/both.html']);
+  assert.strictEqual(both.code, 1);
+  assert.match(both.err, /^refused noted\/both\.html \(1 thing to fix\)\nline 5: a tag not on the allowed list[^\n]*\nnoted\/both\.html:8 for the reviewer: /);
+  const before = uploads;
+  const built = folder('noted-site', { 'index.html': compilePage(NOTED) });
+  assert.strictEqual(await upload([built, '--slug', 'demo']), 0);
+  assert.strictEqual(uploads, before + 1);
+  // the landing gate lands a new page with only notes and reads template marks from the page, not its raw text
+  const { spawnSync } = require('child_process');
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-note-gate-'));
+  try {
+    const git = (...args) => spawnSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { cwd: repo, encoding: 'utf8' });
+    git('init', '-q', '-b', 'master');
+    fs.mkdirSync(path.join(repo, '.atris'));
+    fs.writeFileSync(path.join(repo, '.atris', 'slop.rules.json'), '{ "pages": "block" }\n');
+    git('add', '.'); git('commit', '-qm', 'start');
+    fs.writeFileSync(path.join(repo, 'new.html'), NOTED);
+    fs.writeFileSync(path.join(repo, 'docs.html'), GOOD.replace('</section>', '<pre><code>{{ name }} and {% if %}</code></pre>\n<div>Hi</div>\n</section>'));
+    git('add', '.');
+    const { candidatePolicyGate } = require('../lib/auto-accept-certified');
+    const landed = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['new.html'] } });
+    assert.strictEqual(landed.ok, true, (landed.offenders || []).join(', '));
+    assert.deepStrictEqual(landed.gate.page_notes.map((n) => [n.file, n.rule]), [['new.html', 'page-explanatory']]);
+    const shown = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['docs.html'] } });
+    assert.strictEqual(shown.reason, 'slop_gate');
+    assert.ok(shown.offenders.some((o) => /^docs\.html:\d+ lang-tags$/.test(o)), shown.offenders.join(', '));
+  } finally { fs.rmSync(repo, { recursive: true, force: true }); }
+}));
