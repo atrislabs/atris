@@ -14,7 +14,7 @@ const { promisify } = require('util');
 const pexec = promisify(execFile);
 const { buildReelFrame, reelFrames } = require('../lib/reel');
 const { SIZES, KINDS } = require('../lib/card');
-const { makeProfileDir, removeProfileDir, headlessArgs } = require('../lib/headless-chrome');
+const { makeProfileDir, removeProfileDir, headlessArgs, findBrowser: findChrome } = require('../lib/headless-chrome');
 
 function parseFlags(argv) {
   const flags = {}; const pos = [];
@@ -38,13 +38,6 @@ function findBin(macApps, names) {
   }
   return null;
 }
-const findChrome = () => (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH))
-  ? process.env.CHROME_PATH
-  : findBin([
-      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      '/Applications/Chromium.app/Contents/MacOS/Chromium',
-      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-    ], ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'chrome']);
 const findFfmpeg = () => findBin(['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'], ['ffmpeg']);
 
 async function renderFrames(chrome, ts, spec, dir, w, h, onDone) {

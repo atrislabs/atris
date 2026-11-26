@@ -9,7 +9,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { renderCheck, findBrowser, injectProbe, readDump } = require('../lib/page-render');
+const { renderCheck, injectProbe, readDump } = require('../lib/page-render');
+const { findBrowser } = require('../lib/headless-chrome');
 
 test('the probe copy keeps the doctype first, loads files from the page folder and ends with the probe', () => {
   const out = injectProbe('<!doctype html><html><head><title>t</title></head><body><p>hi</p></body></html>', '/pages/site', {});
@@ -61,6 +62,10 @@ test('reading a dumped page returns the measurements and the page without the pr
 test('the browser finder honours CHROME_PATH and finds nothing on an empty computer', () => {
   assert.equal(findBrowser({ CHROME_PATH: __filename }, 'linux'), __filename);
   assert.equal(findBrowser({ PATH: '' }, 'linux'), null);
+  // atris card and atris reel found a browser named chrome on the PATH before they shared this finder
+  const bin = temp('page-render-path-');
+  fs.writeFileSync(path.join(bin, 'chrome'), '');
+  assert.equal(findBrowser({ PATH: bin }, 'linux'), path.join(bin, 'chrome'));
 });
 
 test('with no browser the check says what to install', async () => {

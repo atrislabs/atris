@@ -48,13 +48,13 @@ When `.atris/slop.rules.json` is there and is not valid json, or does not hold a
 .atris/slop.rules.json could not be read: <why>
 ```
 
-`site check` still checks the pages. `site check --mode` prints only that line and exits 1. `site rules` says the project's mode is unknown until the file can be read. In `--json` its `mode` is `unknown`. Publish and deploy upload nothing. See [site-publish.md](site-publish.md#page-check). New pages do not land either until the file reads. A rule id in `off` that matches no rule is dropped without a word.
+`site check` still checks the pages. `site rules` says the project's mode is unknown until the file can be read. In `--json` its `mode` is `unknown`. Publish and deploy upload nothing. See [site-publish.md](site-publish.md#page-check). New pages do not land either until the file reads. A rule id in `off` that matches no rule is dropped without a word.
 
 ## Content pages
 
 A content page is plain html that starts at `<main>`, with no class, style or script. The words and structure are yours. The tool adds the look.
 
-`atris site <page.html> --look <name> --out <dir>` checks the page and then writes `<dir>/index.html` in that look. `plain` is built in. Other looks live at `atris/looks/<name>.css` and only the owner picks one, at a terminal, with `atris site look pick <name>`.
+`atris site <page.html> --look <name> --out <dir>` checks the page and then writes `<dir>/index.html` in that look. `plain` is built in. Other looks live at `atris/looks/<name>.css` and only the owner picks one, at a terminal, with `atris site look pick <name>`. `atris site look` lists the looks and which are picked.
 
 ## Before upload
 

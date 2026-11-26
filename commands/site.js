@@ -4,9 +4,9 @@
 //
 //   atris site <dir|doc.md> [--out dist] [--theme atris|terminal|paper] [--title T] [--serve]
 //   atris site <page.html> [--look <name>] [--out dist]
-//   atris site check <file|dir> [--json] [--render] | atris site check --mode
+//   atris site check <file|dir> [--json] [--render]
 //   atris site rules [--json]
-//   atris site looks | atris site look pick <name>
+//   atris site look | atris site look pick <name>
 //   atris site publish <dir> --slug <slug> [--profile strict|app] [--spa] [--no-claim] [--build] [--json]
 
 const fs = require('fs');
@@ -29,14 +29,8 @@ function rulesNote(root) {
 
 async function check(argv) {
   const root = process.cwd();
-  if (hasFlag(argv, '--mode')) {
-    // with the file unreadable the mode is unknown. no mode is printed
-    if (rulesNote(root)) return 1;
-    console.log(require('../lib/page-rules').pageMode(root));
-    return 0;
-  }
   const target = argv.find((a) => !a.startsWith('-'));
-  if (!target) { console.error('  atris site check <file|dir> [--json] [--render]\n  atris site check --mode'); return 2; }
+  if (!target) { console.error('  atris site check <file|dir> [--json] [--render]'); return 2; }
   rulesNote(root);
   const list = lang().htmlFilesIn(target);
   if (!list.length) { console.error(`no html pages at ${target}`); return 2; }
@@ -91,7 +85,7 @@ function rules(argv) {
     '  publish and deploy check every html page after any build.',
     '  watch mode, the default: they print what fails and upload anyway.',
     '  block mode: they upload nothing until every page passes. the landing gate holds new pages the same way.',
-    unread ? '  this project\'s mode is unknown until .atris/slop.rules.json can be read.' : `  this project is in ${mode} mode. atris site check --mode prints it.`,
+    unread ? '  this project\'s mode is unknown until .atris/slop.rules.json can be read.' : `  this project is in ${mode} mode.`,
     `  ${require('../lib/page-lang').BLOCK_LINE}. atris init turns it on for a new project.`,
   ];
   if (off.length) out.push('', `switched off in .atris/slop.rules.json: ${off.join(', ')}`);
@@ -103,11 +97,12 @@ function rules(argv) {
   return 0;
 }
 
-function looks(argv) {
+// atris site look lists the looks. atris site look pick <name> records the owner's pick.
+function look(argv) {
   const root = process.cwd();
-  if (argv[0] === 'look') {
-    const name = argv[2];
-    if (argv[1] !== 'pick' || !name) { console.error('  atris site look pick <name>'); return 2; }
+  if (argv.length) {
+    const name = argv[1];
+    if (argv[0] !== 'pick' || !name) { console.error('  atris site look\n  atris site look pick <name>'); return 2; }
     if (name === 'plain') { console.log('plain is built in and needs no pick.'); return 0; }
     const { useInteractiveTerminalUi } = require('../lib/computer-core');
     if (!useInteractiveTerminalUi()) { console.error('only the owner picks a look, at a terminal. no pick was recorded.'); return 1; }
@@ -156,7 +151,7 @@ async function run(argv) {
   if (argv[0] === 'deploy') return require('./site-deploy').run(argv.slice(1));
   if (argv[0] === 'check') return check(argv.slice(1));
   if (argv[0] === 'rules') return rules(argv.slice(1));
-  if (argv[0] === 'looks' || argv[0] === 'look') return looks(argv);
+  if (argv[0] === 'look') return look(argv.slice(1));
 
   const input = argv.find((a) => !a.startsWith('-'));
   if (!input || input === 'help' || hasFlag(argv, '--help')) {
@@ -167,9 +162,8 @@ async function run(argv) {
     atris site atris/wiki --title "Atris Wiki" --serve
     atris site <page.html> [--look <name>] [--out dist]
     atris site check <file|dir> [--json] [--render]
-    atris site check --mode
     atris site rules [--json]
-    atris site looks
+    atris site look
     atris site look pick <name>
     atris site publish <dir> --slug <slug> [--profile strict|app] [--spa] [--no-claim] [--build] [--json]
     atris site deploy <dir> --name <slug> [--spa] [--dry-run] --yes

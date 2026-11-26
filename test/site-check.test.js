@@ -87,7 +87,9 @@ test('rules prints every rule the check enforces', async () => {
   const res = await cli(['rules']);
   for (const id of [...PAGE_RULES.map((r) => r.id), 'lang-root', 'lang-form']) assert.ok(res.out.includes(`  ${id}: `), id);
   assert.match(res.out, /this project is in watch mode[\s\S]*put "pages": "block" in \.atris\/slop\.rules\.json/);
-  assert.deepStrictEqual([(await cli(['check', '--mode'])).out, (await blocking(() => cli(['check', '--mode']))).out], ['watch', 'block']);
+  const mode = async () => JSON.parse((await cli(['rules', '--json'])).out).mode;
+  assert.deepStrictEqual([await mode(), await blocking(mode)], ['watch', 'block']);
+  assert.doesNotMatch(res.out + (await cli(['--help'])).out, /--mode/);
 });
 
 test('only a person at a terminal can pick a look', async () => {
@@ -95,7 +97,8 @@ test('only a person at a terminal can pick a look', async () => {
   const res = await cli(['look', 'pick', 'paper']);
   assert.strictEqual(res.code, 1);
   assert.ok(!fs.existsSync(path.join(root, 'atris', 'looks', 'picked.json')));
-  assert.match((await cli(['looks'])).out, /paper: not picked/);
+  assert.match((await cli(['look'])).out, /paper: not picked/);
+  assert.doesNotMatch((await cli(['--help'])).out, /site looks/);
 });
 
 test('a content page builds to index.html in a look', async () => {
@@ -188,7 +191,7 @@ const { RENDER_RULES } = require('../lib/page-render');
 
 // A page drawn by a script: its words show only once the browser runs the script.
 const drawn = (body) => `<!doctype html>\n<html lang="en">\n<head><title>Hours</title></head>\n<body>\n<div id="root"></div>\n<script>document.getElementById('root').innerHTML = '${body}';</script>\n</body>\n</html>\n`;
-const noBrowser = require('../lib/page-render').findBrowser() ? false : 'no browser found on this computer; install Chrome, Chromium, Edge or Brave, or set CHROME_PATH to run it';
+const noBrowser = require('../lib/headless-chrome').findBrowser() ? false : 'no browser found on this computer; install Chrome, Chromium, Edge or Brave, or set CHROME_PATH to run it';
 const withRules = async (rules, fn) => {
   fs.mkdirSync(path.dirname(rulesFile), { recursive: true });
   fs.writeFileSync(rulesFile, JSON.stringify(rules));
@@ -316,8 +319,9 @@ test('a rules file that cannot be read is named and the upload is refused', asyn
     assert.strictEqual(res.code, 0);
     assert.match(res.err, said);
     assert.match((await cli(['rules'])).err, said);
-    const mode = await cli(['check', '--mode']);
-    assert.deepStrictEqual([mode.code, mode.out], [1, '']);
+    const mode = await cli(['rules', '--json']);
+    assert.deepStrictEqual([mode.code, JSON.parse(mode.out).mode], [0, 'unknown']);
+    assert.match(mode.err, said);
     assert.match((await cli(['good.html', '--out', 'dist'])).err, said);
     const err = [];
     assert.strictEqual(await upload(['.', '--slug', 'demo'], { error: (s) => err.push(s) }), 1);
@@ -326,13 +330,13 @@ test('a rules file that cannot be read is named and the upload is refused', asyn
     // a setting that parses and means nothing is named the same way, system error names keep their case
     for (const [text, why] of [['{ "pages": "blocked" }', /pages is neither "block" nor "watch"/], ['{ "off": "page-subtitle" }', /off is not a list of rule ids/]]) {
       fs.writeFileSync(path.join(root, 'broken', '.atris', 'slop.rules.json'), text);
-      const named = await cli(['check', '--mode']);
-      assert.strictEqual(named.code, 1);
+      const named = await cli(['rules', '--json']);
+      assert.strictEqual(JSON.parse(named.out).mode, 'unknown');
       assert.match(named.err, why);
     }
     fs.rmSync(path.join(root, 'broken', '.atris', 'slop.rules.json'));
     fs.mkdirSync(path.join(root, 'broken', '.atris', 'slop.rules.json'));
-    assert.match((await cli(['check', '--mode'])).err, /could not be read: EISDIR/);
+    assert.match((await cli(['rules', '--json'])).err, /could not be read: EISDIR/);
   } finally { process.chdir(root); }
   assert.strictEqual(uploads, before);
 });
@@ -342,8 +346,8 @@ test('a rules file in the list form atris slop rules --add writes reads as watch
   folder('listform', { '.atris/slop.rules.json': '[{ "id": "no-synergy", "pattern": "synerg", "why": "the owner never says synergy" }]', 'index.html': compilePage(GOOD) });
   process.chdir(path.join(root, 'listform'));
   try {
-    const mode = await cli(['check', '--mode']);
-    assert.deepStrictEqual([mode.code, mode.out.trim(), mode.err], [0, 'watch', '']);
+    const mode = await cli(['rules', '--json']);
+    assert.deepStrictEqual([mode.code, JSON.parse(mode.out).mode, mode.err], [0, 'watch', '']);
     assert.strictEqual(await upload(['.', '--slug', 'demo'], quiet), 0);
   } finally { process.chdir(root); }
   assert.strictEqual(uploads, before + 1);

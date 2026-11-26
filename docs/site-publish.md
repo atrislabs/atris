@@ -37,7 +37,7 @@ atris site publish . --slug my-app --build --profile app
 
 After any build and before anything is uploaded, publish checks every html page in the folder with the same rules as `atris site check` ([site-check.md](site-check.md)). Built pages are also held to the look they were built in: a page edited after its build, a look the owner never picked or a linked style sheet missing from the folder each count as a fault. `atris site deploy` runs the same check before its upload and before `--dry-run` prints its plan.
 
-The project picks what a failing page does in `.atris/slop.rules.json`. `atris site check --mode` prints the mode in force. Run publish and deploy from the project root: the rules file, the look picks and the build are read from the folder the command runs in. A rules file in a parent folder is not read.
+The project picks what a failing page does in `.atris/slop.rules.json`. `atris site rules` prints the mode in force. Its `--json` carries it as `mode`. Run publish and deploy from the project root: the rules file, the look picks and the build are read from the folder the command runs in. A rules file in a parent folder is not read.
 
 - **Watch** is the default. The check writes what would fail to stderr under `page check in watch mode: the upload goes ahead`. The upload goes on as before.
 - **Block** is on with `"pages": "block"`. A failing page stops the upload: the check prints `refused <file>` with one line per fault, then `page check in block mode: nothing was uploaded.` and the command exits 1. `atris init` turns block mode on for a new project.

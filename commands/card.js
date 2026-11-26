@@ -9,9 +9,9 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execFileSync, spawnSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const { buildCard, SIZES, KINDS } = require('../lib/card');
-const { makeProfileDir, removeProfileDir, headlessArgs } = require('../lib/headless-chrome');
+const { makeProfileDir, removeProfileDir, headlessArgs, findBrowser } = require('../lib/headless-chrome');
 
 function parseFlags(argv) {
   const flags = {}; const pos = [];
@@ -27,22 +27,6 @@ function parseFlags(argv) {
     pos.push(a);
   }
   return { flags, pos };
-}
-
-// find an installed Chrome/Chromium without adding a dependency
-function findChrome() {
-  if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) return process.env.CHROME_PATH;
-  const macApps = [
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    '/Applications/Chromium.app/Contents/MacOS/Chromium',
-    '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-  ];
-  for (const p of macApps) if (fs.existsSync(p)) return p;
-  for (const name of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'chrome']) {
-    const r = spawnSync('command', ['-v', name], { shell: true, encoding: 'utf8' });
-    if (r.status === 0 && r.stdout.trim()) return r.stdout.trim();
-  }
-  return null;
 }
 
 function renderPng(chrome, html, width, height, outPng) {
@@ -110,7 +94,7 @@ function run(argv) {
     return 0;
   }
 
-  const chrome = findChrome();
+  const chrome = findBrowser();
   if (!chrome) {
     console.log(`\n  ✓ wrote html: ${outHtml}\n    no Chrome found for png. open the html, or set CHROME_PATH and re-run.\n`);
     return 0;
