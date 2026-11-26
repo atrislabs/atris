@@ -38,7 +38,7 @@ Canonical home: `atris-cli/atris/skills/design/SKILL.md` (this file, git-tracked
 
 **Interaction:** progressive disclosure: start simple, reveal complexity. optimistic UI: update immediately, sync later. every interactive element needs ALL states: default, hover, focus, active, disabled, loading, error, success. one main button per screen.
 
-**Menus:** a menu grows out of the control that opened it, in the direction it opens: one that opens down and to the right grows down and to the right [09:15]. never from its own centre. `atris site check` catches it only on an element marked role menu or listbox or on an anchored popover, with the scale written in the page's own css. any other menu is a call for the reviewer. a submenu keeps a triangle of safe space between the pointer and the submenu so a diagonal move does not close it [09:00].
+**Menus:** a menu grows out of the control that opened it, in the direction it opens: one that opens down and to the right grows down and to the right [09:15]. never from its own centre. no check reads this. open the menu and watch where it grows from. a submenu keeps a triangle of safe space between the pointer and the submenu so a diagonal move does not close it [09:00].
 
 **Pickers:** a list picker opens with its filter box focused: type to narrow, arrow keys to move. chosen items sit grouped at the top when it opens. an item you tick or untick stays where it is so a mistake can be undone without hunting for it; the list regroups only the next time it opens [10:45].
 
@@ -54,7 +54,7 @@ Canonical home: `atris-cli/atris/skills/design/SKILL.md` (this file, git-tracked
 
 **Reviewing a change:** show a change as a story before a file list: group it by theme in an order that makes sense. the reader then approves the intent first and the detail second [30:15, 31:00]. count only the lines a person needs to read, leaving out tests and generated files. mark that number so nobody takes it for the full count [31:15, 31:45].
 
-Source for the bracketed times above: the Linear team and the host in Enrico Tartarotti's video "Behind the scenes of Linear's insane design" (youtu.be/icRjQePEa_A), read against its captions on 2026-11-26. The video gives no millisecond numbers for any of these. Measure before you pick one. The picker [10:45] and data on the device [15:30] are the host describing Linear's product. Only the menu rule has a check and it sees marked menus only; the rest are yes or no calls for the reviewer.
+Source for the bracketed times above: the Linear team and the host in Enrico Tartarotti's video "Behind the scenes of Linear's insane design" (youtu.be/icRjQePEa_A), read against its captions on 2026-11-26. The video gives no millisecond numbers for any of these. Measure before you pick one. The picker [10:45] and data on the device [15:30] are the host describing Linear's product. None of these has a check. Each is a yes or no call for the reviewer.
 
 **Hover:** make elements feel inviting on hover (brighten, subtle scale 1.02-1.05). never fade out, shift, or hide content behind hover. hover doesn't exist on mobile. no hover lift: a translate-y shift or a scale past 1.05 on every card is the generated-card reflex; the shift breaks the never-move-content rule and the big grow reads as a template.
 

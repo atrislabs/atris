@@ -95,10 +95,6 @@ const CASES = {
     page('<svg><filter id="n"><feTurbulence baseFrequency="0.8"/></filter></svg>'),
     page('<div class="bg">Hi</div>', '.bg { background-image: url(/img/grain.png); }'),
   ],
-  'page-menu-centre': [
-    page('<button>More</button><div role="menu" class="m"><button role="menuitem">Rename</button></div>', '.m { animation: grow .15s ease-out; } @keyframes grow { from { transform: scale(.95); opacity: 0; } }'),
-    page('<button popovertarget="p">More</button><div id="p" popover class="m"><a href="/r">Rename</a></div>', '.m { position-anchor: --more; position-area: bottom span-right; transition: scale .15s, opacity .15s; } .m:popover-open { scale: 1; } @starting-style { .m:popover-open { scale: .9; opacity: 0; } }'),
-  ],
 };
 
 const prose = (topic) => [
@@ -132,13 +128,6 @@ const CONTROLS = {
 const three = (f) => [0, 1, 2].map(f).join('');
 const box = '<div class="o"><p>x</p><div class="i"><p>y</p></div></div>';
 const grain = 'PHN2Zz48ZmlsdGVyPjxmZVR1cmJ1bGVuY2UvPjwvZmlsdGVyPjwvc3ZnPg==';
-
-// Menu pages for page-menu-centre: one menu and the keyframes that grow it.
-const MC = 'page-menu-centre';
-const menuEl = (attrs = 'class="m"') => `<div role="menu" ${attrs}><a href="/r">Rename</a></div>`;
-const GROW = '@keyframes grow { from { transform: scale(.95); opacity: 0; } }';
-const DROP = '@keyframes drop { from { transform: translateY(-4px); opacity: 0; } }';
-const TW_ENTER = '.animate-in { animation-name: enter; animation-duration: 150ms; --tw-enter-opacity: initial; --tw-enter-scale: initial; --tw-enter-translate-y: initial; } .fade-in-0 { --tw-enter-opacity: 0; } .zoom-in-95 { --tw-enter-scale: .95; } .slide-in-from-top-2 { --tw-enter-translate-y: -0.5rem; } @keyframes enter { from { opacity: var(--tw-enter-opacity, 1); transform: translate3d(var(--tw-enter-translate-x, 0), var(--tw-enter-translate-y, 0), 0) scale3d(var(--tw-enter-scale, 1), var(--tw-enter-scale, 1), var(--tw-enter-scale, 1)) rotate(var(--tw-enter-rotate, 0)); } }';
 
 // Ways around each rule found by attackers (rounds 1 and 2), written fresh: [rule, page, should it fire].
 const ATTACKS = [
@@ -617,99 +606,6 @@ const ATTACKS = [
   // product text quoted in <q> is not the page's own voice
   ['page-two-word-sentence', page('<p>The coach answers each sentence with one nudge.</p><ul><li><q>Cut this.</q></li></ul>'), false],
   ['page-word-real', page('<p>The coach answers each sentence with one nudge.</p><ul><li><q>Give a real example.</q></li></ul>'), false],
-  // a menu that grows out of its own middle: the same fault written by a state, a transition, an anchor and nesting
-  ['page-menu-centre', page('<ul role="listbox" class="l" data-state="closed"><li role="option">Ana</li></ul>', '.l { transition: transform 120ms; } .l[data-state="closed"] { transform: scale(0.96); } .l[data-state="open"] { transform: none; }'), true],
-  ['page-menu-centre', page('<button aria-expanded="false">File</button><div role="menu" class="menu"><a href="/n">New</a></div>', '.menu { transform: scaleY(0); transition: transform .2s; } .menu.open { transform: scaleY(1); }'), true],
-  ['page-menu-centre', page('<button id="b">More</button><div popover anchor="b" class="p"><a href="/r">Rename</a></div>', '.p:popover-open { animation: in .2s; } @keyframes in { 0% { transform: translateY(-4px) scale(.9); } }'), true],
-  ['page-menu-centre', page('<div popover class="p"><a href="/r">Rename</a></div>', '.p { top: anchor(bottom); left: anchor(left); transition: all .2s; } @starting-style { .p:popover-open { transform: scale(.95); } }'), true],
-  ['page-menu-centre', page('<div role="menu" popover class="m"><a href="/r">Rename</a></div>', '.m { transition: .2s; &:popover-open { @starting-style { scale: .95; } } }'), true],
-  ['page-menu-centre', page('<div role="menu" class="m" style="animation: grow .2s"><a href="/r">Rename</a></div>', '.m { transform-origin: center; } .m[data-state=open] { transform-origin: 50% 50%; } @keyframes grow { from { scale: 95%; } }'), true],
-  ['page-menu-centre', page('<button aria-expanded="true">File</button><div role="menu" class="m"><a href="/n">New</a></div>', '.m { opacity: 0; transition: opacity .2s, transform .2s; } button[aria-expanded="true"] + .m { opacity: 1; transform: scale(1.04); }'), true],
-  // honest menus and pages like them
-  ['page-menu-centre', page('<div role="menu" class="m"><a href="/r">Rename</a></div>', '.m { animation: grow .15s; transform-origin: top left; } @keyframes grow { from { transform: scale(.95); } }'), false],
-  ['page-menu-centre', page('<div role="menu" class="m"><a href="/r">Rename</a></div>', '.m { animation: grow .15s; transform-origin: top; } @keyframes grow { from { transform: scale(.95); } }'), false],
-  ['page-menu-centre', page('<div role="menu" class="m" data-state="open"><a href="/r">Rename</a></div>', '.m { transition: transform .15s; transform-origin: var(--radix-dropdown-menu-content-transform-origin); } .m[data-state=closed] { transform: scale(.95); }'), false],
-  ['page-menu-centre', page('<div role="menu" class="m" data-state="open"><a href="/r">Rename</a></div>', '.m { transition: transform .15s; } .m[data-state=closed] { transform: scale(.95); } .m[data-state=open] { transform-origin: top right; }'), false],
-  ['page-menu-centre', page('<div role="menu" class="m"><a href="/r">Rename</a></div>', '.m { animation: fade .15s; } @keyframes fade { from { opacity: 0; transform: translateY(-4px); } }'), false],
-  ['page-menu-centre', page('<dialog class="d"><p>Delete this list?</p><button>Delete</button></dialog>', '.d[open] { animation: pop .2s; } @keyframes pop { from { transform: scale(.9); } }'), false],
-  ['page-menu-centre', page('<div popover class="t"><p>Saved</p></div>', '.t { transition: scale .2s; } @starting-style { .t:popover-open { scale: .9; } }'), false],
-  ['page-menu-centre', page('<div class="c"><p>Saved</p></div>', '.c { animation: pop .3s; } @keyframes pop { from { transform: scale(.9); } }'), false],
-  ['page-menu-centre', page('<div role="menu" class="m"><a href="/r">Rename</a></div>', '.m { animation: in .15s; transition: scale .2s; } .m.open { scale: 1; } @keyframes in { from { transform: scale(1); opacity: 0; } to { transform: scale(100%); } }'), false],
-  ['page-menu-centre', page('<div role="menu" class="m origin-top-right"><a href="/r">Rename</a></div><ul role="listbox" class="m data-[side=bottom]:origin-top"><li>Ana</li></ul>', '.m { animation: grow .15s; } @keyframes grow { from { transform: scale(.95); } }'), false],
-  ['page-menu-centre', page('<div role="menu" class="m" data-state="closed"><a href="/r">Rename</a></div>', '.m[data-state=closed] { transform: scale(.95); } .m { transition: opacity .2s; }'), false],
-  ['page-menu-centre', page('<div role="menu" class="m"><a href="/r">Rename</a></div><script>m.style.transformOrigin = side + " left";</script>', '.m { animation: grow .15s; } @keyframes grow { from { transform: scale(.95); } }'), false],
-  // the style that wins: a later, heavier or !important rule that replaces the way in is honoured
-  [MC, page(menuEl('class="pop menu"'), `.pop { animation: grow .2s; } .menu { animation: drop .15s; } ${GROW} ${DROP}`), false],
-  [MC, page(menuEl('class="pop menu"'), `.pop { animation: grow .2s; } .pop.menu { animation: none; } ${GROW}`), false],
-  [MC, page(menuEl('class="pop menu"'), `.pop { animation: grow .2s; } .menu { animation-name: drop; } ${GROW} ${DROP}`), false],
-  [MC, page(menuEl('class="pop" style="animation: drop .15s"'), `.pop { animation: grow .2s; } ${GROW} ${DROP}`), false],
-  [MC, page(menuEl('class="pop menu"'), '.pop { transition: all .2s; } .menu { transition: opacity .2s; } .pop[data-state=closed] { transform: scale(.95); opacity: 0; }'), false],
-  [MC, page(menuEl('class="pop menu"'), '.pop { transition: transform .2s; } .pop[data-state=closed] { transform: scale(.95); } .pop.menu[data-state=closed] { transform: translateY(-4px); }'), false],
-  [MC, page(menuEl('class="pop menu"'), '.pop { transition: transform .2s; } .pop[data-state=closed] { transform: scale(.95); } .menu { transform: none !important; }'), false],
-  [MC, page(menuEl(), `.m { animation: grow .2s; transform: none !important; } ${GROW}`), false],
-  // a selector with nothing in it lands nowhere
-  [MC, page(menuEl(), `, { animation: grow .2s; } ${GROW}`), false],
-  // a starting style written before the open rule of the same weight loses to it, as in the browser
-  [MC, page(menuEl('popover class="m"'), '.m { transition: scale .2s; } @starting-style { .m:popover-open { scale: .9; } } .m:popover-open { scale: 1; }'), false],
-  [MC, page(menuEl('class="pop menu"'), `.pop { animation: grow .2s !important; } .menu { animation: drop .15s; } ${GROW} ${DROP}`), true],
-  [MC, page(menuEl('class="pop menu"'), `div.pop { animation: grow .2s; } .menu { animation: drop .15s; } ${GROW} ${DROP}`), true],
-  [MC, page(menuEl('class="pop"'), `.pop { animation: grow .2s; } @media (prefers-reduced-motion: reduce) { .pop { animation: none; } } ${GROW}`), true],
-  [MC, page(menuEl('class="menu"'), '.menu { transition: transform .2s; } .menu:not(.open) { transform: scale(.9); } .menu.open { transform: none; }'), true],
-  [MC, page(`<div class="dd">${menuEl('class="menu"')}</div>`, '.menu { transition: transform .2s; } .open .menu { transform: scale(.9); } .menu.open { transform: none; }'), true],
-  // variables as the menu itself sees them: another element that zooms through the same variable is not the menu
-  [MC, page(`<div role="dialog" class="animate-in fade-in-0 zoom-in-95">Delete?</div>${menuEl('class="animate-in fade-in-0 slide-in-from-top-2"')}`, TW_ENTER), false],
-  [MC, page(menuEl('class="animate-in fade-in-0 slide-in-from-top-2"'), TW_ENTER), false],
-  [MC, page(`<div class="toast">Saved</div>${menuEl()}`, '.toast { --from: .9; animation: pop .2s; } .m { animation: pop .15s; } @keyframes pop { from { opacity: 0; transform: scale(var(--from, 1)); } }'), false],
-  [MC, page(`<div class="toolbar">${menuEl()}</div><div class="modal">Hi</div>`, `.toolbar { --origin: top left; } .modal { --origin: center; } .m, .modal { transform-origin: var(--origin); animation: grow .15s; } ${GROW}`), false],
-  [MC, page(menuEl('class="m" data-state="open"'), '.m { transition: transform .15s; transform-origin: var(--radix-dropdown-menu-content-transform-origin, center); } .m[data-state=closed] { transform: scale(.95); }'), false],
-  [MC, page(menuEl('class="animate-in fade-in-0 zoom-in-95"'), TW_ENTER), true],
-  [MC, page(menuEl(), ':root { --from: .9; } .m { animation: pop .15s; } @keyframes pop { from { opacity: 0; transform: scale(var(--from, 1)); } }'), true],
-  [MC, page(`<div class="wrap">${menuEl()}</div>`, '.wrap { --from: .9; } .m { animation: pop .15s; } @keyframes pop { from { opacity: 0; transform: scale(var(--from, 1)); } }'), true],
-  [MC, page(menuEl(), '.m { transform: scale(var(--s, 1)); transition: transform .2s; } .m[data-state=closed] { --s: .95; }'), true],
-  [MC, `<style>:root { --from: .9; } .m { animation: pop .15s; } @keyframes pop { from { transform: scale(var(--from, 1)); } }</style><main><h1>Files</h1>${menuEl()}</main>`, true],
-  // a selector that is only a state word names no element: it is not the menu's own state
-  [MC, page(`<nav class="nav"><a class="active" href="/">Home</a><button aria-expanded="false">More</button>${menuEl()}</nav>`, '.nav .active { transform: scale(1.05); } .m { opacity: 0; transform: translateY(-4px); transition: opacity .2s, transform .2s; } .m.open { opacity: 1; transform: none; }'), false],
-  [MC, page(`<div role="tablist"><button role="tab" data-state="active">A</button></div>${menuEl('class="m" data-state="open"')}`, '[data-state=active] { transform: scale(1.02); } .m { transition: transform .2s, opacity .2s; } .m[data-state=closed] { transform: translateY(-4px); opacity: 0; }'), false],
-  [MC, page(menuEl(), `:popover-open { animation: grow .2s; } .m { animation: fade .2s; } ${GROW} @keyframes fade { from { opacity: 0; } }`), false],
-  [MC, page(`<nav class="nav"><a class="active" href="/">Home</a>${menuEl()}</nav>`, '.nav *.active { transform: scale(1.05); } .m { transition: opacity .2s, transform .2s; } .m.open { opacity: 1; }'), false],
-  [MC, page(`<nav class="nav"><a class="active" href="/">Home</a>${menuEl()}</nav>`, '.nav :is(.active, .open) { transform: scale(1.05); } .m { transition: opacity .2s, transform .2s; } .m.open { opacity: 1; }'), false],
-  [MC, page(`<div class="dd">${menuEl()}</div>`, '.m { transition: transform .2s; } .dd.open .m { transform: scale(.9); }'), true],
-  [MC, page(`<div class="dd">${menuEl()}</div>`, '.m { transition: transform .2s; } .open > .m { transform: scale(.9); }'), true],
-  [MC, page(menuEl('popover class="m"'), `:popover-open { animation: grow .2s; } ${GROW}`), true],
-  [MC, page(menuEl('class="m" data-state="open"'), `[data-state=open] { animation: grow .2s; } ${GROW}`), true],
-  // an origin written in the keyframes the menu runs, behind a side or placement attribute, or for a class nothing carries yet
-  [MC, page(menuEl('class="scale-up-tl"'), '.scale-up-tl { animation: scale-up-tl .4s cubic-bezier(.39,.575,.565,1) both; } @keyframes scale-up-tl { 0% { transform: scale(.5); transform-origin: 0% 0%; } 100% { transform: scale(1); transform-origin: 0% 0%; } }'), false],
-  [MC, page(menuEl(), `.m { animation: grow .15s; } .m[data-side=bottom] { transform-origin: top; } .m[data-side=top] { transform-origin: bottom; } ${GROW}`), false],
-  [MC, page(menuEl(), `.m { animation: grow .15s; } .m[data-placement^=bottom] { transform-origin: top left; } ${GROW}`), false],
-  [MC, page(menuEl(), `.m { animation: grow .15s; } .m[data-popper-placement^="bottom"] { transform-origin: top left; } ${GROW}`), false],
-  [MC, page(menuEl(), `.m { animation: grow .15s; } [data-side=bottom] { transform-origin: top; } ${GROW}`), false],
-  [MC, page(menuEl(), `.m { animation: grow .15s; } .m--bottom { transform-origin: top left; } ${GROW}`), false],
-  [MC, page(`<div class="dropdown">${menuEl()}</div>`, `.m { animation: grow .15s; } .dropdown.expanded .m { transform-origin: top left; } ${GROW}`), false],
-  [MC, page(menuEl(), '.m { animation: grow .15s; } @keyframes grow { from { transform: scale(.95); transform-origin: 50% 50%; } }'), true],
-  [MC, page(menuEl(), `.m { animation: grow .15s; } .m[data-side=bottom] { transform-origin: center; } ${GROW}`), true],
-  [MC, page(`<div class="tip">Saves the page</div>${menuEl()}`, `.m { animation: grow .15s; } .tip[data-side=bottom] { transform-origin: top; } ${GROW}`), true],
-  [MC, page(`${menuEl('class="menu file"')}${menuEl('class="menu help"')}`, `.menu { animation: grow .15s; } .menu.file { transform-origin: top left; } ${GROW}`), true],
-  // a print-only scale is not the way in. a phone-only one is
-  [MC, page(menuEl(), '.m { transform: translateY(-4px); opacity: 0; transition: transform .2s, opacity .2s; } .m.open { transform: none; opacity: 1; } @media print { .m { transform: scale(.8); } }'), false],
-  [MC, page(menuEl(), '.m { transform: translateY(-4px); opacity: 0; transition: transform .2s, opacity .2s; } .m.open { transform: none; opacity: 1; }', '<style media="print">.m { transform: scale(.8); }</style>'), false],
-  [MC, page(menuEl(), `@media print { .m { animation: grow .2s; } } ${GROW}`), false],
-  [MC, page(menuEl(), '.m { transition: transform .2s; } @media (max-width: 600px) { .m[data-state=closed] { transform: scale(.9); } }'), true],
-  // a list that is always on the page and a hint popover are not popup menus. a list its field points at is
-  [MC, page('<main class="enter"><h1>Pick a plan</h1></main><ul role="listbox" class="enter" aria-label="Plan"><li role="option" aria-selected="true">Solo</li><li role="option">Team</li></ul>', '.enter { animation: enter .4s both; } @keyframes enter { from { opacity: 0; transform: scale(.98); } }'), false],
-  [MC, page('<button id="b">Save</button><div popover="hint" anchor="b" class="tip">Saves the page</div>', `.tip { animation: grow .15s; } ${GROW}`), false],
-  [MC, page('<input role="combobox" aria-controls="plans" aria-expanded="false"><ul role="listbox" id="plans" class="l"><li role="option">Solo</li></ul>', `.l { animation: grow .15s; } ${GROW}`), true],
-  // closed states written the Base UI and Headless UI way, a centre origin class and words in a data block
-  [MC, page(menuEl('class="Popup" data-open'), '.Popup { transition: transform 150ms, opacity 150ms; } .Popup[data-starting-style], .Popup[data-ending-style] { opacity: 0; transform: scale(0.9); }'), true],
-  [MC, page(menuEl('class="Items"'), '.Items { transition: transform .1s, opacity .1s; } .Items[data-closed] { transform: scale(.95); opacity: 0; }'), true],
-  [MC, page(menuEl('class="Items"'), '.Items { transition: transform .1s, opacity .1s; } .Items[data-enter], .Items[data-leave] { transform: scale(.95); opacity: 0; }'), true],
-  [MC, page(menuEl('class="m origin-center"'), `.m { animation: grow .15s; } ${GROW}`), true],
-  [MC, page(menuEl('class="m origin-[50%_50%]"'), `.m { animation: grow .15s; } ${GROW}`), true],
-  [MC, page(`${menuEl()}<script type="application/ld+json">{"description":"a note on transform-origin"}</script>`, `.m { animation: grow .15s; } ${GROW}`), true],
-  // the first-frame mark holds at any depth: @starting-style around an @media block
-  [MC, page(menuEl('popover class="m"'), '.m { transition: scale .2s; } @starting-style { @media (min-width: 1px) { .m { scale: .95; } } }'), true],
-  // an origin the check cannot read: a click handler that sets one, or a style sheet it could not open
-  [MC, page(`<button onclick="m.style.transformOrigin='top left'">More</button>${menuEl()}`, `.m { animation: grow .15s; } ${GROW}`), false],
-  [MC, page(menuEl(), `.m { animation: grow .15s; } ${GROW}`, '<link rel="stylesheet" href="https://cdn.example.com/menus.css">'), false],
   // an @starting-style block is only the first frame before a transition: the page at rest is read without it
   ['page-scroll-fade', page('<section><h2>Hours</h2><p>The shop opens at eight on weekdays and at ten on Saturday.</p></section><a class="top" href="#">Top</a><script>addEventListener("scroll", () => { top.style.opacity = scrollY > 400 ? 1 : 0; });</script>', '@starting-style { section { opacity: 0; } } section { transition: opacity .4s; }'), false],
   ['page-scroll-fade', page('<section><h2>Hours</h2><p>The shop opens at eight on weekdays and at ten on Saturday.</p></section><a class="top" href="#">Top</a><script>addEventListener("scroll", () => { top.style.opacity = scrollY > 400 ? 1 : 0; });</script>', 'section { transition: opacity .4s; @starting-style { opacity: 0; } }'), false],
@@ -743,49 +639,6 @@ test('clean pages pass every rule, so a rule that rejects everything fails here'
     assert.equal(res.results.length, PAGE_RULES.length);
     assert.ok(res.results.every((r) => r.ok === true));
   }
-});
-
-test('the menu finding names each menu at its own line and says which origin it found', () => {
-  const only = (html) => checkPage(html, 'p.html', { only: MC }).findings;
-  const shared = ['<!doctype html><html><head><style>', '.menu { animation: grow .15s ease-out; }', '#file-menu, #edit-menu, #view-menu { transform-origin: top left; }', GROW, '</style></head><body>',
-    ...['file', 'edit', 'view', 'help', 'share'].map((n) => `<div role="menu" class="menu" id="${n}-menu"><a href="/${n}">Open</a></div>`), '</body></html>'].join('\n');
-  const two = only(shared);
-  assert.deepEqual(two.map((f) => f.line), [9, 10]);
-  assert.match(two[0].text, /help-menu/);
-  assert.match(two[1].text, /share-menu/);
-  assert.ok(two.every((f) => /no transform-origin/.test(f.text) && /line 4/.test(f.text)));
-  // fixing one menu leaves only the other
-  const one = only(shared.replace('#view-menu {', '#view-menu, #help-menu {'));
-  assert.deepEqual(one.map((f) => f.line), [10]);
-  // menus written on one line are counted in the one finding that line gets
-  const sameLine = only(page(menuEl('class="m" id="a"') + menuEl('class="m" id="b"') + menuEl('class="m" id="c"'), `.m { animation: grow .15s; } ${GROW}`));
-  assert.equal(sameLine.length, 1);
-  assert.match(sameLine[0].text, /id="a"/);
-  assert.match(sameLine[0].text, /2 more/);
-  // an origin set to the centre is named, not denied
-  const centre = only(page(menuEl(), `.m { animation: grow .15s; transform-origin: center; } ${GROW}`));
-  assert.equal(centre.length, 1);
-  assert.match(centre[0].text, /transform-origin: center/);
-  assert.doesNotMatch(centre[0].text, /no transform-origin/);
-  // a long tailwind value does not push the reason out of the clipped text
-  const long = only(page(menuEl('class="animate-in fade-in-0 zoom-in-95"'), TW_ENTER));
-  assert.equal(long.length, 1);
-  assert.match(long[0].text, /no transform-origin/);
-});
-
-test('the menu rule reads no style rule on a page with no menu', () => {
-  const { parsePage } = require('../lib/page-scan');
-  const rule = PAGE_RULES.find((r) => r.id === MC);
-  const counted = (body) => {
-    const p = parsePage(page(body));
-    let reads = 0;
-    p._sheet = { rules: Array.from({ length: 20 }, (_, i) => ({ get selector() { reads++; return `.u${i}`; }, decls: [{ prop: 'padding', value: '3px', line: 1 }], line: 1, at: null, media: null, starting: false })), compiled: [], vars: {} };
-    rule.check({ page: p }, () => {});
-    return reads;
-  };
-  const rowsHtml = Array.from({ length: 50 }, (_, i) => `<li class="row r${i}">Job ${i} closed by Maria</li>`).join('');
-  assert.equal(counted(`<main><h1>Jobs this week</h1><ul>${rowsHtml}</ul></main>`), 0);
-  assert.ok(counted(`<main><h1>Jobs this week</h1><ul>${rowsHtml}</ul>${menuEl()}</main>`) > 0);
 });
 
 test('a switched-off rule is skipped and reported as off', () => {
