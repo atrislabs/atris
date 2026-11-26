@@ -162,3 +162,13 @@ test('update --yes writes the missing run output lines once', () => {
     cleanup(fixture);
   }
 });
+
+test('a new project starts with the page check blocking and an existing one stays in watch mode', () => {
+  const fresh = makeProject(), old = makeProject();
+  fs.mkdirSync(path.join(old.project, 'atris'));
+  try {
+    for (const args of [['init', '--yes'], ['update', '--yes']]) for (const f of [fresh, old]) assert.equal(runCli(args, { cwd: f.project, home: f.home }).status, 0);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(fresh.project, '.atris', 'slop.rules.json'), 'utf8')), { pages: 'block' });
+    assert.equal(fs.existsSync(path.join(old.project, '.atris', 'slop.rules.json')), false);
+  } finally { cleanup(fresh); cleanup(old); }
+});

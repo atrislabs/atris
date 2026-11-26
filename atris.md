@@ -114,6 +114,17 @@ What you ship should not read as generated. If someone would believe an AI made 
 - **Generate it right.** `atris deck` and the `design` policy use own backgrounds and fonts, never stock templates.
 - **Compound it.** A new tell becomes a typed lesson with a `detector:` regex so the gate grows.
 
+## screens
+
+Any page or screen a person will look at follows these. The check enforces them so read what it prints, fix every must-fix line and judge each note for the reviewer.
+
+- Write the content first, as plain HTML. Start the file at `<main>`. No class, no style, no script. The tool adds the look.
+- Run `atris site check <file>` and then `atris site check <file> --render` before you call a page done. The first reads the file. The second opens the page in a browser at phone and desktop width. Each answers yes or no for each rule and prints the line to fix. `atris site rules` prints every rule.
+- No subtitle under a heading and no text that explains the page. The heading and the thing itself carry it.
+- Every number names where it came from. No made-up stats.
+- Use real content, including the ugly cases: the longest name, the empty list, the error.
+- Never pick a look. Make a few different ones for the board. Only the owner picks.
+
 ## voice
 
 Output stays sharp no matter how big the context.

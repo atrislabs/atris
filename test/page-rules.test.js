@@ -1,0 +1,746 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const { PAGE_RULES, checkPage, ruleSheet } = require('../lib/page-rules');
+const { scanText } = require('../lib/slop-kinds');
+
+// a page that builds its styles from its class names in the browser
+const TW = '<script src="https://cdn.tailwindcss.com"></script>';
+const page = (body, css = '', head = '') =>`<!doctype html><html><head>${head}<style>${css}</style></head><body>${body}</body></html>`;
+const fired = (html) => new Set(checkPage(html, 'page.html').findings.map((f) => f.rule));
+// a rule blocks only with a must-fix line. a note for the reviewer is shown and never blocks
+const blocked = (html) => new Set(checkPage(html, 'page.html').findings.filter((f) => f.level === 'error').map((f) => f.rule));
+// true: the rule blocks. 'note': it only leaves a note for the reviewer. false: it says nothing
+const outcome = (rule, html) => (blocked(html).has(rule) ? true : fired(html).has(rule) ? 'note' : false);
+
+// For every rule: a page that shows the problem, and a twin that shows the same thing written
+// another way (renamed classes, a div with a shadow, an svg for an arrow, a font alias, and so on).
+const CASES = {
+  'page-subtitle': [
+    page('<h1>Leads</h1><p>Every lead in one place</p><ul><li>Maria</li></ul>'),
+    page('<section><div class="x1"><h2>Leads</h2><span>Every lead you have, sorted by date</span></div><table><tr><td>Maria</td></tr></table></section>'),
+  ],
+  'page-explanatory': [
+    page('<main><h2>Leads</h2><table><tr><td>Maria</td></tr></table><p>This page shows every lead.</p></main>'),
+    page('<main><table><tr><td>Maria</td></tr></table><div class="tbl-cap">Tap a row to open the person</div></main>'),
+  ],
+  'page-word-quiet': [page('<p>It runs quietly in the background.</p>'), page('<p>A <em>quiet</em> helper for your inbox</p>')],
+  'page-word-real': [page('<p>Results for real teams</p>'), page('<p>Built on <b>Real</b> work from your week</p>')],
+  'page-two-word-sentence': [
+    page('<p>Ship it. Then rest well tonight.</p>'),
+    page('<p><span class="k">No noise</span>. Your morning starts with the work.</p>'),
+  ],
+  'page-dot-separator': [
+    page('<p>Austin · Texas</p>'),
+    page('<ul class="m"><li>Austin</li><li>Texas</li></ul>', '.m li + li::before { content: "\\00b7"; margin: 0 6px; }'),
+  ],
+  'page-button-arrow': [
+    page('<button>Start →</button>'),
+    page('<a href="/s" class="go">Start <svg width="12" height="12"><path d="M0 0h12"/></svg></a>', '.go { padding: 8px 12px; background: #123; color: #fff; }'),
+  ],
+  'page-sparkle': [page('<p>✨ New this week</p>'), page('<button><i data-lucide="sparkles"></i> Write it</button>')],
+  'page-label-above-heading': [
+    page('<section><span class="eyebrow">New</span><h2>Leads</h2><p>Maria, Austin, booked for Tuesday at noon.</p></section>'),
+    page('<section><div class="k2"><b>Pricing</b></div><h1>Plans</h1></section>'),
+  ],
+  'page-headline-accent': [
+    page('<h1>Your <em>calm</em> inbox</h1>'),
+    page('<h1>Your <span class="k">calm</span> inbox</h1>', '.k { font-family: Georgia, serif; }'),
+  ],
+  'page-numbered-sections': [
+    page('<h2>01 Plan</h2><p>We write the plan with you.</p><h2>02 Build</h2><p>We build it.</p>'),
+    page('<div class="r"><small>1</small><h3>Plan</h3></div><div class="r"><small>2</small><h3>Build</h3></div>'),
+  ],
+  'page-all-caps': [
+    page('<p style="text-transform: uppercase">New leads</p>'),
+    page('<p class="m">New leads <b>TODAY ONLY</b></p>'),
+  ],
+  'page-emoji-icon': [page('<h3>🚀 Launch</h3>'), page('<ul><li><span>📅</span> Calendar</li></ul>')],
+  'page-placeholder': [page('<p>Lorem ipsum dolor sit amet.</p>'), page('<div><span>Description goes</span> here</div>')],
+  'page-unsourced-number': [
+    page('<div class="stat"><b>40%</b><span>faster replies</span></div>'),
+    page('<dl><dt>Replies</dt><dd>3x</dd></dl>'),
+  ],
+  'page-card-grid': [
+    page('<div class="grid"><div class="card"><h3>Leads</h3><p>a</p></div><div class="card"><h3>Notes</h3><p>b</p></div><div class="card"><h3>Mail</h3><p>c</p></div></div>', '.grid { display: grid; }'),
+    page('<section><article><svg width="16"></svg><p>Leads</p></article><article><svg width="16"></svg><p>Notes</p></article><article><svg width="16"></svg><p>Mail</p></article></section>'),
+  ],
+  'page-card-in-card': [
+    page('<div class="card" style="border: 1px solid #ddd; padding: 16px"><div class="card" style="border: 1px solid #ddd; padding: 8px">Inner</div></div>'),
+    page('<div class="shadow rounded p-4"><div class="bg-gray-50 rounded-lg p-2">Inner</div></div>', '', TW),
+  ],
+  'page-left-border': [
+    page('<div class="due">Due Friday</div>', '.due { border-left: 4px solid #e11d48; padding: 8px; }'),
+    page('<div class="x">Due Friday</div>', '.x { position: relative; } .x::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: #e11d48; }'),
+  ],
+  'page-looping-motion': [
+    page('<span class="d"></span>', '.d { animation: pulse 2s infinite; }'),
+    page('<svg><circle r="4"><animate attributeName="r" values="4;6;4" dur="1s" repeatCount="indefinite"/></circle></svg>'),
+  ],
+  'page-scroll-fade': [
+    page('<section data-aos="fade-up">Hi</section>'),
+    page('<section class="s1">Hi</section><script>new IntersectionObserver((es) => es.forEach((e) => e.target.classList.add("on"))).observe(document.querySelector(".s1"));</script>'),
+  ],
+  'page-glow': [
+    page('<div class="blob"></div><p>Hi</p>', '.blob { filter: blur(80px); background: #a78bfa; }'),
+    page('<header class="top">Hi</header>', '.top { box-shadow: 0 0 60px rgba(168, 85, 247, 0.5); }'),
+  ],
+  'page-glass': [page('<nav class="n">Hi</nav>', '.n { backdrop-filter: blur(12px); }'), page('<nav class="backdrop-blur-md">Hi</nav>', '', TW)],
+  'page-gradient-text': [
+    page('<h1>Hi</h1>', 'h1 { background: linear-gradient(90deg, #f0f, #0ff); -webkit-background-clip: text; color: transparent; }'),
+    page('<svg><defs><linearGradient id="g"></linearGradient></defs><text fill="url(#g)">Hi</text></svg>'),
+  ],
+  'page-banned-font': [
+    page('<p>Hi</p>', 'body { font-family: Inter, sans-serif; }'),
+    page('<p class="d">Hi</p>', '@font-face { font-family: "Display"; src: url(/f/PlayfairDisplay-Regular.woff2); } .d { font-family: Display; }'),
+  ],
+  'page-noise': [
+    page('<svg><filter id="n"><feTurbulence baseFrequency="0.8"/></filter></svg>'),
+    page('<div class="bg">Hi</div>', '.bg { background-image: url(/img/grain.png); }'),
+  ],
+};
+
+const prose = (topic) => [
+  `Every ${topic} week starts with the same list. Maria checks the open jobs, calls the two people who asked for a quote and writes down what each one needs before Thursday.`,
+  `The list lives in one sheet that the whole office can open. When a job closes she moves the row to the done tab so the next person sees only the work that is left.`,
+  `Most weeks this takes about twenty minutes on Monday morning. The rest of the week she spends on the jobs themselves and on the calls that come in after lunch.`,
+].map((p) => `<p>${p}</p>`).join('');
+
+// Clean pages that must pass every rule.
+const CONTROLS = {
+  article: page(`<article><h1>How the office runs its week</h1>
+<section><h2>Monday</h2>${prose('Monday')}</section>
+<section><h2>Midweek</h2>${prose('midweek')}<blockquote>We keep the list short so it gets read.</blockquote></section>
+<section><h2>Friday</h2>${prose('Friday')}</section></article>`, 'body { font-family: Interstate, Georgia, serif; } blockquote { margin: 1em 2em; }'),
+  pricing: page(`<main><h2>Plans</h2><table><thead><tr><th>Plan</th><th>Price</th><th>Seats</th></tr></thead>
+<tbody><tr><td>Starter</td><td>$20 a month</td><td>1</td></tr><tr><td>Business</td><td>$50 a month</td><td>5</td></tr>
+<tr><td>Max</td><td>$200 a month</td><td>20</td></tr></tbody></table></main>`, 'td, th { border-bottom: 1px solid #ddd; padding: 8px; } table { border-collapse: collapse; }'),
+  report: page(`<main><h1>October follow-ups</h1><section><h2>Replies</h2>
+<div class="figure"><b>42%</b><span>reply rate</span><cite>Source: mail export, October 31</cite></div>
+<table><tr><th>Week</th><th>Sent</th><th>Replies</th></tr><tr><td>1</td><td>40</td><td>17</td></tr><tr><td>2</td><td>38</td><td>15</td></tr></table>
+<p>Replies came from owners who had a booking that week, as the table shows by week.</p></section></main>`, '.figure { box-shadow: 0 1px 2px rgba(0,0,0,.08); border-radius: 8px; padding: 12px; }'),
+  form: page(`<main><h2>Ask for a quote</h2><form><label for="e">Email</label><input id="e" type="email" placeholder="you@shop.com">
+<label for="m">What needs fixing</label><textarea id="m"></textarea><button type="submit">Send</button></form></main>`, 'input, textarea { border: 1px solid #ccc; border-radius: 4px; padding: 6px; }'),
+  realEstate: page(`<main><h1>Maria Lopez, Austin homes</h1><section><h2>Listings</h2>
+<p>Maria has sold real estate in Austin since 2011 and knows the east side street by street. Her listings update in real-time and buyers get real time alerts when a price drops.</p>
+<p>Call the office to book a walk through on any open house this weekend.</p></section></main>`),
+  prices: page(`<main><section><h2>Plans for 2026</h2><p>Prices hold for the whole year and there is nothing to sign.</p><p>You can change plans any month from the billing page.</p></section>
+<section><h2>Starter at $20 a month</h2><p>One seat and the weekly receipt in your inbox each Friday.</p><p>Most solo shops start here and move up when a second person joins.</p></section></main>`),
+};
+
+const three = (f) => [0, 1, 2].map(f).join('');
+const box = '<div class="o"><p>x</p><div class="i"><p>y</p></div></div>';
+const grain = 'PHN2Zz48ZmlsdGVyPjxmZVR1cmJ1bGVuY2UvPjwvZmlsdGVyPjwvc3ZnPg==';
+
+// Ways around each rule found by attackers (rounds 1 and 2), written fresh: [rule, page, should it fire].
+const ATTACKS = [
+  ['page-subtitle', page('<div><div><h1>Nexus</h1></div><div><p>A list of the people you talk to.</p></div></div>'), true],
+  ['page-subtitle', page('<h1>Nexus<small>A list of the people you talk to</small></h1>', 'small { display: block; }'), true],
+  ['page-subtitle', page('<section><h1>Nexus</h1><h3>A list of the people you talk to.</h3><a href="/s">Start</a></section>'), true],
+  ['page-subtitle', page('<section><h1>Nexus</h1><hr>A list of the people you talk to.</section>'), true],
+  ['page-subtitle', page('<h1>Nexus</h1><a href="/s">Start</a>', 'h1::after { content: "A list of the people you talk to"; display: block; }'), true],
+  ['page-subtitle', page('<h2>Due</h2><div><p>Who needs a reply.</p><table><tr><td>Ana</td></tr></table></div>'), true],
+  ['page-subtitle', page('<h2>Join</h2><p>One note a week.</p><input type="email">'), true],
+  ['page-subtitle', page('<h1>Welcome back</h1><div><a class="btn" href="/in">Sign in</a></div><nav><a href="/a">Docs</a><a href="/b">Help</a></nav>'), false],
+  ['page-subtitle', page('<h2>Quote</h2><form class="lead-form"><label>Email</label><input></form><h2>Month</h2><table class="summary"><tr><td>12</td></tr></table>'), false],
+  ['page-subtitle', page('<h1>Board</h1><span class="vh">Updated now</span><ul><li>Ana</li></ul>', '.vh { position: absolute; width: 1px; height: 1px; clip: rect(0 0 0 0); }'), false],
+  ['page-subtitle', page('<h2>Visit</h2><address>12 Oak Road</address><iframe src="/map"></iframe><h2>Plan</h2><div class="p">$50</div><div>a month</div>', '.p { font-size: 56px; }'), false],
+  ['page-subtitle', page(`<h1>The leak</h1><p>${'The floor was wet again on Tuesday. Ana lifted the tiles. '.repeat(2)}</p><p>By noon the plumber had the joint out.</p>`), false],
+  ['page-subtitle', page('<h2>2.4.1</h2><time>20 Nov</time><ul><li>Fixed export</li></ul><h2>Docs</h2><p>Pass a string.</p><pre>parse(s)</pre>'), false],
+  ['page-subtitle', '<h2>Plans</h2><table><tr><td>1</td></tr></table>', false],
+  ['page-explanatory', page('<ul><li>Ana</li></ul><div>On this page you see who is due.</div>'), 'note'],
+  ['page-explanatory', page('<ul><li>Ana</li></ul><div>Hi Sam, this page is your week.</div>'), 'note'],
+  ['page-explanatory', page('<ul><li>Ana</li></ul><div class="text-muted">Tip: drag a name to change the order.</div>'), 'note'],
+  ['page-explanatory', page('<form><input><div class="form-text">Type the address you check daily.</div></form>'), 'note'],
+  ['page-explanatory', page('<p>The following spring a frost came. This section of the orchard is closed. This site was a farm.</p>'), false],
+  ['page-explanatory', page('<ul><li class="note">Call the dentist</li><li class="note">Buy pears</li></ul><a class="help-link" href="/h">Help</a><span class="bottle-cap">Caps in 28 mm</span>'), false],
+  ['page-word-quiet', page('<p>It runs <span>qui</span><span>et</span>ly.</p><p>A qui&shy;et week.</p>'), true],
+  ['page-word-quiet', page('<p class="q"></p><svg><text>Quietly done</text></svg>', '.q::before { content: "Quiet mode"; }'), true],
+  ['page-word-quiet', page('<input placeholder="Quiet hours"><p aria-hidden="true">Done quietly.</p>'), true],
+  ['page-word-quiet', page('<p class="a">Done quietly.</p><div class="row open">Quiet</div><div class="row">x</div>', '@media print { .a { display: none; } } .row::-webkit-scrollbar { display: none; } .row:not(.open) { display: none; }'), true],
+  ['page-word-quiet', page('<samp class="s">It arrives quietly.</samp><iframe srcdoc="<p>quiet</p>"></iframe>', '.s { font-family: Georgia, serif; }'), true],
+  ['page-word-quiet', '<html lang="ca"><body><p>El gat es queda quiet.</p></body></html>', false],
+  ['page-word-real', page('<p>Real-world numbers</p><p>Built from <b>re</b>al shops</p>'), true],
+  ['page-word-real', '<html lang="es"><body><p>Vimos el Palacio Real.</p></body></html>', false],
+  ['page-two-word-sentence', page('<p>When they ask, say no. Always.</p><p>Fifty a month. Fast&period; Simple．</p><p>One plan. Plain.<sup>1</sup> Flat.</p>'), true],
+  ['page-two-word-sentence', page('<p>Open Mon. to Fri. at Oak Rd. with Prof. Lee and J. R. Smith.</p><p>Closed Jan. 1 for the year.</p>'), false],
+  ['page-two-word-sentence', '<html lang="de"><body><p>Am 3. Oktober ist der Laden zu.</p></body></html>', false],
+  ['page-dot-separator', page('<p>Mon ● Tue ⋅ Wed</p>'), true],
+  ['page-dot-separator', page('<div class="r"><div>Mon</div><div>·</div><div>Tue</div></div><div class="r"><span>Mon</span><i class="d"></i><span>Tue</span></div>', '.r { display: flex; } .d { width: 4px; height: 4px; border-radius: 50%; background: #888; }'), true],
+  ['page-dot-separator', page('<p>El col·legi obre. The dot product a · b. CuSO4·5H2O.</p><ul><li>Bread</li><li>Rolls</li></ul>', 'li::before { content: "\\2022"; }'), false],
+  ['page-button-arrow', page('<button>Next <span aria-hidden="true">→</span></button><button>Continue &rightarrow;</button>'), true],
+  ['page-button-arrow', page('<a class="btn" href="/s"><span>Start <svg></svg></span></a>'), 'note'],
+  ['page-button-arrow', page('<button class="c">Next</button>', '.c::after { content: ""; width: 6px; height: 6px; border-width: 0 2px 2px 0; border-style: solid; transform: rotate(-45deg); }'), true],
+  ['page-button-arrow', page('<button><span class="ms">arrow_forward</span></button><button>Go <span class="ms">arrow_forward</span></button>', '.ms { font-family: "Material Symbols Outlined"; }'), 'note'],
+  ['page-button-arrow', page('<a class="go" href="/s">Start ➡</a><div class="go" onclick="go()">Back ←</div>', '.go { padding-inline: 20px; background: #111; }'), true],
+  ['page-button-arrow', page('<button class="r"><svg></svg>Continue</button>', '.r { display: flex; flex-direction: row-reverse; }'), 'note'],
+  ['page-button-arrow', page('<button>Unread <span></span></button><button>Enregistrer « Brouillons »</button><button>Mail <span class="dot"></span></button>'), false],
+  ['page-sparkle', page('<h1><span aria-hidden="true">✨</span> Team</h1>'), true],
+  ['page-sparkle', page('<ul><li class="n">New</li></ul>', '.n::before { content: "\\2728"; }'), true],
+  ['page-sparkle', page('<p>✶ Fresh</p>'), true],
+  ['page-sparkle', page('<svg class="SparklesIcon"></svg><iconify-icon icon="lucide:sparkles"></iconify-icon>'), 'note'],
+  ['page-sparkle', page('<input placeholder="✨ Describe it"><li class="x">New</li>', '.x { background: url(/i/sparkles.svg) no-repeat; }'), true],
+  ['page-sparkle', page('<img src="/p/milky-way-stars.jpg" width="900" alt="The sky"><span id="magic-link-status">We sent a link.</span>'), false],
+  ['page-label-above-heading', page('<header><h6 class="eyebrow">Update</h6><h1>Sync</h1></header>'), true],
+  ['page-label-above-heading', page('<header><a class="pill" href="/n">New: 2.4</a><h1>Sync</h1></header>'), true],
+  ['page-label-above-heading', page('<header><span>Update</span><div><h1>Sync</h1></div></header><header><img src="l.png" alt="logo"><span>Update</span><h1>Bank</h1></header>'), true],
+  ['page-label-above-heading', page('<header><h1><small>Update</small>Invoices sync</h1></header>'), true],
+  ['page-label-above-heading', page('<header><div><a href="/">Home</a> / <a href="/t">Tools</a></div><h1>Spades</h1></header><header><p role="status">Saved</p><h1>Settings</h1></header>'), false],
+  ['page-headline-accent', page('<h1>Software for <span class="a">calm</span> teams</h1>', '.a { font: 500 1em Georgia; } h1 { .b { font-style: italic; } }'), true],
+  ['page-headline-accent', page('<h1>For <span class="a">calm</span> teams</h1>', '.a { display: inline-block; transform: skewX(-12deg); }'), true],
+  ['page-headline-accent', page('<h1>For <span class="font-[\'Fraunces\'] [font-style:italic]">calm</span> teams</h1>', '', TW), true],
+  ['page-headline-accent', page('<h1>Read the <a href="/d">docs</a></h1><h1><span class="ms">home</span> Home</h1><h1>For <span>small teams</span></h1><blockquote class="q">Paid <span>back</span></blockquote><h2><code>strict</code></h2><h1><i>Middlemarch</i></h1>', 'a { font-family: inherit; } .ms { font-family: "Material Icons"; } .q span { font-style: italic; }'), false],
+  ['page-numbered-sections', page('<section class="s"><h2>Bank</h2></section><section class="s"><h2>Match</h2></section>', '.s::before { content: counter(n, decimal-leading-zero); }'), true],
+  ['page-numbered-sections', page('<h2>Step 1: Bank</h2><h2>Step 2: Match</h2>'), true],
+  ['page-numbered-sections', page('<h2>① Bank</h2><h2>② Match</h2><h2>I / Bank</h2>'), true],
+  ['page-numbered-sections', page('<ul><li><span class="n">01</span>Bank</li><li><span class="n">02</span>Match</li></ul>'), true],
+  ['page-numbered-sections', page('<table><tr><td>01</td><td><h2>Bank</h2></td></tr><tr><td>02</td><td><h2>Match</h2></td></tr></table>'), true],
+  ['page-numbered-sections', page('<p>9:00 Standup</p><p>10:00 Demo</p><h2>12 March</h2><h2>13 March</h2><h2>2.0 Apps</h2><h2>3.0 Teams</h2><div><span>1</span><span>Maya</span></div><div><span>2</span><span>Dev</span></div>'), false],
+  // a plain 1. before a short label reads the same as a rank: a note, not a block
+  ['page-numbered-sections', page('<p>1. Maya Lin</p><p>2. Dev Rao</p><p>3. Ana Ruiz</p>'), 'note'],
+  ['page-numbered-sections', page('<h2>1. Account</h2><p>Keep it safe.</p><h2>2. Payment</h2><p>Refunds follow section 3. Section 1 and section 2 apply to every order.</p><h2>3. Refunds</h2>'), 'note'],
+  ['page-unsourced-number', page('<ul><li><strong>98%</strong><span>matched by hand</span></li></ul>'), true],
+  ['page-unsourced-number', page('<div class="s"><div><div>12x</div></div><div>faster close</div></div><div class="s"><div>$48,000</div><div>saved per team</div></div>'), true],
+  ['page-unsourced-number', page('<div><b>4.95</b><span>average rating</span></div><div><b>#1</b><span>tool for studios</span></div><div><b>9</b><span>out of ten agree</span></div>'), true],
+  ['page-unsourced-number', page('<div data-source=""><b>98%</b><span>matched</span></div><blockquote>Great <cite>Ana</cite></blockquote>'), true],
+  ['page-unsourced-number', page('<a href="/" class="hero"><h1>Cut late invoices by 40 percent</h1></a>'), true],
+  ['page-unsourced-number', page('<div class="s" data-v="98%">of invoices matched</div>', '.s::before { content: attr(data-v); display: block; }'), true],
+  ['page-unsourced-number', page('<div class="r"><span>Seats</span><span>25</span></div><dl><dt>Order</dt><dd>48210</dd></dl><div><span>12</span><span>Mon</span></div><div><span>Diavola</span><span>11</span></div><div><b>98%</b><span>matched</span><p>Source: Ledger survey, March</p></div>'), false],
+  ['page-all-caps', page('<p><span>FAS</span><span>TER</span> <span>NOTES</span> today</p>'), true],
+  ['page-all-caps', page('<p>Our CIVIC plan</p><p>SALE50 now</p><p>Open the README and pay in USDC.</p><p>Your key is QWER-ASDF-ZXCV and your code BKNG-TAHO.</p>'), false],
+  ['page-all-caps', page('<p>TRY IT NOW and pay nothing.</p>'), true],
+  ['page-all-caps', page('<p>BUY ONE GET ONE on every wool coat.</p>'), true],
+  ['page-all-caps', page('<p class="k">Fifty</p><input class="k2" type="submit" value="Buy">', '.k { font: small-caps 700 20px Georgia; } :root { --c: uppercase; } .k2 { text-transform: var(--c); }'), true],
+  ['page-all-caps', page('<section class="p"><h2>Plans</h2></section>', '.p { h2 { text-transform: uppercase; } } :is(h3, .tag) { color: red; }'), true],
+  ['page-all-caps', page('<p class="d">on Monday the floor was wet.</p><h2 class="sc">Plans</h2><p>FAFSA and FDIC rules, chapter VIII</p>', 'p::first-letter { text-transform: uppercase; } .sc { text-transform: none; } h2 { text-transform: uppercase; }'), false],
+  ['page-emoji-icon', page('<ul><li>⚙️ Settings</li><li>1️⃣ Add a list</li></ul>'), true],
+  ['page-emoji-icon', page('<div>🚀 Launch a list</div><p>&#8203;🎯 Goals</p>'), true],
+  ['page-emoji-icon', page('<ul><li class="r">Launch</li></ul>', '.r::before { content: "🚀 "; }'), true],
+  ['page-emoji-icon', page('<table><tr><td>👍</td><td>Seen</td></tr></table><div><p class="reply">🔥</p><p class="reply">Works here too</p></div>'), false],
+  ['page-placeholder', page('<p>Dolor sit amet, consectetur adipiscing elit.</p><p>Heading goes here</p>'), true],
+  ['page-placeholder', page('<h2>[Company name]</h2><p>{{headline}}</p><p>Price: TBD</p>'), true],
+  ['page-placeholder', page('<p>Printers used lorem ipsum since the 1500s.</p><button>Add a description</button><p>Placeholder text is not a label.</p>'), false],
+  ['page-card-grid', page('<div class="g"><a href="/a"><h3>A</h3><p>x</p></a><a href="/b"><h3>B</h3><p>y</p></a><a href="/c"><h3>C</h3><p>z</p></a></div>', '.g { display: grid; } a { display: block; }'), true],
+  ['page-card-grid', page('<div class="g"><div><h3>A</h3><p>x</p></div><div><h3>B</h3><p>y</p><p>w</p></div><div><h3>C</h3><p>z</p><a href="/">go</a></div></div>', '.g { display: grid; }'), true],
+  ['page-card-grid', page('<div class="r"><div class="c"><h3>A</h3><p>x</p></div><div class="c"><h3>B</h3><p>y</p></div></div><div class="r"><div class="c"><h3>C</h3><p>z</p></div><div class="c"><h3>D</h3><p>w</p></div></div>', '.r { display: flex; } .c { border: 1px solid #ccc; padding: 16px; }'), true],
+  ['page-card-grid', page('<fieldset class="g"><label><p><strong>Solo</strong></p><p>One seat</p></label><label><p><strong>Team</strong></p><p>Ten seats</p></label><label><p><strong>Firm</strong></p><p>All seats</p></label></fieldset>', '.g { display: grid; } label { display: block; }'), true],
+  ['page-card-grid', page('<section><h2>One</h2><p>a</p></section><section><h2>Two</h2><p>b</p></section><section><h2>Three</h2><p>c</p></section><div><h3>Q?</h3><p>A.</p></div><div><h3>R?</h3><p>B.</p></div><div><h3>S?</h3><p>C.</p></div>'), false],
+  ['page-card-in-card', page('<div class="o"><span class="i">Inner</span></div>', '.o { border: 0.0625rem solid #bbb; padding: 16px; } .i { display: block; border: 1px solid #bbb; border-radius: 6px; padding: 8px; }'), true],
+  ['page-card-in-card', page('<a class="o" href="/"><div class="i">Inner</div></a>', '.o { display: block; border: 1px solid #bbb; padding: 16px; } .i { background-image: linear-gradient(#eee, #eee); border-radius: 6px; padding: 8px; }'), true],
+  ['page-card-in-card', page('<div class="o"><div class="i">Inner</div></div>', ':is(.o, .i) { padding: 12px; border-radius: 8px; } .o { box-shadow: inset 0 0 0 1px #bbb; } .i { border-style: solid; border-color: #bbb; }'), true],
+  ['page-card-in-card', page('<div class="ring-1 rounded p-4"><div class="ring-1 rounded p-2">Inner</div></div><fieldset><div class="t">Inner</div></fieldset>', '.t { border-top: 1px solid #bbb; border-right: 1px solid #bbb; border-bottom: 1px solid #bbb; border-left: 1px solid #bbb; padding: 8px; }'), true],
+  ['page-card-in-card', page('<main class="m"><article class="m">Text</article></main><div class="f"><div class="t">One frame</div></div><section class="band"><form class="fm">Ask</form></section><div class="chips"><div>Billing</div></div>', '.m { background: #fff; padding: 20px; } .f { border: 1px solid #ccc; padding: 12px; } .t { border: 1px solid transparent; padding: 4px; } .band { background: #eef; padding: 40px; } .fm { border: 1px solid #ccc; padding: 12px; } .chips div { padding: 2px; border-radius: 9px; background: #eef; }'), false],
+  ['page-left-border', page('<div class="n">Moved</div>', '.n { background: linear-gradient(to right, #c0392b 4px, #fafafa 4px); }'), true],
+  ['page-left-border', page('<div class="n">Moved</div>', '.n { display: flex; } .n::before { content: ""; width: 4px; background: #c0392b; }'), true],
+  ['page-left-border', page('<div class="n">Moved</div>', '.n { box-shadow: -4px 0 0 0 #c0392b; }'), true],
+  ['page-left-border', page('<div class="n"><div class="b"></div><div>Moved</div></div>', '.n { display: grid; grid-template-columns: 4px 1fr; } .b { background: #c0392b; }'), true],
+  ['page-left-border', page('<table><tr><td class="e">Standup</td></tr></table>', '.e { border-left: thick solid crimson; }'), true],
+  ['page-left-border', page('<div class="n">Moved</div>', '.n { border-width: 4px; border-color: #c0392b; border-style: none none none solid; }'), true],
+  ['page-left-border', page('<div class="n">Moved</div>', '.n { position: relative; } .n::after { content: ""; position: absolute; inset-block: 0; inset-inline-start: 0; inline-size: 4px; background: #c0392b; }'), true],
+  ['page-left-border', page('<div class="relative before:absolute before:left-0 before:inset-y-0 before:w-1 before:bg-red-600">Moved</div><div class="border-l-[0.25rem] border-red-600">Due</div>', '', TW), true],
+  ['page-left-border', page('<div class="n">Moved</div><script>document.querySelector(".n").style.borderLeft = "4px solid #c0392b";</script>'), true],
+  ['page-left-border', page('<div class="n plain">Moved</div><div class="h">Col</div><div class="g">Col</div><div class="k">Col</div>', '.n { border-left: 4px solid crimson; } .n.plain { border: 0; } .h { border-left: #2b6cb0 solid 1px; } .g { border-left: 2px solid lightgray; } .k { border-left: 2px solid var(--rule); } :root { --rule: #d8d8d8; }'), false],
+  ['page-looping-motion', page('<span class="r"></span>', ':root { --spin: spin 1s linear infinite; } .r { animation: var(--spin); }'), true],
+  ['page-looping-motion', page('<span class="r"></span>', '.r { animation-iteration-count: calc(infinity); }'), true],
+  ['page-looping-motion', page('<svg><circle><animate id="a" begin="0s;b.end" dur="1s"/><animate id="b" begin="a.end" dur="1s"/></circle></svg>'), true],
+  ['page-looping-motion', page('<span class="r"></span><script>gsap.to(".r", { rotate: 360, repeat: -1 });</script>'), 'note'],
+  ['page-looping-motion', page('<span class="r"></span><script>function spin() { r.style.rotate = t++ + "deg"; requestAnimationFrame(spin); } spin();</script>'), true],
+  ['page-looping-motion', page('<span class="!animate-spin"></span><marquee>Sale</marquee>'), true],
+  ['page-looping-motion', page('<div class="animate-wiggle"></div>', '@theme { --animate-wiggle: wiggle 1s infinite; }', TW), true],
+  ['page-looping-motion', page('<div class="t">Saved</div><script>// iterations: Infinity would run forever\nt.animate([], { iterations: 1 });</script>', '.t { animation: infinite-slide .5s ease-out 1 both; }'), false],
+  ['page-scroll-fade', page('<section>Hi</section><script>window.onscroll = () => { s.style.opacity = 1; };</script>', 'section { opacity: 0; }'), true],
+  ['page-scroll-fade', page('<section class="b">Hi</section><script>new IntersectionObserver((es) => es.forEach((e) => { e.target.className += " seen"; }));</script>', '.b { opacity: 0; }'), 'note'],
+  ['page-scroll-fade', page('<section>Hi</section>', ':root { --t: --rise; } section { view-timeline-name: --rise; animation-timeline: var(--t); }'), true],
+  ['page-scroll-fade', page('<section>Hi</section><script>ScrollReveal().reveal("section");</script>'), 'note'],
+  ['page-scroll-fade', page('<nav><a href="#a">A</a></nav><section id="a">Hi</section><div class="bar"></div><p class="reveal">Answer</p><button onclick="show()">Show</button><input type="password"><button data-reveal="pw">Show</button><a data-scroll href="#a">Up</a><script>new IntersectionObserver((es) => es.forEach((e) => links.forEach((l) => l.classList.toggle("on", l.hash === "#" + e.target.id))));\naddEventListener("scroll", () => bar.style.transform = `scaleX(${scrollY})`);</script>', '.reveal { opacity: 0; } .bar { animation-timeline: scroll(); }'), false],
+  ['page-glow', page('<div class="b"></div>', ':root { --soft: 90px; } .b { filter: blur(var(--soft)); }'), true],
+  ['page-glow', page('<div class="b"></div><svg><filter id="s"><feGaussianBlur stdDeviation="60"/></filter></svg>', '.b { filter: url(#s); }'), true],
+  ['page-glow', page('<div class="b">Hi</div>', '.b { box-shadow: 0 0 24px cyan, 0 0 28px cyan; }'), true],
+  ['page-glow', page('<div class="b">Hi</div>', '.b { box-shadow: 0 30px 80px -20px rgba(124, 92, 255, .8); }'), true],
+  ['page-glow', page('<div class="b">Hi</div>', '.b { box-shadow: 0 0 90px 10px dodgerblue; }'), true],
+  ['page-glow', page('<img class="o" src="b.png" alt="" aria-hidden="true"><div class="!blur-3xl"></div>', 'img.o { filter: blur(90px); }'), true],
+  ['page-glow', page('<div class="b"></div>', '.b { animation: in .4s 1 forwards; } @keyframes in { to { filter: BLUR(90px); } }'), true],
+  ['page-glow', page('<svg><defs><radialGradient id="g"><stop offset="1" stop-opacity="0"/></radialGradient></defs><circle r="200" fill="url(#g)"/></svg>'), true],
+  ['page-glow', page('<div class="c">Card</div><span class="sp">3 to 1</span><p>Hi</p>', '.c { box-shadow: 0 20px 60px rgba(16, 24, 40, .12), 0 24px 60px rgba(92, 64, 32, .14); } .sp { filter: blur(6px); } body { background: radial-gradient(#ccc 1px, transparent 1px) 0 0/16px 16px; }'), false],
+  ['page-glass', page('<nav class="n">Hi</nav><script>n.style.backdropFilter = "blur(16px)";</script>'), true],
+  ['page-glass', page('<nav>Hi</nav><script>const s = document.createElement("style"); s.textContent = ".n { backdrop-filter: blur(16px) }";</script>'), true],
+  ['page-glass', page('<nav class="[backdrop-filter:blur(16px)]">Hi</nav>', '', TW), true],
+  ['page-glass', page('<nav class="n">Hi</nav>', '.n { backdrop-filter: blur(0); }'), false],
+  ['page-gradient-text', page('<h1 class="h">Hi</h1>', '.h { color: transparent; background: linear-gradient(90deg, red, blue) text; }'), true],
+  ['page-gradient-text', page('<svg><g fill="url(#g)"><text>Hi</text></g></svg>'), true],
+  ['page-gradient-text', page('<div class="w"><div class="t">482 builds</div></div>', '.w { background: linear-gradient(90deg, red, blue); } .t { background: #fff; mix-blend-mode: lighten; }'), true],
+  ['page-banned-font', page('<p>Hi</p>', '', '<link rel="stylesheet" href="https://rsms.me/inter/inter.css">'), 'note'],
+  ['page-banned-font', page('<svg><text font-family="Inter, sans-serif">Hi</text></svg><font face="Roboto">Hi</font>'), true],
+  ['page-banned-font', page('<p>Hi</p><script>new FontFace("Brand", "url(/f/InterVariable.woff2)");</script>'), true],
+  ['page-banned-font', page('<p>Hi</p>', '@font-face { font-family: InterBold; src: url(f.woff2); } @import url("https://fonts.googleapis.com/css2?family=Instrument%20Serif");'), true],
+  ['page-banned-font', page('<p class="font-[\'Playfair_Display\']">Hi</p>', '', TW), true],
+  ['page-banned-font', page('<p>Hi</p>', ':root { --map: url("img/inter-island-map.png"); --gap: var(--inter-item-gap); } body { font-family: Interstate, serif; }'), false],
+  ['page-noise', page('<div class="g"></div>', '.g { background-image: url("data:image/svg+xml;base64,PHN2Zz48ZmlsdGVyPjxmZVR1cmJ1bGVuY2UvPjwvZmlsdGVyPjwvc3ZnPg=="); }'), true],
+  ['page-noise', page('<canvas id="c"></canvas><script>const d = x.createImageData(9, 9); d.data[0] = Math.random() * 255; x.putImageData(d, 0, 0);</script>'), true],
+  ['page-noise', page('<img class="t" alt="" src="tile.png">', 'img.t { position: fixed; inset: 0; image-rendering: pixelated; }'), true],
+  ['page-noise', page('<p>Hi</p>', 'body::before { content: ""; position: fixed; inset: 0; background: repeating-conic-gradient(#000 0 25%, #fff 0 50%) 0 0/3px 3px; }'), true],
+  ['page-noise', page('<div class="noise-cancelling">On</div><span class="noise-level">Loud</span><img src="/img/grain-silo.jpg" alt="A silo"><div class="qr" role="img" aria-label="Ticket"></div><img class="px" src="s.png" alt="A level">', '.qr, .px { image-rendering: pixelated; }'), false],
+  // round 2, written fresh
+  ['page-word-quiet', page('<p>Runs qui&#8205;etly at night.</p>'), true],
+  ['page-word-quiet', page('<h2><span class="a">Qui</span><span class="b">etly</span> fast</h2>', '.a, .b { display: inline; }'), true],
+  ['page-word-quiet', '<html lang="en_GB"><body><p>It stays quiet.</p></body></html>', true],
+  ['page-word-quiet', page('<svg><foreignObject><p>Runs quietly.</p></foreignObject></svg>'), true],
+  ['page-word-quiet', page('<ul><li>files receipts</li></ul>', 'li::marker { content: "Quietly: "; }'), true],
+  ['page-word-real', page('<p>For r&#1077;al teams</p>'), true],
+  ['page-word-real', page('<p>For <span class="h">re</span><span class="x">al</span> shops</p>', '.h { background: #ff0; } .x {}'), true],
+  ['page-word-real', page('<p>Prices move in real&#8209;time.</p><p>We are at 3200 El Camino Real, Palo Alto.</p>'), false],
+  ['page-two-word-sentence', page('<p><span class="b">Ship faster.</span><span class="b">Rest more.</span></p>', '.b { display: inline-block; margin-right: 12px; }'), true],
+  ['page-two-word-sentence', page('<h1><span class="w">Ship faster</span><span class="d">.</span></h1>', '.d { color: red; }'), true],
+  ['page-two-word-sentence', page('<ul><li>Caro, R. (1974). The Power Broker. Knopf.</li></ul>'), false],
+  ['page-two-word-sentence', page('<p>One.</p><p>Read the plan before the call.</p><p>Two. Send the note the same day.</p>'), false],
+  ['page-two-word-sentence', '<html lang="de"><body><p>Wir haben Getränke, z. B. Kaffee. Bestellungen nehmen wir an.</p></body></html>', false],
+  ['page-two-word-sentence', '<html lang="es"><body><p>Enviamos a EE. UU. Los pedidos tardan más.</p></body></html>', false],
+  ['page-dot-separator', page('<p>Docs<span class="s">&middot;</span>Blog</p>', '.s { margin: 0 8px; }'), true],
+  ['page-dot-separator', page('<p>Docs &#903; Blog</p>'), true],
+  ['page-dot-separator', page('<p><span>4 min</span> <svg width="4" height="4"><circle r="2"/></svg> <span>Nov 26</span></p>'), true],
+  ['page-dot-separator', page('<p class="r"><span>4 min</span><span>Nov 26</span></p>', '.r span + span::before { content: ""; display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: #888; }'), true],
+  ['page-dot-separator', page('<nav class="c"><a href="/">Home</a><a href="/d">Docs</a></nav>', '.c { display: flex; } .c a:not(:last-child)::after { content: "\\2E31"; }'), true],
+  ['page-dot-separator', page('<p>A room of 4 · 3 = 12 square metres. A hall of 10 · 2 metres.</p>'), false],
+  ['page-all-caps', page('<p class="l">new this week</p>', '.l { font-variant: all-petite-caps; }'), true],
+  ['page-all-caps', page('<p class="l">Every invoice gets followed up.</p>', '.l::first-line { text-transform: uppercase; }'), true],
+  ['page-all-caps', page('<p>GRA&#8205;TE&#8205;FUL FOLKS, thank you.</p>'), true],
+  ['page-all-caps', page('<p>Four HDMI inputs, WCAG contrast and the ESPN app.</p><table><tr><td>AAPL</td></tr></table>'), false],
+  ['page-subtitle', page('<section><h2>Features</h2><p>All a shop needs.</p><div class="g"><div><h3>A</h3><p>x</p></div><div><h3>B</h3><p>y</p></div></div></section>', '.g { display: grid; }'), true],
+  ['page-subtitle', page('<h1>Invoices that chase</h1><p>Send it once. We follow up.</p><p>Free for ten clients.</p><a href="/s">Start</a>'), true],
+  ['page-subtitle', page('<h1>Invoices<br><small>We follow up until they pay.</small></h1>'), true],
+  ['page-subtitle', page('<h1>Invoices</h1><a href="/s">Start</a>', 'h1::after { content: "\\A We follow up until they pay."; white-space: pre; }'), true],
+  ['page-subtitle', page('<h2>Plans</h2><p>Pick the one that fits.</p><div role="list"><div role="listitem">Solo</div></div>'), true],
+  ['page-subtitle', page('<h2>Pricing</h2><div class="tagline"><p>Simple plans for every shop.</p></div>'), 'note'],
+  ['page-subtitle', page('<h1>Questions</h1><details><summary>How long is shipping?</summary><p>Two days.</p></details><h1>Thanks, your order is in</h1><p>We email you when it ships, in two days. Your number is 48213.</p><p>Write to us with that number.</p>'), false],
+  ['page-explanatory', page('<p>Use this to track who owes you.</p>'), 'note'],
+  ['page-explanatory', page('<p>This page has every invoice.</p>'), 'note'],
+  ['page-explanatory', page('<p>This screen gathers your late clients.</p>'), 'note'],
+  ['page-explanatory', page('<p>Hi Sam, welcome to your dashboard.</p>'), 'note'],
+  ['page-explanatory', page('<p>Invoices: here you can see each payment.</p>'), 'note'],
+  ['page-explanatory', page('<div><span>$4,210</span></div><p class="stat-cap">Updated hourly from your bank</p>'), 'note'],
+  ['page-explanatory', page('<p>Drag the fillets through the flour. Tap the thickest part with a fork.</p>'), false],
+  ['page-placeholder', page('<p><b>Bio:</b> Lorem ipsum sed do eiusmod.</p>'), true],
+  ['page-placeholder', page('<p>Sed ut perspiciatis unde omnis iste natus.</p>'), true],
+  ['page-placeholder', page('<p>Thanks, {firstName}. Your invoice is ready.</p>'), 'note'],
+  ['page-placeholder', page('<p>Kickoff is TBD until Sunday.</p><p>One nurse, [name withheld at her request], spoke.</p><p>In John Doe v. Alameda Housing Authority, the court ruled.</p>'), false],
+  ['page-emoji-icon', page('<div><div class="i">🚀</div><div><h3>Fast setup</h3><p>x</p></div></div>'), true],
+  ['page-emoji-icon', page('<form><input type="submit" value="🚀 Get started"></form>'), true],
+  ['page-emoji-icon', page('<h3>&#8205;🚀 Fast setup</h3>'), true],
+  ['page-emoji-icon', page('<ul class="p"><li>Unlimited invoices</li></ul>', 'ul.p { list-style-type: "✅ "; }'), true],
+  ['page-button-arrow', page('<a class="b" href="/s">Start</a>', '.b { display: inline-block; padding: 12px; background: #111; } .b::after { content: "\\f061"; font-family: "Font Awesome 6 Free"; }'), 'note'],
+  ['page-button-arrow', page('<button class="b">Start</button>', '.b { background: #111 url(/i/go.svg) no-repeat 100% 50%; }'), 'note'],
+  ['page-button-arrow', page('<button>Start<span class="g"></span></button>', '.g { display: inline-block; width: 16px; background: url(/i/next.svg); }'), 'note'],
+  ['page-button-arrow', page('<button>Start<span class="g"></span></button>', '.g { display: inline-block; width: 16px; background: currentColor; mask: url(/i/next.svg); }'), 'note'],
+  ['page-button-arrow', page('<button>Start <span data-icon="mdi:arrow-right"></span></button>'), 'note'],
+  ['page-button-arrow', page('<button class="b"><svg></svg>Start</button>', '.b { display: inline-flex; } .b svg { order: 2; }'), 'note'],
+  ['page-button-arrow', page('<button class="b"><svg></svg>Start</button>', '.b svg { float: right; }'), 'note'],
+  ['page-button-arrow', page('<button class="b">Start</button>', '.b::after { content: ""; width: 8px; background: currentColor; clip-path: polygon(0 0, 100% 50%, 0 100%); }'), true],
+  ['page-button-arrow', page('<button class="b">Start</button>', '.b::after { content: ""; border: 2px solid; border-color: currentColor currentColor transparent transparent; transform: rotate(45deg); }'), true],
+  ['page-button-arrow', page('<button>Start <span class="g">arrow_forward</span></button>', '.g { font-family: "Glyphs"; }'), 'note'],
+  ['page-button-arrow', page('<a class="s" href="/s">Start →</a>', '.s { padding: 12px; background-image: linear-gradient(#111, #111); }'), true],
+  ['page-button-arrow', page('<a class="s" href="/s">Start →</a>', '.s { padding: 12px; border-width: 1px; border-style: solid; border-color: #111; }'), true],
+  ['page-sparkle', page('<p><sparkles-icon></sparkles-icon> Draft</p>'), 'note'],
+  ['page-sparkle', page('<p><x-heroicon-o-sparkles></x-heroicon-o-sparkles> Draft</p>'), 'note'],
+  ['page-sparkle', page('<p><svg aria-labelledby="t"><title id="t">Sparkles</title><path d="M1 1"/></svg> Draft</p>'), 'note'],
+  ['page-sparkle', page('<div><div class="sparkle-badge"><svg><path d="M1 1"/></svg></div><p>Draft</p></div>'), 'note'],
+  ['page-sparkle', page('<p><svg data-name="sparkles"><use href="#a"/></svg> Draft</p>'), 'note'],
+  ['page-sparkle', page('<p><span class="i"></span>Draft</p>', '.i { display: inline-block; width: 16px; background: url(/img/stars.svg); }'), 'note'],
+  ['page-sparkle', page('<p>Drafts like magic 🪄 in one click.</p>'), true],
+  ['page-sparkle', page('<p>Drafts <span>New ★</span> on every plan.</p>'), true],
+  ['page-label-above-heading', page('<article><a href="/c">Case study</a><h2>How a bakery cut invoice time</h2><p>x</p></article>'), true],
+  ['page-label-above-heading', page('<section class="p"><h2>Pay for what you use</h2></section>', '.p h2::before { content: "Pricing"; display: block; }'), true],
+  ['page-label-above-heading', page('<div class="h"><h2>Pay for use</h2><span class="t">Pricing</span></div>', '.h { display: flex; flex-direction: column; } .t { order: -1; }'), true],
+  ['page-label-above-heading', page('<div class="h"><h2>Pay for use</h2><span>Pricing</span></div>', '.h { display: flex; flex-direction: column-reverse; }'), true],
+  ['page-label-above-heading', page('<div class="h"><h2>Pay for use</h2><span class="t">Pricing</span></div>', '.h { display: grid; grid-template-areas: "tag" "title"; } .t { grid-area: tag; } .h h2 { grid-area: title; }'), true],
+  ['page-label-above-heading', page('<div class="h"><h2>Pay for use</h2><span class="t">Pricing</span></div>', '.h { position: relative; padding-top: 24px; } .t { position: absolute; top: 0; }'), true],
+  ['page-label-above-heading', page('<section><header>Pricing</header><h2>Pay for use</h2><p>x</p></section>'), true],
+  ['page-label-above-heading', page('<section><button disabled>New in 2026</button><h2>Pay for use</h2><p>x</p></section>'), true],
+  ['page-label-above-heading', page('<main><header>Acme</header><div><h1>Raise the money</h1></div></main>'), false],
+  ['page-headline-accent', page('<div class="t">Books that close <em>themselves</em></div>', '.t { font-size: 56px; } .t em { font-family: Georgia; }'), true],
+  ['page-headline-accent', page('<div role="heading" aria-level="1">Books that close <i>themselves</i></div>', 'i { font-family: "Times New Roman"; }'), true],
+  ['page-headline-accent', page('<h2>Books that <x-accent>close</x-accent></h2><script>customElements.define("x-accent", class extends HTMLElement { constructor() { super(); this.attachShadow({ mode: "open" }).innerHTML = "<style>:host { font-style: italic }</style><slot></slot>"; } });</script>'), true],
+  ['page-headline-accent', page('<h2>Books that <span class="w">close</span></h2>', 'body { font-family: Arial; } .w { font-family: initial; }'), true],
+  ['page-headline-accent', page('<h1>The <code>sync</code> command</h1>', 'code { font-family: ui-monospace, Menlo, monospace; }'), false],
+  ['page-numbered-sections', page('<ol class="s"><li><h3>Bank</h3></li><li><h3>Send</h3></li></ol>', '.s li::marker { content: "0" counter(list-item); }'), true],
+  ['page-numbered-sections', page('<ol class="s"><li><h3>Bank</h3></li></ol>', '.s li { list-style-type: decimal-leading-zero; }'), true],
+  ['page-numbered-sections', page('<ol class="s"><li><h3>Bank</h3></li></ol>', '@counter-style pad2 { system: extends decimal; pad: 2 "0"; } .s { list-style: pad2; }'), true],
+  ['page-numbered-sections', page('<div class="s"><p><strong>Connect.</strong> Link it.</p></div>', '.s::before { content: counter(n, decimal-leading-zero); }'), true],
+  ['page-numbered-sections', page('<h2>[01] Bank</h2><h2>[02] Send</h2>'), true],
+  ['page-numbered-sections', page('<h2>/01 Bank</h2><h2>/02 Send</h2>'), true],
+  ['page-unsourced-number', page('<table class="t"><tr><td>98%</td><td>3x</td></tr><tr><th>paid on time</th><th>faster</th></tr></table>', '.t td { font-size: 48px; }'), true],
+  ['page-unsourced-number', page('<dl><div><dt class="text-sm">Shops</dt><dd class="text-5xl font-bold">12,000</dd></div></dl>', '', TW), true],
+  ['page-unsourced-number', page('<div><div class="b">Top 1%</div><div>of shops</div></div>', '.b { font-size: 36px; }'), true],
+  ['page-unsourced-number', page('<p><span class="n">87%</span> of shops get paid sooner in their first month with us</p>', '.n { display: block; font-size: 64px; }'), true],
+  ['page-unsourced-number', page('<div><div class="b">87%</div><div>paid sooner</div><cite></cite></div>', '.b { font-size: 56px; }'), true],
+  ['page-unsourced-number', page('<div><div class="b">87%</div><div>paid sooner</div><cite hidden>survey</cite></div>', '.b { font-size: 56px; }'), true],
+  ['page-unsourced-number', page('<div><div class="b">$1,000</div><div>setup, paid once</div></div><ul><li><span>Latte</span> <span>$4.50</span></li></ul><dl><dt>Price</dt><dd>$1,450,000</dd></dl><p>Total <strong>$42.10</strong></p>', '.b { font-size: 32px; }'), 'note'],
+  ['page-card-grid', page(`<div class="r">${three((n) => `<${['div', 'article', 'section'][n]}><h3>T${n}</h3><p>x</p></${['div', 'article', 'section'][n]}>`)}</div>`, '.r { display: grid; }'), true],
+  ['page-card-grid', page(`<div class="r">${three((n) => `<div><div><h3>T${n}</h3><p>x</p></div></div>`)}</div>`, '.r { display: grid; }'), true],
+  ['page-card-grid', page(`<ul class="r">${three((n) => `<li><h3>T${n}</h3><p>x</p></li>`)}</ul>`, '.r { display: grid; }'), true],
+  ['page-card-grid', page('<div class="r"><div><svg width="20"></svg><h3>A</h3><p>x</p></div><div><h3>B</h3><p>y</p></div><div><img src="p.jpg" width="300" alt="p"><h3>C</h3><p>z</p></div></div>', '.r { display: grid; }'), true],
+  ['page-card-grid', page(`<div class="r">${three((n) => `<div><h3>T${n}</h3><p>x</p></div>`)}</div>`, '.r { columns: 3; }'), true],
+  ['page-card-grid', page(`<div class="r">${three((n) => `<div><h3>T${n}</h3><h4>$${n}0</h4><p>x</p></div>`)}</div>`, '.r { display: grid; }'), true],
+  ['page-card-grid', page(`<div class="r">${three((n) => `<div><h6>T${n}</h6><p>x</p></div>`)}</div>`, '.r { display: grid; }'), true],
+  ['page-card-grid', page(`<div class="f" role="contentinfo">${three((n) => `<div><h4>T${n}</h4><ul><li><a href="/a">a</a></li></ul></div>`)}</div>`, '.f { display: grid; }'), false],
+  ['page-card-in-card', page(box, '.o { border-block: 1px solid #ccc; border-inline: 1px solid #ccc; padding: 24px; } .i { border: 1px solid #ccc; border-radius: 6px; padding: 12px; }'), true],
+  ['page-card-in-card', page(box, '.o { border: 1px solid #ccc; border-radius: 8px; padding: 24px; } .i { border-block: 1px solid #999; border-inline: 1px solid #999; padding: 12px; }'), true],
+  ['page-card-in-card', page(box, 'body { background: #eee; } .o { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .25)); background: #fff; padding: 24px; } .i { border: 1px solid #ccc; border-radius: 6px; padding: 12px; }'), true],
+  ['page-card-in-card', page('<div class="border-[1px] rounded-xl p-6"><p>x</p><div class="border-[1px] rounded-lg p-3"><p>y</p></div></div>', '', TW), true],
+  ['page-card-in-card', page('<div class="outline outline-1 rounded-xl p-6"><p>x</p><div class="bg-slate-100 rounded-lg p-3"><p>y</p></div></div>', '', TW), true],
+  ['page-card-in-card', page('<div class="o"><p>x</p><div class="o"><img src="b.jpg" alt="Bread"></div></div>', '.o { border: 1px solid #ccc; border-radius: 8px; padding: 12px; }'), true],
+  ['page-card-in-card', page('<div class="p"><p>Join for $30.</p><a class="j" href="/j">Join</a></div>', '.p { border: 1px solid #ddd; border-radius: 8px; padding: 24px; } .j { display: inline-block; padding: 10px; background: #1a5d3a; border-radius: 6px; }'), false],
+  ...['border-inline-start-width: 4px; border-inline-start-style: solid; border-inline-start-color: teal', 'border: 4px solid teal; border-top: 0; border-right: 0; border-bottom: 0',
+    'border: 4px solid transparent; border-left-color: teal', 'border-style: solid; border-width: 4px; border-color: transparent transparent transparent teal',
+    'background: linear-gradient(90deg, teal 4px, transparent 0)', 'background: linear-gradient(teal, teal) left / 4px 100% no-repeat', 'background: linear-gradient(to right, teal .25rem, #fff .25rem)',
+    'box-shadow: inset 4px 1px 0 teal'].map((css) => ['page-left-border', page('<div class="n"><p>Rye sold out.</p></div>', `.n { ${css}; }`), true]),
+  ['page-left-border', page('<div class="n"><p>x</p></div>', '.n { position: relative; } .n::before { content: ""; position: absolute; left: 0; top: 6px; height: 80%; width: 4px; background: teal; }'), true],
+  ['page-left-border', page('<div class="n"><p>x</p></div>', '.n::before { content: ""; position: absolute; left: -2px; top: 0; bottom: 0; width: 4px; background: teal; }'), true],
+  ['page-left-border', page('<div class="n"><p>x</p></div>', '.n { display: grid; grid-template-columns: 4px 1fr; } .n::before { content: ""; background: teal; }'), true],
+  ['page-left-border', page('<div class="n"><span class="b"></span><p>x</p></div>', '.n { display: grid; grid-template: auto / .25rem 1fr; } .b { background: teal; }'), true],
+  ['page-left-border', page('<div class="n"><div class="b"></div><p>x</p></div>', '.n { display: flex; } .b { width: 4px; background: teal; }'), true],
+  ['page-left-border', page('<div class="n"><span class="b"></span><p>x</p></div>', '.b { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: teal; }'), true],
+  ['page-left-border', page('<div class="relative before:absolute before:left-0 before:top-1 before:bottom-1 before:w-1 before:bg-teal-600 before:content-[\'\']"><p>x</p></div>', '', TW), true],
+  ['page-left-border', page('<div class="p"><p>Open the door</p></div>', '.p { border-inline: 2px solid #222; }'), false],
+  ['page-looping-motion', page('<div class="l"><i class="d"></i></div>', '.l { --n: infinite; } :root { --n: 1; } .d { animation: spin 1s var(--n); }'), true],
+  ['page-looping-motion', page('<i class="d"></i>', '.d { animation: spin 1s linear 1e9; }'), 'note'],
+  ['page-looping-motion', page('<i class="d"></i>', '.d { animation: pulse 2s 999 alternate; }'), 'note'],
+  ['page-looping-motion', page('<i id="d"></i><script>d.animate([], { duration: 1000, iterations: 1 / 0 });</script>'), true],
+  ['page-looping-motion', page('<i id="d"></i><script>setInterval(() => d.classList.toggle("big"), 700);</script>'), true],
+  ['page-looping-motion', page('<svg><circle r="9"><animate attributeName="r" values="9;20" dur="1.5s" repeatCount="99999"/></circle></svg>'), 'note'],
+  ['page-looping-motion', page('<i id="d"></i><script>d.style.cssText = "animation: spin 1s infinite";</script>'), true],
+  ['page-looping-motion', page('<i id="d"></i><script>function blink() { d.style.opacity = on ? 1 : 0.2; setTimeout(blink, 600); }</script>'), true],
+  ['page-scroll-fade', page('<section class="p">Hi</section><script>addEventListener("scroll", () => { p.dataset.in = ""; });</script>', '.p { opacity: 0; } .p[data-in] { opacity: 1; }'), true],
+  ['page-scroll-fade', page('<section class="p">Hi</section><script>new IntersectionObserver((l) => l.forEach(({ target: t }) => t.toggleAttribute("data-in", true)));</script>', '.p { opacity: 0; } .p[data-in] { opacity: 1; }'), true],
+  ['page-scroll-fade', page('<main><section class="p">Hi</section></main>', 'main { --tl: view(); } :root { --tl: auto; } .p { animation: rise both; animation-timeline: var(--tl); }'), true],
+  ['page-scroll-fade', page('<section class="p">Hi</section><script>const show = (el) => { el.style.visibility = "visible"; }; new IntersectionObserver((es) => es.forEach((e) => show(e.target)));</script>', '.p { visibility: hidden; }'), true],
+  ['page-scroll-fade', page('<section class="p">Hi</section><script>addEventListener("scroll", () => p.style.setProperty("opacity", "1"));</script>', '.p { opacity: 0; }'), true],
+  ['page-scroll-fade', page('<img data-src="a.jpg" alt="Soup"><script>new IntersectionObserver((es) => es.forEach((e) => { e.target.src = e.target.dataset.src; }));</script>'), false],
+  ['page-scroll-fade', page('<p>Plates</p><a id="top" href="#">Top</a><script>addEventListener("scroll", () => { top.style.opacity = scrollY > 400 ? "1" : "0"; });</script>'), false],
+  ...['.b { box-shadow: 0 0 28px 14px #7c3aed; }', '.b { box-shadow: 1px 1px 26px #0ea5e9, -1px -1px 26px #0ea5e9; }', '.b { filter: drop-shadow(0 0 20px #22d3ee) drop-shadow(0 0 20px #22d3ee); }',
+    '.b { text-shadow: 0 0 6px #f0d, 0 0 12px #f0d, 1px 0 18px #f0d; }', '.b::before { content: ""; position: absolute; inset: 0; background: #a855f7; mask-image: radial-gradient(closest-side, #000, transparent); }',
+    '.b { filter: url("data:image/svg+xml,%3Csvg%3E%3Cfilter id=\'f\'%3E%3CfeGaussianBlur stdDeviation=\'60\'/%3E%3C/filter%3E%3C/svg%3E#f"); }'].map((css) => ['page-glow', page('<div class="b">Plan</div>', css), true]),
+  ['page-glow', page('<section class="h"><div class="b"></div></section>', '.h { --soft: 90px; } :root { --soft: 0px; } .b { filter: blur(var(--soft)); }'), true],
+  ['page-glow', page('<svg><filter id="f"><feGaussianBlur stdDeviation="9"/></filter><circle r="99" fill="#8b5cf6" filter="url(#f)"/></svg>'), true],
+  ['page-glow', page('<svg><filter id="g"><feDropShadow stdDeviation="25" flood-color="#22d3ee"/></filter><circle r="40" filter="url(#g)"/></svg>'), true],
+  ['page-glass', page('<header><nav class="n">Hi</nav></header>', 'header { --f: blur(14px); } :root { --f: none; } .n { backdrop-filter: var(--f); }'), true],
+  ['page-glass', page('<nav id="n">Hi</nav><script>n.style["backdrop-filter"] = "blur(14px)";</script>'), true],
+  ['page-glass', page('<nav id="n">Hi</nav><script>Object.assign(n.style, { backdropFilter: "blur(14px)" });</script>'), true],
+  ['page-gradient-text', page('<svg><linearGradient id="g"></linearGradient><text fill="url(\'#g\')">Plan</text></svg>'), true],
+  ['page-gradient-text', page('<main><h1>Plan</h1></main>', 'main { --c: text; } :root { --c: border-box; } h1 { background-clip: var(--c); }'), true],
+  ['page-gradient-text', page('<h1 id="t">Plan</h1><script>t.style.cssText = "background-image: linear-gradient(90deg, red, blue); -webkit-background-clip: text";</script>'), true],
+  ['page-banned-font', page('<p>Hi</p>', 'body { font-family: "Int\\65 r"; }'), true],
+  ['page-banned-font', page('<p>Hi</p>', 'body { font-family: R\\oboto, Arial; }'), true],
+  ['page-banned-font', page('<p>Hi</p><script>const face = "Roboto"; l.href = "https://fonts.googleapis.com/css2?family=" + face;</script>'), true],
+  ['page-banned-font', page('<p>Hi</p>', '@import url("https://fonts.googleapis.com/css2?family=Playfair+Display") layer(fonts);'), true],
+  ['page-banned-font', page('<p>Hi</p>', ':root { --justify: inter-word; } body { font-family: Georgia; } p { color: red; } @import url("https://fonts.googleapis.com/css2?family=Inter");'), false],
+  ['page-noise', page('<canvas id="c"></canvas><script>crypto.getRandomValues(img.data); x.putImageData(img, 0, 0);</script>'), true],
+  ['page-noise', page('<canvas id="c"></canvas><script>for (;;) x.fillRect(Math.random() * 400 | 0, Math.random() * 400 | 0, 1, 1);</script>'), true],
+  ['page-noise', page('<p>Hi</p>', `body::before { content: ""; position: fixed; inset: 0; background-image: url("data:image/svg+xml;charset=utf-8;base64,${grain}"); }`), true],
+  ['page-noise', page(`<img alt="" src="data:image/svg+xml;charset=utf-8;base64,${grain}">`), true],
+  ['page-noise', page('<div class="h" role="img" aria-label="Elevator"></div><canvas></canvas><p>Score 0</p>', '.h { height: 300px; background: url(/img/grain-elevator.jpg); } canvas { position: fixed; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }'), false],
+  ['page-sparkle', page('<div class="t" role="img" aria-label="Castle"></div>', '.t { height: 300px; background-image: url(/p/magic-kingdom.jpg); }'), false],
+  ['page-word-quiet', page('<pre>$ notes sync --quiet</pre><p>Use <code>--quiet</code> in jobs.</p><pre>synced (real 0.8s)</pre>', 'code, pre { font-family: Iosevka, Monaco; }'), false],  // round 3, written fresh
+  ['page-word-quiet', page('<p>Syncs <span class="p">qui</span><span class="q">etly</span> each hour.</p>'), true],
+  ['page-word-quiet', page('<p>Syncs qu&#x2063;ietly each hour.</p><p>Syncs qu&ZeroWidthSpace;ietly too.</p>'), true],
+  ['page-word-quiet', page('<p>Syncs qui&#x34F;etly each hour.</p>'), true],
+  ['page-word-quiet', page('<p lang="eng">Syncs quietly each hour.</p>'), true],
+  ['page-word-real', page('<svg><text>Made for re<tspan>al</tspan> shops</text></svg>'), true],
+  ['page-word-real', page('<p>Made for re&#x2063;al shops.</p>'), true],
+  ['page-two-word-sentence', page('<p>Every report in one plan. Just $4.50.</p>'), true],
+  ['page-two-word-sentence', page('<p>One inbox for the whole floor. Every rep.</p>'), true],
+  ['page-two-word-sentence', page('<p>We set it up by lunch. Go now&#x2024;</p><p>We set it up by lunch. Go now&#x2063;.</p>'), true],
+  ['page-two-word-sentence', page('<p>Ask Rep. Diaz about the bill before Friday.</p><p lang="de">Die Fahrt dauert ca. 20 Minuten.</p>'), false],
+  ['page-two-word-sentence', page('<p>Buy it at Lund Bros. Hardware today. Find us at 12 Elm Pkwy. Suite 4 near the park.</p><p>Pregunte por la Sra. Ruiz en la oficina.</p>'), false],
+  ['page-all-caps', page('<p>ᴏᴘᴇɴ ʏᴏᴜʀ account today.</p>'), true],
+  ['page-all-caps', page('<p>Press <span class="p">GR</span><span class="q">ANT</span> ACCESS now.</p><p>Press GR&#x2063;ANT ACCESS now.</p>'), true],
+  ['page-all-caps', page('<p>Send a POST, PATCH or DELETE to the path. Ask HR about COBRA, ESPP and FICA. Shells began on UNIX.</p>'), false],
+  ['page-emoji-icon', page('<div class="c"><div>📦</div><div class="t">Fast ship</div><p>Out the door by noon.</p></div>', '.t { font-weight: 700; }'), true],
+  ['page-emoji-icon', page('<h2>&#x2063;📦 Ship day</h2>'), true],
+  ['page-emoji-icon', page('<ul><li>♠ A Q 9</li><li>♥ K 4 2</li></ul><ul><li>★★★★☆ Good bread</li></ul><button>▶ Play</button>'), false],
+  ['page-placeholder', page('<p>Ut enim ad minim veniam, quis nostrud exercitation ullamco.</p>'), true],
+  ['page-placeholder', page('<p>Visit 9 Oak Road, Anytown, open daily.</p>'), 'note'],
+  // TBD, a sample email, a "here" label and a real place named Anytown may be the real words: a note
+  ['page-placeholder', page('<table><tr><td>Room</td><td>TBD</td></tr></table><p>Room: TBD</p>'), 'note'],
+  ['page-placeholder', page('<p>Sign in as test@example.com to try the demo class before the term starts.</p>'), 'note'],
+  ['page-placeholder', page('<label for="t">Paste your text here</label><textarea id="t"></textarea>'), 'note'],
+  ['page-placeholder', page('<p>The film Anytown, USA follows a mayoral race in New Jersey.</p>'), 'note'],
+  ['page-placeholder', page('<p>Room: TBD</p><p>Hello {{ first_name }}, your seat is saved.</p>'), 'note'],
+  // a scroll library that only tracks the scroll is a note. with content that starts hidden it blocks
+  ['page-scroll-fade', page('<div id="bar"></div><p>The shop opens at eight.</p><script>ScrollTrigger.create({ start: 0, end: "max", onUpdate: (self) => { bar.style.width = (self.progress * 100) + "%"; } });</script>'), 'note'],
+  ['page-scroll-fade', page('<section class="s">The shop opens at eight.</section><script>ScrollTrigger.batch(".s", { onEnter: (b) => gsap.to(b, { opacity: 1 }) });</script>', '.s { opacity: 0; }'), true],
+  ['page-placeholder', page('<h2>Lorem&#x2063; ipsum</h2>'), true],
+  ['page-placeholder', page('<table><tr><td>/users/{user_id}</td></tr></table><p>She was known as the Jane Doe of Mill Creek until last year.</p>'), false],
+  ['page-dot-separator', page('<p class="m"><span>Rye</span><span>Spelt</span></p>', '.m span + span::before { content: counter(c, disc); margin: 0 4px; }'), true],
+  ['page-dot-separator', page('<p>Rye <svg class="d" viewBox="0 0 4 4"><circle cx="2" cy="2" r="2"/></svg> Spelt</p>', '.d { width: 4px; height: 4px; }'), true],
+  ['page-dot-separator', page('<p>Rye <span class="d"></span> Spelt</p><p>Rye ⸳ Spelt</p>', '.d { display: inline-block; width: 0; height: 0; border: 2px solid #777; border-radius: 50%; }'), true],
+  ['page-dot-separator', page('<p><span class="k"></span> Rent <span class="k"></span> Food</p>', '.k { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #246; }'), false],
+  ['page-subtitle', page('<section class="h"><p>Books that close themselves.</p><h1>Ledger</h1></section><form><input></form>', '.h { display: flex; flex-direction: column; } .h h1 { order: 1; } .h p { order: 2; }'), true],
+  ['page-subtitle', page('<h1>Plans</h1><p>For teams. Pay monthly.</p><p>Stop any time. No contract.</p><table><tr><td>Team</td></tr></table>'), true],
+  ['page-subtitle', page('<div class="t">Ledger</div><p>Books that close themselves.</p><form><input></form>', '.t { font-size: 36px; }'), true],
+  ['page-subtitle', page('<div class="t">Ledger</div><p>Books that close themselves.</p><a class="btn" href="/s">Go</a>', '.t { font-size: 5vw; }'), true],
+  ['page-subtitle', page('<h1>Ledger<br><span style="font-size:50%">Books that close themselves</span></h1><a class="btn" href="/s">Go</a>'), true],
+  ['page-subtitle', page('<h2>This month</h2><p>From the books, each Monday.</p><div class="r"><div><b>$9</b> in</div><div><b>4</b> out</div></div>', '.r { display: flex; }'), true],
+  ['page-subtitle', page('<h1>Write to us</h1><h2 class="s">We answer the same day.</h2><form><input></form>', 'h2.s { font-weight: 400; }'), true],
+  ['page-explanatory', page('<p>Here you’ll see each bill.</p>'), 'note'],
+  ['page-explanatory', page('<p>👋 Welcome to your shop.</p>'), 'note'],
+  ['page-explanatory', page('<p>Hi and welcome to Ledger.</p>'), 'note'],
+  ['page-explanatory', page('<p>This page’s numbers refresh hourly.</p>'), 'note'],
+  ['page-explanatory', page('<p>The following two plans suit most shops.</p>'), 'note'],
+  ['page-explanatory', page('<p>Use this toggle to hide paid bills.</p>'), 'note'],
+  ['page-explanatory', page('<p>This dashboard is the first walnut one Ford made.</p><p>Note: the lot was never measured.</p><p>The following spring we moved.</p>'), false],
+  ['page-button-arrow', page('<button class="g">Go <span class="c"></span></button>', '.g { display: inline-flex; padding: 8px; background: #111; } .c { width: 6px; height: 6px; border-top: 2px solid #fff; border-right: 2px solid #fff; transform: matrix(0.7, 0.7, -0.7, 0.7, 0, 0); }'), true],
+  ['page-button-arrow', page('<button class="g">Go</button>', '.g { padding: 8px; background: #111; } .g::after { content: ""; display: inline-block; width: 0; height: 0; border-top: 4px solid transparent; border-bottom: 4px solid transparent; border-left: 6px solid #fff; }'), true],
+  ['page-button-arrow', page('<button class="g">Go</button>', '.g { padding: 8px; background: #111; } .g::after { content: url(go.svg); }'), 'note'],
+  ['page-button-arrow', page('<button class="g"><svg width="9" height="9"><path d="M0 4h9"/></svg><span class="t">Go</span></button>', '.g { display: inline-flex; padding: 8px; background: #111; } .g .t { order: -1; }'), 'note'],
+  ['page-button-arrow', page('<button class="g"><svg width="9" height="9"><path d="M0 4h9"/></svg><span>Go</span></button>', '.g { display: inline-flex; direction: rtl; padding: 8px; background: #111; }'), 'note'],
+  ['page-button-arrow', page('<button class="g">Go <object data="go.svg" width="9" height="9"></object></button>', '.g { padding: 8px; background: #111; }'), 'note'],
+  ['page-button-arrow', page('<button class="g">Go ⏵</button><button class="g">See 〉</button><a class="g" href="/">Go 🡒</a>', '.g { padding: 8px; background: #111; }'), true],
+  ['page-button-arrow', page('<button class="g"><svg width="9" height="9"><path d="M0 4h9"/></svg><span>Go</span></button>', '.g { display: grid; padding: 8px; background: #111; } .g svg { grid-column: 2; } .g span { grid-column: 1; }'), 'note'],
+  ['page-button-arrow', page('<button class="g"><svg width="9" height="9"><path d="M0 4h9"/></svg>Go</button>', '.g { position: relative; padding: 8px 30px 8px 8px; background: #111; } .g svg { position: absolute; right: 8px; }'), 'note'],
+  ['page-button-arrow', page('<button>&lt; 2 miles</button><button>&gt; 9 miles</button><button>▶ Play</button>'), false],
+  ['page-sparkle', page('<p>Draft <img alt="✨" src="/e/2728.svg" width="16" height="16"></p><p>⋆ New ⟡</p>'), true],
+  ['page-sparkle', page('<svg style="display:none"><symbol id="k"><title>sparkles</title></symbol></svg><p><svg width="16" height="16"><use href="#k"/></svg> Draft</p>'), 'note'],
+  ['page-sparkle', page('<p><span role="img" aria-label="Rated 4 out of 5 stars"><svg width="60" height="12"><path d="M0 0h9"/></svg></span> 4 from 80 reviews</p>'), false],
+  ['page-label-above-heading', page('<section class="h"><h1>Fix holes</h1><p>We find them and send the fix with a test.</p></section>', '.h::before { content: "New this week"; display: block; }'), true],
+  ['page-label-above-heading', page('<section><h1>Fix holes</h1></section>', 'h1 { position: relative; } h1::before { content: "New this week"; position: absolute; top: -20px; }'), true],
+  ['page-label-above-heading', page('<section class="h"><h1>Fix holes</h1><span class="t">New this week</span></section>', '.h { display: grid; } .h h1 { grid-row: 2; } .h .t { grid-row: 1; }'), true],
+  ['page-label-above-heading', page('<section><h1><span class="t">New this week</span><br>Fix holes</h1></section>', 'h1 .t { font-size: 12px; }'), true],
+  ['page-label-above-heading', page('<section><dl><dt>New this week</dt></dl><h2>Fix holes</h2></section>'), true],
+  ['page-label-above-heading', page('<section><a href="/">Home</a><div>New this week</div><h1>Fix holes</h1></section>'), true],
+  ['page-label-above-heading', page('<section><h1>Fix holes</h1><p>We send the fix.</p><span class="t">New this week</span></section>', '.t { display: block; transform: translateY(-90px); }'), true],
+  ['page-label-above-heading', page('<section><h2><em class="t">New this week</em> Fix holes</h2></section>', '.t { display: inline-block; width: 100%; font-style: normal; }'), true],
+  ['page-headline-accent', page('<h1>Ship <span>fast</span> now</h1>', 'h1 span { font: 6vw/1 Georgia, serif; }'), true],
+  ['page-headline-accent', page('<h1>Ship <span>fast</span> now</h1>', 'h1 span { font: clamp(2rem, 5vw, 4rem)/1 Georgia, serif; }'), true],
+  ['page-headline-accent', page('<h1>Ship <x-word>fast</x-word> now</h1><script>class W extends HTMLElement { c() { s.innerHTML = "<style>:host { font-style: italic }</style>"; } }\ncustomElements.define("x-word", W);</script>'), true],
+  ['page-headline-accent', page('<div class="hl"><h1>Ship</h1> <span class="w">fast</span></div>', '.hl h1 { display: inline; } .hl .w { font-style: italic; }'), true],
+  ['page-headline-accent', page('<h1>Ship <address>fast</address> now</h1>'), true],
+  ['page-headline-accent', page('<h1>Ship <svg width="90" height="30"><text font-style="italic">fast</text></svg> now</h1>'), true],
+  ['page-numbered-sections', page(`<div class="s">${three((n) => `<div class="p"><div><h3>T${n}</h3><p>x</p></div></div>`)}</div>`, '.p::before { content: counter(c, decimal-leading-zero); }'), true],
+  ['page-numbered-sections', page(`<ol>${three((n) => `<li><h3>T${n}</h3></li>`)}</ol>`, '@counter-style z { system: fixed; symbols: "01" "02" "03"; } ol { list-style: z; }'), true],
+  ['page-numbered-sections', page('<h3>❶ Plan</h3><h3>❷ Build</h3><h3>Ⅰ. Plan</h3><h3>Ⅱ. Build</h3>'), true],
+  ['page-numbered-sections', page(three((n) => `<div><svg width="20" height="20"><circle r="9"/><text>0${n + 1}</text></svg><h3>T${n}</h3></div>`)), true],
+  ['page-numbered-sections', page(three((n) => `<h3>Step name <span>0${n + 1}</span></h3>`)), true],
+  ['page-numbered-sections', page('<h3>０１ Plan</h3><h3>０２ Build</h3>'), true],
+  ['page-numbered-sections', page(`<ol>${three((n) => `<li><div><h3>T${n}</h3></div></li>`)}</ol>`, 'ol li::marker { font-size: 28px; }'), true],
+  ['page-numbered-sections', page(three((n) => `<div class="p" data-n="0${n + 1}"><div><h3>T${n}</h3></div></div>`), '.p::before { content: attr(data-n); }'), true],
+  ['page-numbered-sections', page('<h2>1 bedroom</h2><p>Small.</p><h2>2 bedrooms</h2><p>Bigger.</p><h2>7 Elm Court</h2><h2>8 Elm Court</h2>'), false],
+  ['page-unsourced-number', page('<section><div class="r"><div><h3>9,000+</h3><p>shops use it</p></div></div></section>'), true],
+  ['page-unsourced-number', page('<section><table><tr><td>120</td><td>36</td></tr><tr><th>hours saved</th><th>countries</th></tr></table></section>', 'td { font-size: 40px; }'), true],
+  ['page-unsourced-number', page('<section><div><div class="n">97%</div><div>fixed in a day</div></div><blockquote>Calm now. <cite>Ana, a baker</cite></blockquote></section>', '.n { font-size: 48px; }'), true],
+  ['page-unsourced-number', page('<section><div><div class="n">97%<cite>*</cite></div><div>fixed in a day</div></div></section>', '.n { font-size: 48px; }'), true],
+  ['page-unsourced-number', page('<section><div class="n">Over 9,000 shops</div><div>use it each week</div></section>', '.n { font-size: 48px; }'), true],
+  ['page-unsourced-number', page('<main><div><div class="n">41%</div><div>of shops were hit</div></div><p>Source: City small business survey 2026</p></main>', '.n { font-size: 48px; }'), false],
+  ['page-unsourced-number', page('<p><span>Order</span> <b>#512</b></p><p>Prep <b>10 min</b>, bake <b>30 min</b></p><p>Gate <b>8</b></p><p><b>$30</b> <span>for a 5 lb bag</span></p><p><span>Version</span> <b>2.1</b></p>'), 'note'],
+  ['page-unsourced-number', page('<ul><li>Elm <b>14</b>, Oak <b>7</b></li></ul><ul><li><span>#4</span> <span>Ana, guard</span></li><li><span>#9</span> <span>Bo, wing</span></li><li><span>#12</span> <span>Cy, center</span></li></ul><section><h2>10% off rye on Fridays</h2></section><div class="u"><div class="f">40%</div></div><p>a.jpg</p>', '.f { width: 40%; }'), false],
+  ['page-left-border', page('<div class="n">Hi</div>', '.n { border-left: 4px solid transparent; border-image-source: linear-gradient(#c2410c, #c2410c); border-image-slice: 1; }'), true],
+  ['page-left-border', page('<div class="n">Hi</div>', '.n { background: linear-gradient(to right, #c2410c 4px, #fff7ed 4px, #fff7ed); }'), true],
+  ['page-left-border', page('<div class="n">Hi</div>', '.n { background: linear-gradient(#c2410c 0 0) left/4px 100% no-repeat; }'), true],
+  ['page-left-border', page('<div class="n">Hi</div>', '.n { background: linear-gradient(to left, transparent calc(100% - 4px), #c2410c 0); }'), true],
+  ['page-left-border', page('<div class="n">Hi</div>', '.n { position: relative; } .n::before { content: ""; position: absolute; inset: 0 calc(100% - 4px) 0 0; background: #c2410c; }'), true],
+  ['page-left-border', page('<div class="n">Hi</div>', '.n { position: relative; } .n::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background-image: linear-gradient(#c2410c, #c2410c); }'), true],
+  ['page-left-border', page('<div class="n"><i></i><p>Hi</p></div>', '.n { display: grid; grid-template-columns: minmax(4px, 4px) 1fr; } .n i { background: #c2410c; }'), true],
+  ['page-left-border', page('<div class="n"><div class="b"></div><p>Hi</p></div>', '.n { display: flex; } .b { flex: 0 0 4px; background: #c2410c; }'), true],
+  ['page-left-border', page('<div class="n"><svg width="4" height="40"><rect width="4" height="40" fill="#c2410c"/></svg><p>Hi</p></div>', '.n { display: flex; }'), true],
+  ['page-left-border', page('<div class="n"><hr><p>Hi</p></div>', '.n { position: relative; } .n hr { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: #c2410c; }'), true],
+  ['page-left-border', page('<div class="relative before:absolute before:start-0 before:inset-y-0 before:w-1 before:bg-orange-700 before:content-[\'\']">Hi</div>', '', TW), true],
+  ['page-left-border', page('<div class="n">Hi</div><div class="m">Hi</div>', '.n { border-inline-width: 4px 0; border-inline-style: solid; border-inline-color: #222; } .m { box-shadow: inset 5px 0 3px -1px #c2410c; }'), true],
+  ['page-left-border', page('<div class="n"><p>Hi</p><span class="b" style="display:block"></span></div>', '.n { display: grid; grid-template-columns: 4px 1fr; } .b { grid-column: 1; grid-row: 1; background: #c2410c; } .n p { grid-column: 2; }'), true],
+  ['page-card-in-card', page('<div class="o"><p>x</p><div class="i">A note</div></div>', '.o { border: 1px solid #ccc; border-radius: 8px; padding: 20px; } .i { position: relative; padding: 12px; } .i::before { content: ""; position: absolute; inset: 0; border: 1px solid #ccc; border-radius: 6px; }'), true],
+  ['page-card-in-card', page(box, '.o { border: 1px solid #ccc; border-radius: 8px; padding: 20px; } .i { border: 1px solid #ccc; padding-inline-start: 12px; padding-block-end: 8px; }'), true],
+  ['page-card-in-card', page(box, '.o { position: relative; padding: 20px; } .o::before { content: ""; position: absolute; inset: 0; border: 1px solid #ccc; border-radius: 8px; } .i { border: 1px solid #ccc; border-radius: 6px; padding: 12px; }'), true],
+  ['page-card-in-card', page('<div class="o"><p>x</p><table class="i"><tr><td>One cell</td></tr></table></div>', '.o { border: 1px solid #ccc; border-radius: 8px; padding: 20px; } .i { border: 1px solid #ccc; border-radius: 6px; } .i td { padding: 12px; }'), true],
+  ['page-card-in-card', page(box, '.o { border: 1px solid transparent; border-image: linear-gradient(#ccc, #ccc) 1; padding: 20px; } .i { border: 1px solid #ccc; border-radius: 6px; padding: 12px; }'), true],
+  ['page-card-in-card', page(box, '.o { outline: 1px solid #ccc; outline-offset: 8px; } .i { border: 1px solid #ccc; border-radius: 6px; padding: 12px; }'), true],
+  ['page-card-in-card', page('<div class="o"><p>x</p><a href="/m"><b>Menu</b><br>Rye and buns</a></div>', '.o { border: 1px solid #ccc; border-radius: 8px; padding: 20px; } .o a { display: inline-block; width: 100%; border: 1px solid #ccc; padding: 12px; }'), true],
+  ['page-card-in-card', page('<div class="o"><p>Press <kbd>Ctrl</kbd> to save.</p><table><tr><td><span class="s">Shipped</span></td></tr></table><div class="c"><span class="a">AB</span><p>Late bus.</p></div><div class="t"><div class="f">62%</div></div></div><header class="o"><form class="o"><input><button>Go</button></form></header>', '.o { border: 1px solid #ccc; border-radius: 8px; padding: 12px; } kbd, .s, .a { display: inline-block; border: 1px solid #999; border-radius: 9px; padding: 2px; } .c { display: flex; } .f { width: 62%; background: #246; border-radius: 4px; padding: 0 4px; }'), false],
+  ['page-card-grid', page(`<div class="g">${three((n) => `<div><h3>T${n}</h3>Bare words here.</div>`)}</div>`, '.g { display: grid; }'), true],
+  ['page-card-grid', page(`<div class="g">${three((n) => `<div><h1>T${n}</h1><p>x</p></div>`)}</div>`, '.g { display: grid; }'), true],
+  ['page-card-grid', page(`<table><tr>${three((n) => `<td><h3>T${n}</h3><p>x</p></td>`)}</tr></table>`), true],
+  ['page-card-grid', page(three((n) => `<div class="c"><h3>T${n}</h3><p>x</p></div>`), '.c { display: inline-flex; }'), true],
+  ['page-card-grid', page(`<div class="g">${three((n) => `<article><p class="t">Title ${n}</p><p>x</p></article>`)}</div>`, '.g { display: grid; } .t { font-size: 22px; }'), true],
+  ['page-card-grid', page(`<div class="g">${three((n) => `<section><p><b>A bold title of seven words ${n}</b></p><p>x</p></section>`)}</div>`, '.g { display: grid; }'), true],
+  ['page-card-grid', page(`<div class="g">${three(() => '<div><div class="i"></div><p>x</p></div>')}</div>`, '.g { display: grid; } .i { width: 40px; height: 40px; background: #fd8; }'), true],
+  ['page-card-grid', page(`<footer><div class="g">${three((n) => `<div><h3>T${n}</h3><p>Words of its own here.</p></div>`)}</div></footer>`, '.g { display: grid; }'), true],
+  ['page-card-grid', page(`<div class="w">${three((n) => `<a class="a${n}" href="#"><h3>T${n}</h3><p>x</p></a>`)}</div>`, '.w > a { position: absolute; } .a0 { left: 0; } .a1 { left: 35%; } .a2 { left: 70%; }'), true],
+  ['page-card-grid', page(`<article class="c">${three((n) => `<section><h3>T${n}</h3><p>Words.</p><p>More.</p></section>`)}</article>`, '.c { columns: 2; }'), false],
+  ['page-looping-motion', page('<span id="d"></span><script>d.animate([{ opacity: 1 }, { opacity: 0 }], { iterations: Number.MAX_VALUE });</script>'), 'note'],
+  ['page-looping-motion', page(`<span id="b">New</span><script>const tick = function () { b.classList.toggle("on"); };\n${'const pad = 1;\n'.repeat(40)}setInterval(tick, 700);</script>`), true],
+  ['page-looping-motion', page('<video src="w.mp4" autoplay loop muted></video>'), true],
+  ['page-looping-motion', page('<div id="a"></div><script>lottie.loadAnimation({ container: a, path: "/o.json" });</script>'), 'note'],
+  ['page-looping-motion', page('<div id="r"></div><script>r.addEventListener("transitionend", () => r.classList.toggle("big"));</script>'), true],
+  ['page-looping-motion', page('<div class="l"></div>', '.l { animation-name: spin; animation-iteration-count: 40; } main .l, .l { animation-duration: 5s; }'), 'note'],
+  ['page-looping-motion', page('<div id="b"></div><a id="t" href="#">Top</a><script>const k = setInterval(function () { b.style.width = n + "%"; if (n <= 0) clearInterval(k); }, 1000);\nt.onclick = () => { const s0 = performance.now(); function step(t) { const p = Math.min(1, (t - s0) / 400); scrollTo(0, 1 - p); if (p < 1) requestAnimationFrame(step); } requestAnimationFrame(step); };</script>'), false],
+  ['page-scroll-fade', page('<section class="s">Hi there friend</section><script>const ss = document.querySelectorAll(".s"); addEventListener(`scroll`, () => ss.forEach((s) => { s.style.opacity = "1"; }));</script>'), true],
+  ['page-scroll-fade', page('<section>Hi</section><script>addEventListener("scroll", () => s.style.setProperty("--o", 1));</script>', 'section { opacity: var(--o, 0); }'), true],
+  ['page-scroll-fade', page('<section class="r">Hi</section><script>new IntersectionObserver((l) => l.forEach(({ target }) => target.classList.add("go")));</script>', '.r { clip-path: inset(0 0 100% 0); } .r.go { clip-path: inset(0); }'), true],
+  ['page-scroll-fade', page('<section class="r">Hi</section><script>new IntersectionObserver((l) => l.forEach(({ target: t }) => t.classList.add("go")));</script>', '.r { filter: opacity(0); } .r.go { filter: none; }'), true],
+  ['page-scroll-fade', page('<section>Hi</section><script>new IntersectionObserver((l) => l.forEach((e) => e.target.animate({ opacity: [0, 1] }, 500)));</script>'), true],
+  ['page-scroll-fade', page('<img data-src="a.jpg" alt="Shop"><section>Hi</section><script>new IntersectionObserver((l) => l.forEach((e) => { e.target.src = e.target.dataset.src; e.target.classList.add("loaded"); e.target.classList.remove("lazy"); e.target.dataset.seen = "1"; }));</script>'), false],
+  ['page-glow', page('<div class="h"></div>', '.h { color: #8b5cf6; box-shadow: 0 0 160px 120px currentColor; }'), true],
+  ['page-glow', page('<div class="h">Hi</div>', '.h { box-shadow: 0 0 120px 40px oklab(0.6 0.2 -0.2 / 0.5); }'), true],
+  ['page-glow', page('<button class="shadow-2xl shadow-pink-500/80 px-4">Go</button>', '', TW), true],
+  ['page-glow', page('<svg><radialGradient id="g"><stop stop-color="#a5f"/><stop offset="1" stop-color="rgba(170,85,255,0)"/></radialGradient><circle r="90" fill="url(#g)"/></svg>'), true],
+  ['page-glow', page('<svg><filter id="b"><feGaussianBlur stdDeviation="6"/></filter><symbol id="s"><circle r="9"/></symbol><use href="#s" filter="url(#b)"/></svg>'), true],
+  ['page-glow', page('<img class="b" alt="shape" src="dot.svg">', '.b { filter: blur(80px); }'), true],
+  ['page-glow', page('<img class="p" alt="" src="team.jpg"><div class="r"></div><input type="radio" class="x">', '.p { filter: blur(6px); } .r { background: radial-gradient(closest-side, #fff 78%, transparent 80% 100%), conic-gradient(#246 60%, #eee 0); } .x { background: radial-gradient(circle, #246 45%, transparent 50%); }'), false],
+  ['page-gradient-text', page('<canvas id="t"></canvas><script>const x = t.getContext("2d"); const g = x.createLinearGradient(0, 0, 90, 0); x.fillStyle = g; x.fillText("Ship", 0, 9);</script>'), true],
+  ['page-gradient-text', page('<h1>Ship fast</h1>', 'h1 { position: relative; } h1::after { content: "Ship fast"; position: absolute; inset: 0; color: #e49; mask-image: linear-gradient(90deg, transparent, #000); }'), true],
+  ['page-banned-font', page('<p>Hi</p><script>tailwind.config = { theme: { fontFamily: {\n sans: [\n "Inter",\n ],\n } } };</script>'), true],
+  ['page-banned-font', page('<p>Hi</p><script>document.body.style.setProperty("--f", ["Playfair", "Display"].join(" "));</script>'), false],
+  ['page-glass', page('<div class="p">Hi</div>', '.p { backdrop-filter: bl\\75r(9px); }'), true],
+  ['page-noise', page(`<svg class="t"><image href="data:image/svg+xml;base64,${grain}"/></svg><object data="data:image/svg+xml;base64,${grain}"></object>`), true],
+  ['page-noise', page('<canvas id="c"></canvas><script>for (let i = 0; i < 9e4; i++) { const px = Math.random() * 400, py = Math.random() * 400;\n x.fillRect(px, py, 1, 1); }</script>'), true],
+  ['page-noise', page('<canvas id="c"></canvas><script>let s = 7; const next = () => (s = (s * 1103515245 + 12345) & 2147483647) / 2147483647;\nconst d = x.createImageData(9, 9); for (let i = 0; i < 81; i++) d.data[i] = next() * 255;</script>'), true],
+  ['page-noise', page('<svg class="t"><image href="/img/film-grain.png"/></svg>'), 'note'],
+  ['page-noise', page('<p>Hi</p>', 'body::before { content: url(/img/grain.webp); position: fixed; inset: 0; }'), 'note'],
+  ['page-noise', page('<canvas id="h" role="img" aria-label="Visits"></canvas><script>const d = x.createImageData(24, 7); rows.forEach((v, i) => { d.data[i * 4 + 3] = v; }); x.putImageData(d, 0, 0);\n\n\n\n\nconst pick = () => rows[Math.floor(Math.random() * rows.length)];</script>'), false],
+  // css the browser reads differently from a naive reader: a rule that does not hold on a desktop
+  // leaves the text shown, and a rule that does hold hides it
+  ...['@media (max-width:600px){@media (min-width:100px){#a{display:none}}}', '@media (hover:none){#a{display:none}}', '@media (width >= 1400px){#a{display:none}}',
+    '@media (1400px <= width){#a{display:none}}', '@media (orientation:portrait){#a{display:none}}', '@media (width <= 600px){#a{display:none}}']
+    .map((css) => ['page-word-quiet', page('<p id="a">It runs quietly in the background.</p>', css), true]),
+  ['page-word-quiet', page('<p id="a">It runs quietly in the background.</p>', '', '<style media="print">#a{display:none}</style>'), true],
+  ['page-word-quiet', page('<p id="a">It runs quietly in the background.</p>', '@media (width >= 600px){#a{display:none}}'), false],
+  ['page-word-quiet', page('<p id="a">It runs quietly in the background.</p>', '.q::before{content:"/*"} #a{display:none}'), false],
+  ['page-word-quiet', page('<p id="a">It runs quietly in the background.</p>', '.q::before{content:"\\\\"} #a{display:none}'), false],
+  ['page-word-quiet', page("<main><img alt=don't src=x.png><p>It runs quietly, it's here.</p></main>"), true],
+  ['page-two-word-sentence', page('<p>The <code>--legacy</code> flag is removed. Use <code>--format=v1</code> instead.</p><p>Run <code>atris init</code> again.</p>'), false],
+  ['page-subtitle', page('<h2>Spring fair</h2><p class="meta">May 3, by Ana Lee</p><p>We set up forty stalls on the green.</p>'), 'note'],
+  ['page-subtitle', page('<h1>Terms</h1><p>Last updated November 1, 2026.</p><h2>Use</h2><p>Be kind.</p>'), 'note'],
+  ['page-subtitle', page('<main><h1>Account settings</h1><h2>Profile</h2><label for="n">Full name</label><input id="n" type="text"><button type="button">Save</button></main>'), false],
+  // a class name guessed as a style can add a finding and never hides words from the rules
+  ['page-word-quiet', page('<p class="hidden">It runs quietly in the background.</p>', '', TW), true],
+  // a class name is read as a style only when the page loads styles the check cannot read
+  ['page-word-quiet', page('<p class="hidden">It runs quietly in the background.</p>'), true],
+  ['page-explanatory', page('<h1>Fish</h1><p>Salt the water well before the fish goes in.</p><p>Tip: salt it until it tastes like the sea.</p>'), false],
+  // a heading reaches only to the end of its section, and a line ending in a colon opens its list
+  ['page-subtitle', page('<main><section><h2>Hours</h2><p>The library opens at 8am on school days.</p></section><footer><ul><li>Main street</li></ul></footer></main>'), false],
+  ['page-subtitle', page('<section><h1>Team</h1></section><section><p>Three bakers share the ovens and start the dough at four every morning.</p></section>'), false],
+  ['page-subtitle', page('<h2>Hours</h2><p>The shop opens on these days:</p><ul><li>Monday</li></ul>'), false],
+  ['page-subtitle', page('<h2>Hours</h2><p>The shop opens early.</p><ul><li>Monday</li></ul>'), true],
+  // product text quoted in <q> is not the page's own voice
+  ['page-two-word-sentence', page('<p>The coach answers each sentence with one nudge.</p><ul><li><q>Cut this.</q></li></ul>'), false],
+  ['page-word-real', page('<p>The coach answers each sentence with one nudge.</p><ul><li><q>Give a real example.</q></li></ul>'), false],
+  // an @starting-style block is only the first frame before a transition: the page at rest is read without it
+  ['page-scroll-fade', page('<section><h2>Hours</h2><p>The shop opens at eight on weekdays and at ten on Saturday.</p></section><a class="top" href="#">Top</a><script>addEventListener("scroll", () => { top.style.opacity = scrollY > 400 ? 1 : 0; });</script>', '@starting-style { section { opacity: 0; } } section { transition: opacity .4s; }'), false],
+  ['page-scroll-fade', page('<section><h2>Hours</h2><p>The shop opens at eight on weekdays and at ten on Saturday.</p></section><a class="top" href="#">Top</a><script>addEventListener("scroll", () => { top.style.opacity = scrollY > 400 ? 1 : 0; });</script>', 'section { transition: opacity .4s; @starting-style { opacity: 0; } }'), false],
+  ['page-scroll-fade', page('<section><h2>Hours</h2><p>The shop opens at eight on weekdays and at ten on Saturday.</p></section><a class="top" href="#">Top</a><script>addEventListener("scroll", () => { top.style.opacity = scrollY > 400 ? 1 : 0; });</script>', '@media (min-width: 1px) { @layer base { @starting-style { section { opacity: 0; } } } } section { transition: opacity .4s; }'), false],
+  ['page-label-above-heading', page('<header><h1>Sync</h1><span class="t">Saved</span></header>', '@starting-style { .t { transform: translateY(-40px); } } .t { transition: transform .3s; }'), false],
+  ['page-label-above-heading', page('<header><h1>Sync</h1><span class="t">Saved</span></header>', '.t { transition: transform .3s; @starting-style { transform: translateY(-40px); } }'), false],
+  ['page-word-quiet', page('<p class="n">It runs quietly at night.</p>', '@starting-style { .n { visibility: hidden; } }'), true],
+  ['page-word-quiet', page('<p class="n">It runs quietly at night.</p>', '.n { @starting-style { visibility: hidden; } }'), true],
+  ['page-word-quiet', page('<p class="n">It runs quietly at night.</p>', '@starting-style { @media (min-width: 1px) { .n { display: none; } } }'), true],
+  // a timer or a frame loop is judged by its own callback read to its closing brace, however long
+  ['page-looping-motion', page(`<p id="c">9</p><script>let n = 9; const t = setInterval(() => { c.style.width = n + "%"; ${'n = n + 0; '.repeat(40)}if (--n <= 0) clearInterval(t); }, 1000);</script>`), false],
+  ['page-looping-motion', page('<p>Orders</p><script>setInterval(() => fetch("/orders.json").then(show), 5000); document.body.classList.add("ready");</script>'), false],
+  ['page-looping-motion', page(`<p id="c">9</p><script>setInterval(() => { ${'n = n + 1; '.repeat(40)}c.style.width = n + "%"; }, 1000);</script>`), true],
+  ['page-looping-motion', page('<p>Time</p><script>setInterval(tick, 1000);</script>'), 'note'],
+  ['page-looping-motion', page('<p id="t">Hi</p><script>function show() { t.classList.add("shown"); } setTimeout(show, 300); function draw() { t.style.left = "4px"; } requestAnimationFrame(draw);</script>'), false],
+  ['page-looping-motion', page(`<p id="t">Hi</p><script>function spin() { ${'t.x = 1; '.repeat(250)}requestAnimationFrame(spin); } spin();</script>`), true],
+  // a finite repeat count and a script value only named like an animation are notes
+  ['page-looping-motion', page('<span class="r"></span>', '.r { animation: drift 20s 3; }'), 'note'],
+  ['page-looping-motion', page('<p>Pi</p><script>const iterations = 1e6; const retry = { delay: 500, repeat: -1 }; map.loadAnimation({ name: "route", once: true });</script>'), 'note'],
+  ['page-looping-motion', page('<p id="m">Hi</p><script>m.addEventListener("transitionend", () => { m.style.display = "none"; });</script>'), 'note'],
+  ['page-looping-motion', page('<p id="m">Hi</p><script>m.addEventListener("transitionend", () => { m.classList.toggle("up"); });</script>'), true],
+  // a reveal library or an observer with a fade only blocks when content starts hidden or is tied to it
+  ['page-scroll-fade', page('<section>Hi</section><script>const scrollReveal = false; if (window.AOS) AOS.init({ disable: true });</script>'), 'note'],
+  ['page-scroll-fade', page('<section>Hi</section><img data-src="a.png"><script>new IntersectionObserver((es) => es.forEach((e) => { e.target.src = e.target.dataset.src; })); const chart = { line: { opacity: 1 } };</script>'), 'note'],
+  // a font is read only where a font is named: a font family, a font service family or a font file
+  ['page-banned-font', page('<p>Hi</p><script>const opts = { fontFamily: "Lora", route: "inter-office" };</script>', ':root { --club: "Inter Milan"; }', '<link rel="stylesheet" href="https://cdn.example.com/inter-milan/main.css">'), 'note'],
+  ['page-banned-font', page('<p>Hi</p>', '', '<link rel="preload" href="/f/Inter-Regular.woff2"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto">'), true],
+  // the random source of a noise texture is read in the block that writes the pixels
+  ['page-noise', page('<canvas id="c"></canvas><script>var id = "c" + Math.random(); function plot(x, y) { ctx.fillRect(x, y, 1, 1); }</script>'), false],
+  ['page-noise', page(`<canvas id="c"></canvas><script>for (let i = 0; i < 9; i++) { const v = Math.random(); ${'ctx.x = 1; '.repeat(30)}ctx.fillRect(i, v, 1, 1); }</script>`), true],
+  ['page-noise', page('<canvas id="c"></canvas><script>for (;;) { var v = Math.random() * 255; for (var c = 0; c < 3; c++) { d.data[i + c] = v; } }</script>'), true],
+  ['page-noise', page('<canvas id="c"></canvas><script>{ const setup = 1; }\nimg.data[0] = 255;</script>'), false],
+  // a local script the check never opens may write the styles its class names stand for
+  ['page-all-caps', page('<h1 class="uppercase tracking-widest">Hours</h1>', '', '<script src="app.js"></script>'), true],
+  // a number cited by the text clears only its own entry. a step word reads like a plain number
+  ['page-numbered-sections', page('<h2>01 Plan</h2><p>a</p><h2>02 Build</h2><p>b</p><footer><p>Tickets for section 1 of the stadium are sold out.</p></footer>'), true],
+  ['page-numbered-sections', page('<p>Step 1 Mix</p><p>Step 2 Bake</p>'), 'note'],
+  ['page-sparkle', page('<p>Rated 4.8 out of five ★ by guests</p>'), false],
+  // a template mark or a bracket the list only guesses at is a note; the named leftover still blocks
+  ['page-placeholder', page('<p>{{ name }}</p><p>[Title IX]</p><p>[Name withheld]</p>'), 'note'],
+  ['page-placeholder', page('<p>[Your name]</p>'), true],
+  // an amount of money without a claim mark may be a price; one with a claim mark still blocks
+  ['page-unsourced-number', page('<div class="s"><div>$20</div><div>Starter</div></div><div class="s"><div>$1,000</div><div>one-time setup</div></div>', '.s div:first-child { font-size: 48px; }'), 'note'],
+  ['page-unsourced-number', page('<div class="s"><div>$2B</div><div>for small businesses saved last year</div></div>', '.s div:first-child { font-size: 48px; }'), true],
+  ['page-unsourced-number', page('<div class="s"><div>94%</div><div>uptime</div><p>Data: refreshed daily</p></div>', '.s div:first-child { font-size: 48px; }'), true],
+  // a line that looks like a byline or a dateline is a note, not a pass
+  ['page-subtitle', page('<h1>Books</h1><p>by Friday your books are closed.</p><a href="/s">Start</a>'), 'note'],
+];
+
+test('every rule has a failing page and a twin, and a twin that hides the problem is still caught', () => {
+  for (const rule of PAGE_RULES) {
+    const pair = CASES[rule.id];
+    assert.ok(pair && pair.length === 2, `${rule.id} has no failing page and twin`);
+    assert.ok(fired(pair[0]).has(rule.id), `${rule.id} missed its failing page`);
+    assert.ok(fired(pair[1]).has(rule.id), `${rule.id} missed its twin`);
+  }
+  assert.deepEqual(Object.keys(CASES).sort(), PAGE_RULES.map((r) => r.id).sort());
+});
+
+test('each way around a rule is caught, and each honest page like it passes', () => {
+  const wrong = ATTACKS.filter(([rule, html, should]) => outcome(rule, html) !== should).map(([rule, html, should]) => `${rule} should ${should === 'note' ? 'leave a note' : should ? 'block' : 'pass'}: ${html.slice(html.indexOf('<body>') + 6, html.indexOf('<body>') + 90)}`);
+  assert.deepEqual(wrong, []);
+});
+
+test('clean pages pass every rule, so a rule that rejects everything fails here', () => {
+  for (const [name, html] of Object.entries(CONTROLS)) {
+    const res = checkPage(html, `${name}.html`);
+    assert.deepEqual(res.findings.map((f) => `${f.rule}:${f.line} ${f.text}`), [], name);
+    assert.equal(res.results.length, PAGE_RULES.length);
+    assert.ok(res.results.every((r) => r.ok === true));
+  }
+});
+
+test('a rule reports every fault on the page, not only its first', () => {
+  const res = checkPage(page('<div class="a">A</div><div class="b">B</div>', '.a { box-shadow: 0 0 90px cyan; }\n.b { filter: blur(90px); }'), 'page.html');
+  assert.equal(res.findings.filter((f) => f.rule === 'page-glow').length, 2);
+});
+
+test('a rule that passed on a page it could not fully read is not counted as passed', () => {
+  const drawn = checkPage('<html><body><div id="app"></div><script>app.textContent = "Hi";</script></body></html>', 'page.html');
+  const unread = checkPage(page('<p>Hi</p>', '', '<link rel="stylesheet" href="https://cdn.example.com/site.css">'), 'page.html');
+  for (const res of [drawn, unread]) assert.ok(res.results.every((r) => r.ok === null), JSON.stringify(res.results.filter((r) => r.ok !== null)));
+});
+
+test('a switched-off rule is skipped and reported as off', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'page-rules-'));
+  try {
+    fs.mkdirSync(path.join(dir, '.atris'));
+    fs.writeFileSync(path.join(dir, '.atris', 'slop.rules.json'), JSON.stringify({ off: ['page-glass'] }));
+    const res = checkPage(CASES['page-glass'][0], 'p.html', { root: dir });
+    assert.deepEqual(res.off, ['page-glass']);
+    assert.ok(!res.findings.some((f) => f.rule === 'page-glass'));
+    assert.deepEqual(res.results.find((r) => r.id === 'page-glass'), { id: 'page-glass', ok: null, off: true });
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('the screen kind gives an html page the site check verdict, and keeps the old rules elsewhere', () => {
+  const html = page('<h1>Leads</h1><p class="subtitle">Everything you need in one place</p>');
+  const rules = scanText(html, 'page.html', 'screen').findings.map((f) => f.rule);
+  assert.ok(rules.includes('page-subtitle'));
+  assert.ok(!rules.includes('screen-subtitle'));
+  const content = '<main><h1>Leads</h1><p class="lead" onclick="go()">Maria Lopez</p></main>';
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-screen-kind-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'c.html'), content);
+    const site = require('../lib/page-lang').checkFile(path.join(dir, 'c.html'), { root: dir, label: 'c.html' });
+    assert.deepEqual(scanText(content, 'c.html', 'screen', { root: dir }).findings.map((f) => f.rule), site.findings.map((f) => f.rule));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  assert.deepEqual(scanText('<html><body><div id="app"></div><script>app.textContent = "Hi";</script></body></html>', 'd.html', 'screen').notChecked.length, 1);
+  assert.ok(scanText('<Header title="Leads" subtitle="Everything you need in one place" />', 'Page.tsx', 'screen').findings.some((f) => f.rule === 'screen-subtitle'));
+  assert.deepEqual(scanText('<input placeholder="Jane Doe" />', 'Page.jsx', 'screen').findings.filter((f) => f.level === 'error'), []);
+  const groups = ruleSheet();
+  assert.deepEqual(Object.keys(groups).sort(), ['look', 'shape', 'words']);
+});
+
+test('broken markup never throws', () => {
+  for (const bad of ['', '<div', '<p>a<b>c</p></div></span>', '<style>.a{color:', '<<>>&#xZZ;']) {
+    assert.equal(checkPage(bad, 'x.html').results.length, PAGE_RULES.length);
+  }
+});

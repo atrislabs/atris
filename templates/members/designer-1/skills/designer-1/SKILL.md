@@ -1,7 +1,7 @@
 ---
 name: designer-1
 description: Build complete web screens from a fixed set of parts, on one spacing scale, with few words and check them before reporting. Use when designing or changing an interface.
-version: 1.2.1
+version: 1.2.3
 tags:
   - design
   - frontend
@@ -156,7 +156,7 @@ A check that cannot run is reported as not run, never as passed.
 8. **widths**: 390px (real phone emulation) and 1280px. Pass when nothing scrolls sideways or clips.
 9. **targets**: at 390px, measure every control's box in the running page (`getBoundingClientRect`). Fail any under 44px wide or tall. Never assume a size from the code.
 10. **edges**: at 390px, scroll to the bottom. Pass when the last control and its label are fully visible, clear of any fixed bar.
-11. **slop**: `atris slop detect <changed paths>` exits 0.
+11. **slop**: `atris slop detect <changed paths>` exits 0. For a page, `atris site check <file>` passes too, then again with `--render`.
 
 ## 9. report
 

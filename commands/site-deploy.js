@@ -825,6 +825,8 @@ async function run(argv, deps = {}) {
     return 2;
   }
 
+  const checkPages = (files) => require('../lib/page-lang').checkBeforeUpload(root, { files, log, err: errorLog }).refused;
+
   if (options.fullstack) {
     let packagePlan;
     try {
@@ -833,6 +835,10 @@ async function run(argv, deps = {}) {
       errorLog(`  ${error.message}`);
       return 2;
     }
+    // render builds the server after the push, so only the html already in the folder is read here
+    const files = require('../lib/page-lang').htmlFilesIn(root);
+    if (checkPages(files)) return 1;
+    log(`page check read ${files.length} html file${files.length === 1 ? '' : 's'} in the folder. pages the server builds or draws were not checked`);
     if (options.dryRun) {
       printFullstackPlan(options.name, packagePlan, log);
       return 0;
@@ -851,6 +857,7 @@ async function run(argv, deps = {}) {
     errorLog(`  could not read site directory: ${error.message}`);
     return 1;
   }
+  if (checkPages(pages.filter((page) => /\.html?$/i.test(page.path)).map((page) => page.sourcePath))) return 1;
 
   const liveUrl = `https://${options.name}.atris.ai`;
   const totalBytes = pages.reduce((sum, page) => sum + page.size, 0);

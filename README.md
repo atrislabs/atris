@@ -122,6 +122,8 @@ Integrates with any agent.
 Upload any built static site to an Atris-hosted subdomain. See
 [docs/site-publish.md](docs/site-publish.md) for flags, limits, profiles, and
 troubleshooting.
+Every html page is checked against the screen standard before upload. Run site
+commands from the project root; see [docs/site-check.md](docs/site-check.md).
 
 ```bash
 atris site publish dist --slug my-site --spa

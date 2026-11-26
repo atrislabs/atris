@@ -82,6 +82,7 @@ test/improve.test.js
 test/init-for-agents.test.js
 test/init.test.js
 test/landing-check.test.js
+test/landing-reasons.test.js
 test/learnings.test.js
 test/lesson-gate.test.js
 test/lesson-sweep.test.js
@@ -111,6 +112,7 @@ test/now.test.js
 test/orb.test.js
 test/outbound-artifact-gate.test.js
 test/outbound-send-gate.test.js
+test/page-lang.test.js
 test/permission-grants.test.js
 test/policy-lessons.test.js
 test/probe.test.js
@@ -135,11 +137,13 @@ test/run-glass-logs.test.js
 test/run-roadmap.test.js
 test/runner-command.test.js
 test/runtime-bootstrap.test.js
+test/screens-card.test.js
 test/self-heal-prompt.test.js
 test/self-heal.test.js
 test/serve.test.js
 test/sessionstart-plant.test.js
 test/signup.test.js
+test/site-check.test.js
 test/site.test.js
 test/skill-audit-codeblocks.test.js
 test/slides-deck.test.js
@@ -212,3 +216,5 @@ test/script-command.test.js
 test/check-command.test.js
 test/check-select.test.js
 test/timestone-command.test.js
+test/page-rules.test.js
+test/page-render.test.js

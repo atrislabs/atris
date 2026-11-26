@@ -22,7 +22,7 @@ const SNAKE_CASE = /\b[a-z0-9]+(?:_[a-z0-9]+)+\b/;
 // Every static reason literal the accept gate can emit, read from its source
 // so a new refusal code added without a sentence fails this test.
 function acceptGateReasonCodes() {
-  const source = fs.readFileSync(path.join(repoRoot, 'lib', 'auto-accept-certified.js'), 'utf8');
+  const source = fs.readFileSync(path.join(repoRoot, 'lib/auto-accept-certified.js'), 'utf8');
   const codes = new Set();
   for (const match of source.matchAll(/\breason: '([a-z][a-z0-9_]*)'/g)) codes.add(match[1]);
   return [...codes].sort();

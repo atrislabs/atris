@@ -4,7 +4,7 @@ const path = require('path');
 const { stateHome } = require('../lib/state-home');
 const { ensureWikiScaffold } = require('../lib/wiki');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
-const { openingLinesForRoot, upsertAgentsOpeningLines } = require('../lib/opening-lines');
+const { openingLinesForRoot, upsertAgentsOpeningLines, screensRulesForRoot, upsertScreensAdapters } = require('../lib/opening-lines');
 const { ensureRunIgnore } = require('../lib/gitignore');
 const {
   upsertAgentVoiceCard,
@@ -753,6 +753,11 @@ Key behaviors:
     // Create new CLAUDE.md with just Atris block
     const content = upsertAtrisClaudeBootBlock('', { openingLines }).content;
     applyClaudeUpdate(content, 'create CLAUDE.md with atris block', 'created CLAUDE.md with atris block');
+  }
+
+  for (const rel of upsertScreensAdapters(process.cwd(), screensRulesForRoot(process.cwd()), { dryRun })) {
+    console.log(`${dryRun ? 'Would update' : '✓ Updated'} ${rel} screen rules`);
+    updated++;
   }
 
   // Member run output must stay out of git or member self-merge never fires

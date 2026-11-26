@@ -1,7 +1,7 @@
 ---
 name: design
 description: Frontend aesthetics policy. Use when building UI, components, landing pages, dashboards, or any frontend work. Prevents generic ai-generated look.
-version: 3.2.20
+version: 3.3.0
 allowed-tools: Read, Write, Edit, Bash, Glob
 tags:
   - design
@@ -11,6 +11,8 @@ tags:
 # atris-design
 
 Start with the taste files that [../taste/SKILL.md](../taste/SKILL.md) points to for what the people you work for like. This file holds the full visual rules for building it.
+
+The enforced rules for any page: `atris site rules` prints them and `atris site check <file>` and then `atris site check <file> --render` answer yes or no for each one. Run both before you call a page done. Fix every must-fix line and judge each note for the reviewer. Where this file and the check disagree, the check wins.
 
 The taste organ of the Atris system. Opinionated: these are Keshav's principles, not general best practices. Prevents ai-generated frontend from looking generic, and improves itself (see "self-improve" at the bottom, it is part of the job, not optional).
 
@@ -22,26 +24,37 @@ Canonical home: `atris-cli/atris/skills/design/SKILL.md` (this file, git-tracked
 2. **Read `atris/policies/design-seed.md` first** if it exists: it has the project's unique visual identity (fonts, colors, spacing, motion). This is the design DNA. Do not override it with defaults.
 3. Read `.atris/theme.json` if it exists: brand colors and fonts are already decided, use them.
 4. Reference `atris/policies/atris-design.md` for full anti-slop guidance
-5. After building, run the workspace design gate (`npm run audit:design` in atrisos-web, `atris slop` elsewhere) before claiming done.
+5. After building, run `atris site check <file>` and then `atris site check <file> --render` on every page and the workspace design gate (`npm run audit:design` in atrisos-web, `atris slop` elsewhere) before claiming done.
 
 ## Quick Reference
 
-**Typography:** avoid inter/roboto/arial/system fonts. pick one distinctive font, use weight extremes (200 vs 800). size jumps should be dramatic (3x). use `clamp()` for fluid sizing. use `ch` units for measure (`max-width: 65ch`).
+**Typography:** fonts come from the design seed or theme. never pick one yourself. if none is set, make a few looks for the board and let the owner pick. use `clamp()` for fluid sizing. use `ch` units for measure (`max-width: 65ch`).
 
-Font alternatives: instead of Inter: Instrument Sans, Plus Jakarta Sans, Outfit. Instead of Roboto: Onest, Figtree, Urbanist. Editorial: Fraunces, Newsreader, Lora.
-
-**Color:** commit to a palette. use OKLCH for perceptually uniform colors. tint your neutrals toward your brand hue (never pure gray). never put gray text on colored backgrounds. never use pure black (#000) or pure white (#fff). avoid the AI palette: cyan-on-dark, purple-to-blue gradients, neon accents on dark.
-
-```css
---brand: oklch(65% 0.2 250);
---gray-100: oklch(95% 0.01 250); /* tinted, not pure gray */
-```
+**Color:** colours come from the design seed or theme. never pick a palette yourself. never put gray text on colored backgrounds. avoid the AI palette: cyan-on-dark, purple-to-blue gradients, neon accents on dark.
 
 **Layout:** break the hero + 3 cards + footer template. no card-in-card nesting. no identical card grids. asymmetry is interesting. dramatic whitespace. use container queries for component-level responsiveness. fluid spacing with `clamp()`.
 
-**Motion:** one well-timed animation beats ten scattered ones. use exponential easing (`cubic-bezier(0.25, 1, 0.5, 1)`), never bounce/elastic. 150-300ms duration. only animate transform and opacity. always respect `prefers-reduced-motion`. no cursor-following lines, no meteor effects, no buttons that chase the cursor. no pulsing or glowing live-status dots, no looping ambient animations.
+**Motion:** every animation has a job: it shows where a thing went or confirms what just happened (a card dropping into its column [17:30], an icon changing with its state [09:45]). nothing else moves. where the design seed sets motion (a page load reveal, its own durations), the seed wins over this line. animate everything and the screen turns into a christmas tree; pick the few that need it and they stand out [18:00]. use exponential easing (`cubic-bezier(0.25, 1, 0.5, 1)`), never bounce/elastic. 150-300ms duration. only animate transform and opacity. always respect `prefers-reduced-motion`. no cursor-following lines, no meteor effects, no buttons that chase the cursor. no pulsing or glowing live-status dots, no looping ambient animations.
 
-**Interaction:** progressive disclosure: start simple, reveal complexity. optimistic UI: update immediately, sync later. every interactive element needs ALL states: default, hover, focus, active, disabled, loading, error, success. don't make every button primary.
+**Interaction:** progressive disclosure: start simple, reveal complexity. optimistic UI: update immediately, sync later. every interactive element needs ALL states: default, hover, focus, active, disabled, loading, error, success. one main button per screen.
+
+**Menus:** a menu grows out of the control that opened it, in the direction it opens: one that opens down and to the right grows down and to the right [09:15]. never from its own centre. no check reads this. open the menu and watch where it grows from. a submenu keeps a triangle of safe space between the pointer and the submenu so a diagonal move does not close it [09:00].
+
+**Pickers:** a list picker opens with its filter box focused: type to narrow, arrow keys to move. chosen items sit grouped at the top when it opens. an item you tick or untick stays where it is so a mistake can be undone without hunting for it; the list regroups only the next time it opens [10:45].
+
+**Tooltips:** every icon button says what it does on hover [11:45]. show the same tip on keyboard focus. the first tip waits about a second; move to the next control and its tip shows at once, the way the operating system does it [12:00]. wait longer where people already know the controls (a sidebar they use every day), shorter where they need to know right away [12:15].
+
+**Speed:** a tool used every day answers at once, like ink from a pen [16:15]. keep the data a screen needs on the device and send changes in the background. then a click never waits on a server and a read never shows a loading screen [15:30].
+
+**Fields and updates:** a field people ask for and then overuse lives one step deep and stays off the screen until it is set (a due date) [02:45]. one person answers for each item, even when several work on it [03:15]. a box for regular updates is small like a comment box and has no template: ask only for what the system cannot work out from its own data [03:45]. a short fixed health pick (on track, at risk, off track) lets someone scan a long list for where to look [04:15].
+
+**Themes:** a theme is three choices: accent, background and contrast. work out every other colour from those with math. people can then make it their own without making it ugly [18:15].
+
+**Agent surfaces:** people run several agent sessions at once. give each its own tab [26:00] and a state the person can read at a glance: working, waiting on them or done. Linear tried that state in a sidebar it did not pick [25:30]. when an agent changes something, show the change and offer a summary of it [26:15]. open with a suggested next piece of work [26:30]. never an empty box.
+
+**Reviewing a change:** show a change as a story before a file list: group it by theme in an order that makes sense. the reader then approves the intent first and the detail second [30:15, 31:00]. count only the lines a person needs to read, leaving out tests and generated files. mark that number so nobody takes it for the full count [31:15, 31:45].
+
+Source for the bracketed times above: the Linear team and the host in Enrico Tartarotti's video "Behind the scenes of Linear's insane design" (youtu.be/icRjQePEa_A), read against its captions on 2026-11-26. The video gives no millisecond numbers for any of these. Measure before you pick one. The picker [10:45] and data on the device [15:30] are the host describing Linear's product. None of these has a check. Each is a yes or no call for the reviewer.
 
 **Hover:** make elements feel inviting on hover (brighten, subtle scale 1.02-1.05). never fade out, shift, or hide content behind hover. hover doesn't exist on mobile. no hover lift: a translate-y shift or a scale past 1.05 on every card is the generated-card reflex; the shift breaks the never-move-content rule and the big grow reads as a template.
 
@@ -53,9 +66,9 @@ Font alternatives: instead of Inter: Instrument Sans, Plus Jakarta Sans, Outfit.
 
 **Hero (H1 test):** must answer in 5 seconds: what is it, who is it for, why care, what's the CTA.
 
-**Assets:** high-res screenshots only. no fake dashboards with primary colors. no decorative non-system emojis.
+**Assets:** art is made from the product itself: real high-res screenshots. no fake dashboards with primary colors. no decorative non-system emojis.
 
-**Backgrounds:** add depth. gradients, patterns, mesh effects. flat = boring. but no glassmorphism everywhere, that's AI slop.
+**Backgrounds:** do not add gradients, patterns, mesh or glass effects for depth. the background comes from the theme.
 
 **Hierarchy:** 2-3 text levels max. don't mix 5 competing styles.
 
@@ -85,11 +98,11 @@ Iterating toward "slightly better" = local maximum (safe, forgettable). Great de
 
 ## Anti-Attractors
 
-Models have gravity wells (purple gradients, instrument serif, claude beige). Escape them deliberately: name what you don't want, seed with a specific reference, inject a constraint (monochrome, one font weight), rotate your defaults between projects.
+Models have gravity wells (purple gradients, instrument serif, claude beige). Escape them deliberately: name what you don't want, seed with a specific reference and make a few different looks for the board. The owner picks.
 
 ## The Scarcity Principle
 
-Taste emerges from constraints. Pick constraints before starting: one font, two colors, three spacing values. Infinite options produce the distribution center.
+Taste emerges from constraints: one font, two colors, three spacing values. They come from the owner's pick and the theme, never from you. Infinite options produce the distribution center.
 
 ## The AI Slop Test
 
@@ -107,7 +120,7 @@ Every entry: id, rule, detector, status. A detector is a regex/command a gate ca
 | D2 | no hardcoded neutral tailwind classes, tint toward brand | zinc/gray/neutral/slate class scan | graduated (design-gate) |
 | D3 | no all-caps labels anywhere | uppercase class scan | graduated (design-gate) |
 | D4 | custom components only, no shadcn/radix primitives | radix import scan | graduated (design-gate) |
-| D5 | no pulsing status dots outside loading skeletons | pulse class scan outside loading/skeleton files | graduated (design-gate) |
+| D5 | no pulsing status dots; a loading placeholder holds still or runs once, since the page check refuses any endless loop | pulse class scan outside loading/skeleton files | graduated (design-gate) |
 | D6 | no arbitrary hex in color utilities, use brand vars | hex-in-color-utility scan | graduated (design-gate) |
 | D7 | no em dashes in UI copy or prose | U+2014 scan | graduated (atris slop) |
 | D8 | no claude-beige backgrounds, no instrument serif as default | judgment | promoted |
@@ -115,9 +128,9 @@ Every entry: id, rule, detector, status. A detector is a regex/command a gate ca
 | D10 | measured tokens over vibes: new components start from a measured recipe (exact colors, spacing, radii, type from a proven source), never from scratch | judgment | active |
 | D11 | layout contracts, not dioramas: min-height over fixed height, fluid max-width over fixed px, every overflow reachable (scroll or +N more), stress-test with hostile content before shipping | judgment | active |
 | D12 | one accent moment per card: brand accent for the primary action only, gold for confidence/progress fills, green only for completed; everything else tonal | judgment | active |
-| D13 | motion is calm and eased: 120-300ms ease-out on opacity/transform only, loops match a measured source cadence, prefers-reduced-motion always freezes them | judgment | active |
+| D13 | motion is calm and eased: 120-300ms ease-out on opacity/transform only, nothing loops forever (the page check refuses it), prefers-reduced-motion always stops motion | judgment | active |
 | D14 | compact selectors lead with the chosen name and a discriminating icon; remove redundant field labels and visible type explanations when icon, title, and accessible label carry them | judgment | active |
-| D15 | copy density on landing pages: hero lede one sentence, one sentence per feature card, one line per FAQ answer, legal in one short footer paragraph; a section paragraph past ~40 words gets cut or moved one click deep (Keshav 2026-09-01: "SO much blabber yap text. keep it clean") | `<p>` in landing html over 60 words flags; otherwise judgment | active |
+| D15 | copy density on landing pages: no lede under the hero heading (D38), one sentence per feature card, one line per FAQ answer, legal in one short footer paragraph; a section paragraph past ~40 words gets cut or moved one click deep (Keshav 2026-09-01: "SO much blabber yap text. keep it clean") | `<p>` in landing html over 60 words flags; otherwise judgment | active |
 | D16 | verify mobile with real device emulation (Playwright iPhone profile, WebKit for iOS), never headless Chrome --window-size: Chrome floors the window at 500px wide and renders a fake layout (caught 2026-09-01: two "passing" screenshots hid a broken phone nav) | command scan for `--window-size=3` or `--window-size=4` in verify scripts | active |
 | D33 | first viewport restraint: one dominant idea, at most one secondary live region, and everything else behind progressive disclosure; reject permanent three-column cockpit density as default SaaS structure | judgment | active |
 | D35 | one alignment contract per component: wrapper, metadata, controls, and rendered content share the same width and inset source at every viewport | judgment | active |
@@ -138,7 +151,7 @@ Every entry: id, rule, detector, status. A detector is a regex/command a gate ca
 | D31 | developer-only overlays stay off the product surface by default; any temporary visible launcher must have an immediate dismiss control | judgment | active |
 | D32 | before changing repeated UI copy, verify the operator's exact executable and surface; matching labels do not prove the installed app, dev app, header, and composer share one live path | judgment | active |
 | D34 | engine settings show only the selected engine’s effective model and supported controls; preserve saved choices missing from the option list instead of displaying another engine | `node scripts/test-engine-settings.mjs` in project-obelisk | graduated (engine settings regression) |
-| D36 | marketing front pages: headline + one 2-line paragraph + buttons per section, card copy max 2 sentences, long artifacts live one click deep (Keshav 2026-08-31 "aggressive amounts of texts still", inspiration Oscar/Headway) | judgment | active |
+| D36 | marketing front pages: headline + buttons per section with no paragraph under the headline (D38), card copy max 2 sentences, long artifacts live one click deep (Keshav 2026-08-31 "aggressive amounts of texts still", inspiration Oscar/Headway) | judgment | active |
 | D37 | public site links use clean paths (/syllabus, /welcome?paid=1), never a visible .html, in hrefs, canonicals, sitemaps, and payment redirects (Keshav 2026-11-02 on foundry.atris.ai: "why does it show .html ... we should be a higher standard than lovable") | `grep -nE 'href="[^"#]*\.html' landing/*.html` returns nothing | active |
 | D38 | no taglines, helper text, or secondary labels (field labels over values, sublines under headings, intro paragraphs, eyebrow tags); if a screen needs one to make sense, fix the layout instead: a two-column table with column heads, a date grid, a heading-left content-right split (Keshav 2026-11-02 on foundry.atris.ai: "as perfect as Linear's website or Apple Notes ... Cut taglines, helper text and secondary labels. If a screen needs them to make sense, fix the layout") | judgment | active |
 
@@ -158,9 +171,12 @@ This skill compounds or it dies. The contract, every frontend session:
 ## Before Shipping Checklist
 
 - can you name the aesthetic in 2-3 words?
-- distinctive font, not default?
-- at least one intentional animation? zero pulsing/looping ones?
-- background has depth? not claude beige?
+- fonts and colours from the theme or the owner's pick, not chosen by you?
+- does every animation show where something went, confirm an action or come from the design seed? zero pulsing/looping ones?
+- do menus grow out of their trigger? does a picker open with its filter focused and leave a ticked row where it was?
+- does every icon button have a tooltip, slow on the first and instant on the next?
+- does any read of data already on the device show a loading screen? it should not.
+- no gradient, mesh or glow added for depth? not claude beige?
 - hover states feel inviting, not confusing?
 - scrolling feels native?
 - hero passes H1 test (what/who/why/CTA)?
@@ -173,7 +189,7 @@ This skill compounds or it dies. The contract, every frontend session:
 - did you name the moves in craft vocabulary (vertical rhythm, negative space, bolder/quieter)?
 - did you use anti-attractors (named what to avoid, seeded a reference, set a constraint)?
 - if agent-facing: does it have agentic affordances (clear errors, structured output, stable exit codes)?
-- ran the design gate? (`npm run audit:design` / `atris slop`)
+- ran `atris site check <file>` and then `atris site check <file> --render` on every page, fixed every must-fix line and judged each note for the reviewer? ran the design gate? (`npm run audit:design` / `atris slop`)
 - new operator correction this session? then a new lesson row exists in the canonical and it is committed.
 - would a designer clock this as ai-generated?
 

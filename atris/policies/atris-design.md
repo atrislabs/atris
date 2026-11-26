@@ -10,8 +10,6 @@ models default to safe choices because that's what dominates training data. with
 - inter/roboto fonts
 - purple gradients on white
 - hero + 3 cards + testimonials + footer
-- zero animation
-- flat, lifeless backgrounds
 
 this is the "distribution center": statistically average, aesthetically dead.
 
@@ -53,11 +51,11 @@ don't use AI to make the final call. use it to clear the drudgery so you can spe
 - instead of inter → instrument sans, plus jakarta sans, outfit
 - instead of roboto → onest, figtree, urbanist
 - instead of open sans → source sans 3, nunito sans, dm sans
-- editorial/premium → fraunces, newsreader, lora, playfair display, crimson pro
+- editorial/premium → fraunces, newsreader, lora, crimson pro
 - dev tools → jetbrains mono, fira code
 - clean technical → ibm plex, source sans
 
-**the move:** pick ONE distinctive font. use weight extremes (200 vs 800, not 400 vs 500). size jumps should be dramatic (3x), not timid (1.2x).
+**the move:** fonts come from the design seed or theme. never pick one yourself. if none is set, make a few looks and let the owner pick. use weight extremes (200 vs 800, not 400 vs 500). size jumps should be dramatic (3x), not timid (1.2x).
 
 **type scale:** use a modular scale with fluid sizing. 5 sizes covers most needs:
 
@@ -138,7 +136,7 @@ gap: clamp(1.5rem, 4vw, 6rem);
 
 ## motion
 
-**avoid:** static pages with nothing moving, or the opposite: bouncing everything
+**avoid:** motion with no job, or bouncing everything
 
 **specific anti-patterns:**
 - cursor-following lines or elements
@@ -148,7 +146,7 @@ gap: clamp(1.5rem, 4vw, 6rem);
 - animations that swap styles endlessly without purpose (rotating shapes, morphing buttons)
 - bounce or elastic easing: they feel dated and tacky. real objects decelerate smoothly.
 
-**the move:** one well-timed animation beats ten scattered ones. page load with staggered reveals (50-100ms delays) creates more impact than hover effects on every button.
+**the move:** every animation has a job: it shows where a thing went or confirms what just happened. nothing else moves. animate everything and the screen turns into a christmas tree; pick the few that need it and they stand out. the menu, picker, tooltip and speed rules live in the design skill.
 
 **easing:** use exponential easing for natural deceleration:
 ```css
@@ -232,7 +230,7 @@ test every hover on mobile. if something only works on hover, it's broken for ha
 
 **avoid:** scrolljacking. never override native browser scroll with custom scroll logic. it feels like "moving through molasses" and users hate it.
 
-**the move:** let the browser handle scrolling. if you want scroll-triggered effects, use intersection observer to trigger animations as sections enter the viewport, but don't mess with scroll speed or direction.
+**the move:** let the browser handle scrolling. show content from the start. do not reveal it on scroll.
 
 use the "peeking" technique: let a few pixels of the next section peek above the fold instead of full-screen heroes with "scroll down" arrows. this naturally signals more content below.
 
@@ -240,9 +238,7 @@ use the "peeking" technique: let a few pixels of the next section peek above the
 
 ## backgrounds
 
-**avoid:** solid white, solid light gray, flat nothing
-
-**the move:** add depth. layered gradients, subtle patterns, mesh effects. backgrounds set mood. flat backgrounds say "I didn't think about this."
+**the move:** the background comes from the theme. do not add gradients, patterns, mesh or glow for depth.
 
 but don't use glassmorphism everywhere: blur effects, glass cards, glow borders used decoratively rather than purposefully. it's AI slop.
 
@@ -334,9 +330,9 @@ vary your choices. alternate themes. try different directions between projects.
 ## before shipping
 
 - can you name the aesthetic in 2-3 words?
-- did you pick a real font, not a default?
-- is there at least one intentional animation?
-- does the background have depth?
+- do the fonts come from the theme or the owner's pick, not from you?
+- does every animation show where something went or confirm an action?
+- does the background come from the theme, with no gradient, mesh or glow added for depth?
 - do hover states feel inviting, not confusing?
 - does scrolling feel native?
 - does the hero pass the H1 test (what/who/why/CTA)?
@@ -414,7 +410,7 @@ the engineer's instinct is to optimize incrementally. the designer's job is to m
 
 taste emerges from constraints. the european and japanese craft traditions produced distinctive work because materials were scarce. you had to choose carefully. in an era of infinite digital materials (every color, every font, every layout is free), taste must be **intentionally cultivated through self-imposed scarcity**.
 
-pick constraints before you start: one font, two colors, three spacing values. scarcity forces decisions. infinite options produce the distribution center.
+pick constraints before you start: one font, two colors, three spacing values. they come from the owner's pick and the theme, never from you. scarcity forces decisions. infinite options produce the distribution center.
 
 ---
 

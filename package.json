@@ -1,6 +1,6 @@
 {
   "name": "atris",
-  "version": "3.93.1",
+  "version": "3.94.0",
   "description": "The operating system for agent teams: shared memory, workspaces, and tools that run entire operations across code, research, and business.",
   "mcpName": "io.github.atrislabs/atris",
   "main": "bin/atris.js",
