@@ -19,14 +19,25 @@ const lang = () => require('../lib/page-lang');
 const shown = (file) => lang().shown(file);
 const report = (...a) => lang().report(...a);
 
-// The project folder that holds .atris/slop.rules.json, found from the current folder upward.
-const rulesRoot = () => require('../lib/page-rules').rulesRoot(process.cwd());
+// Every site command reads .atris/slop.rules.json, the look picks and the build from the folder it
+// runs in. A rules file that is there and cannot be read is named on stderr.
+function rulesNote(root) {
+  const problem = require('../lib/page-rules').rulesProblem(root);
+  if (problem) console.error(problem);
+  return problem;
+}
 
 async function check(argv) {
-  if (hasFlag(argv, '--mode')) { console.log(require('../lib/page-rules').pageMode(rulesRoot())); return 0; }
+  const root = process.cwd();
+  if (hasFlag(argv, '--mode')) {
+    // with the file unreadable the mode is unknown. no mode is printed
+    if (rulesNote(root)) return 1;
+    console.log(require('../lib/page-rules').pageMode(root));
+    return 0;
+  }
   const target = argv.find((a) => !a.startsWith('-'));
   if (!target) { console.error('  atris site check <file|dir> [--json] [--render]\n  atris site check --mode'); return 2; }
-  const root = rulesRoot();
+  rulesNote(root);
   const list = lang().htmlFilesIn(target);
   if (!list.length) { console.error(`no html pages at ${target}`); return 2; }
   const siteRoot = fs.statSync(target).isDirectory() ? path.resolve(target) : null;
@@ -42,8 +53,11 @@ async function check(argv) {
       res.results.push(...(r.results || []));
       res.ok = res.findings.length === 0;
       res.rendered = true;
-      // the browser read the words a script drew. the note that they were not read no longer holds
-      if (r.drewText) res.notChecked = res.notChecked.filter((n) => !n.startsWith('a script draws this page'));
+      // the browser read the words a script drew. the note that they were not read no longer holds.
+      // when it saw no words either, the note says what the run found instead
+      const drawnNote = (n) => n.startsWith('a script draws this page');
+      res.notChecked = r.drewText ? res.notChecked.filter((n) => !drawnNote(n))
+        : res.notChecked.map((n) => drawnNote(n) ? 'a script draws this page and the browser saw no words after the wait. its words were not read' : n);
     }
   }
   return report(files.map(({ path: _p, ...res }) => res), { json: hasFlag(argv, '--json') });
@@ -53,12 +67,14 @@ function rules(argv) {
   const { GRAMMAR } = lang();
   const pageRules = require('../lib/page-rules');
   const sheet = pageRules.ruleSheet();
-  const root = rulesRoot();
+  const root = process.cwd();
+  const unread = rulesNote(root);
   const off = pageRules.switchedOff(root);
+  const mode = unread ? 'unknown' : pageRules.pageMode(root);
   // the browser rules only run when the page is opened in a browser, so they are listed apart
   const browser = require('../lib/page-render').RENDER_RULES;
   if (hasFlag(argv, '--json')) {
-    console.log(JSON.stringify({ grammar: GRAMMAR.map((r) => ({ id: r.id, line: r.line })), page: sheet, browser: browser.map((r) => ({ id: r.id, line: r.why, needs: '--render' })), mode: pageRules.pageMode(root), off }, null, 2));
+    console.log(JSON.stringify({ grammar: GRAMMAR.map((r) => ({ id: r.id, line: r.line })), page: sheet, browser: browser.map((r) => ({ id: r.id, line: r.why, needs: '--render' })), mode, off }, null, 2));
     return 0;
   }
   const out = [
@@ -75,7 +91,7 @@ function rules(argv) {
     '  publish and deploy check every html page after any build.',
     '  watch mode, the default: they print what fails and upload anyway.',
     '  block mode: they upload nothing until every page passes. the landing gate holds new pages the same way.',
-    `  this project is in ${pageRules.pageMode(root)} mode. atris site check --mode prints it.`,
+    unread ? '  this project\'s mode is unknown until .atris/slop.rules.json can be read.' : `  this project is in ${mode} mode. atris site check --mode prints it.`,
     `  ${require('../lib/page-lang').BLOCK_LINE}. atris init turns it on for a new project.`,
   ];
   if (off.length) out.push('', `switched off in .atris/slop.rules.json: ${off.join(', ')}`);

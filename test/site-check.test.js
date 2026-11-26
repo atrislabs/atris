@@ -216,7 +216,7 @@ test('a browser that cannot run still prints the page rules that ran and says th
   try {
     const good = await cli(['check', 'plain/good.html', '--render']);
     assert.strictEqual(good.code, 1);
-    assert.match(good.err, /^ok plain\/good\.html: every page rule passes\. the browser rules did not run\nthe browser check did not run on plain\/good\.html: the page did not finish loading/);
+    assert.strictEqual(good.err, `ok plain/good.html: every page rule passes. the browser rules did not run\nthe browser check did not run on plain/good.html: the browser ${broken} stopped with code 3 and printed nothing. check CHROME_PATH`);
     const bad = await cli(['check', 'pages/bad.html', '--render']);
     assert.strictEqual(bad.code, 1);
     assert.match(bad.err, /^refused pages\/bad\.html \(2 things to fix\)\n[\s\S]*"<div>"[\s\S]*\nthe browser check did not run on pages\/bad\.html: /);
@@ -224,7 +224,7 @@ test('a browser that cannot run still prints the page rules that ran and says th
     assert.strictEqual(run.code, 1);
     const json = JSON.parse(run.out);
     assert.deepStrictEqual(json.files.map((f) => [f.file, f.ok, f.rendered, typeof f.reason]), [['plain/good.html', true, false, 'string']]);
-    assert.match(json.files[0].reason, /the page did not finish loading/);
+    assert.strictEqual(json.files[0].reason, `the browser ${broken} stopped with code 3 and printed nothing. check CHROME_PATH`);
   } finally {
     if (saved === undefined) delete process.env.CHROME_PATH; else process.env.CHROME_PATH = saved;
     fs.rmSync(broken);
@@ -248,13 +248,26 @@ test('after --render a page a script draws reads every rule passes, unless the b
   const json = JSON.parse((await cli(['check', 'spa-drawn/index.html', '--render', '--json'])).out);
   assert.deepStrictEqual(json.files.map((f) => [f.rendered, f.notChecked]), [[true, []]]);
   folder('spa-empty', { 'index.html': drawn('') });
-  assert.match((await cli(['check', 'spa-empty/index.html', '--render'])).out, /not checked: a script draws this page/);
+  assert.strictEqual((await cli(['check', 'spa-empty/index.html', '--render'])).out, 'ok spa-empty/index.html: no rule failed. not checked: a script draws this page and the browser saw no words after the wait. its words were not read');
 });
 
 test('the follow-up command quotes a path with a space', async () => {
   folder('my site', { 'home page.html': GOOD });
   const res = await cli(['check', 'my site/home page.html']);
   assert.deepStrictEqual([res.code, res.out], [0, "ok my site/home page.html: every page rule passes. the browser rules did not run: atris site check 'my site/home page.html' --render runs them"]);
+});
+
+test('the follow-up command reads a path that starts with a dash as a path and on windows keeps a backslash path plain', () => {
+  const { report } = require('../lib/page-lang');
+  const command = (file, platform) => {
+    const out = [];
+    report([{ file, ok: true, rendered: false, findings: [], notChecked: [] }], { log: (s) => out.push(s), platform });
+    return out[0].replace(/^.*did not run: /, '');
+  };
+  assert.strictEqual(command('-page.html', 'darwin'), 'atris site check ./-page.html --render runs them');
+  assert.strictEqual(command('=eq/p.html', 'darwin'), "atris site check '=eq/p.html' --render runs them");
+  assert.strictEqual(command('pages\\good.html', 'win32'), 'atris site check pages\\good.html --render runs them');
+  assert.strictEqual(command('my site\\home page.html', 'win32'), 'atris site check "my site\\home page.html" --render runs them');
 });
 
 const SUB = '<main>\n<header>\n<h1>Writing coach</h1>\n<p>Better essays every week.</p>\n</header>\n</main>\n';
@@ -270,37 +283,45 @@ test('a passing upload still names the rules the project switched off, on screen
   assert.deepStrictEqual(JSON.parse(out.join('\n')).page_check, { mode: 'block', ok: true, off: ['page-subtitle'], files: [] });
 });
 
-test('a block project refuses a failing page when the command runs from a folder inside it', async () => {
-  const before = uploads;
-  const dir = folder('site-deep', { 'index.html': BAD });
-  await withRules({ pages: 'block', off: ['page-glow'] }, async () => {
-    process.chdir(path.join(root, dir));
-    try {
-      assert.strictEqual((await cli(['check', '--mode'])).out, 'block');
-      const res = await cli(['check', 'index.html']);
-      assert.strictEqual(res.code, 1);
-      assert.match(res.err, /switched off in \.atris\/slop\.rules\.json: page-glow/);
-      assert.match((await cli(['rules'])).out, /this project is in block mode/);
-      const err = [];
-      assert.strictEqual(await upload(['.', '--slug', 'demo'], { error: (s) => err.push(s) }), 1);
-      assert.match(err.join('\n'), /page check in block mode: nothing was uploaded\./);
-      assert.strictEqual(await deploy.run(['.', '--name', 'demo', '--dry-run'], quiet), 1);
-    } finally { process.chdir(root); }
-  });
-  assert.strictEqual(uploads, before);
+// Every site command reads the rules file, the look picks and the build from the folder it runs in.
+test('check and build agree on a switched-off rule from any folder', async () => {
+  folder('agree', { 'web/page.html': SUB, '.atris/slop.rules.json': '{ "off": ["page-subtitle"] }' });
+  process.chdir(path.join(root, 'agree'));
+  try {
+    assert.deepStrictEqual([(await cli(['check', 'web/page.html'])).code, (await cli(['web/page.html', '--out', 'dist'])).code], [0, 0]);
+    process.chdir(path.join(root, 'agree', 'web'));
+    assert.deepStrictEqual([(await cli(['check', 'page.html'])).code, (await cli(['page.html', '--out', 'dist'])).code], [1, 1]);
+  } finally { process.chdir(root); }
 });
 
-test('the rules file is found from a folder inside the project, never from the home folder above it', () => {
-  const { rulesRoot } = require('../lib/page-rules');
-  const deep = path.join(root, 'nest', 'a', 'b');
-  fs.mkdirSync(deep, { recursive: true });
-  fs.mkdirSync(path.join(root, 'nest', '.atris'), { recursive: true });
+test('a page built in a picked look passes the upload check from the folder where it was picked and built', async () => {
+  folder('picked', { '.atris/slop.rules.json': '{ "pages": "block" }', 'web/page.html': GOOD, 'web/atris/looks/paper.css': 'body{font-family:Georgia,serif}' });
+  process.chdir(path.join(root, 'picked', 'web'));
   try {
-    assert.strictEqual(rulesRoot(deep, '/nowhere'), path.join(root, 'nest'));
-    // the home folder's .atris is this computer's own state: read only when the run starts there
-    assert.strictEqual(rulesRoot(deep, path.join(root, 'nest')), deep);
-    assert.strictEqual(rulesRoot(path.join(root, 'nest'), path.join(root, 'nest')), path.join(root, 'nest'));
-  } finally { fs.rmSync(path.join(root, 'nest'), { recursive: true }); }
+    recordPick(process.cwd(), 'paper');
+    assert.strictEqual((await cli(['page.html', '--look', 'paper', '--out', 'dist'])).code, 0);
+    const err = [];
+    assert.strictEqual(await deploy.run(['dist', '--name', 'demo', '--dry-run'], { ...quiet, error: (s) => err.push(s) }), 0);
+    assert.strictEqual(err.join('\n'), '');
+  } finally { process.chdir(root); }
+});
+
+test('a rules file that cannot be read is named and the upload is refused', async () => {
+  const before = uploads;
+  folder('broken', { '.atris/slop.rules.json': '{ "pages": "block", }', 'index.html': compilePage(GOOD) });
+  process.chdir(path.join(root, 'broken'));
+  try {
+    const said = /^\.atris\/slop\.rules\.json could not be read: /m;
+    const res = await cli(['check', 'index.html']);
+    assert.strictEqual(res.code, 0);
+    assert.match(res.err, said);
+    assert.match((await cli(['rules'])).err, said);
+    const err = [];
+    assert.strictEqual(await upload(['.', '--slug', 'demo'], { error: (s) => err.push(s) }), 1);
+    assert.match(err.join('\n'), said);
+    assert.strictEqual(await deploy.run(['.', '--name', 'demo', '--dry-run'], quiet), 1);
+  } finally { process.chdir(root); }
+  assert.strictEqual(uploads, before);
 });
 
 test('rules says which rules this project switched off, in text and in --json', async () => {
