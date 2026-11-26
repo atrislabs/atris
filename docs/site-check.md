@@ -14,6 +14,8 @@ Run every site command from the project root. The rules file `.atris/slop.rules.
 
 A plain run reads the page as text. It runs the page rules on every page and the content page grammar on content pages.
 
+A class name counts as a style only on a page whose styles the check could not all read, such as a remote sheet or a utility framework built in the browser. On such a page or on a page a script draws, each rule that passed reads `null` in `--json` instead of `true`.
+
 A plain pass does not cover the browser rules. The pass line says so and names the command that runs them:
 
 ```
@@ -31,6 +33,7 @@ When `--render` is asked and the browser cannot run, the pass line ends with `th
 - No browser was found. Install one or set `CHROME_PATH`.
 - The browser stopped and printed nothing: `the browser <path> stopped with code <n> and printed nothing. check CHROME_PATH`, or `stopped with signal <name>` when something killed it.
 - The page did not finish loading in time at one width.
+- The browser did not finish within 30 seconds at one width. A slow machine sets a longer wait with `"renderSeconds": 60` in `.atris/slop.rules.json`. The time a page has to load grows with it.
 
 `--json` prints each file with `ok`, `results`, `findings`, `off`, `notChecked`, `rendered` and the same words in `text`. Each finding has a `level`: `error` for a fault to fix and `warn` for a note for the reviewer, with `maybe` saying why it may be fine. `rendered` is true only when the browser rules ran. `reason` is there when `--render` was asked and the browser did not run.
 
@@ -53,7 +56,7 @@ A project switches one page rule off with `{ "off": ["page-glow"] }` in `.atris/
 
 ## A rules file that cannot be read
 
-When `.atris/slop.rules.json` is there and is not valid json, or does not hold a json object, every site command names it on stderr. The same goes for a `pages` value that is neither `"block"` nor `"watch"` and an `off` that is not a list. A plain list, the form `atris slop rules --add` writes, is fine and means watch mode.
+When `.atris/slop.rules.json` is there and is not valid json, or does not hold a json object, every site command names it on stderr. The same goes for a `pages` value that is neither `"block"` nor `"watch"`, an `off` that is not a list and a `renderSeconds` that is not a number above 0. A plain list, the form `atris slop rules --add` writes, is fine and means watch mode.
 
 ```
 .atris/slop.rules.json could not be read: <why>

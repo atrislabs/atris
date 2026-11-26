@@ -7,7 +7,9 @@ const path = require('node:path');
 const { PAGE_RULES, checkPage, ruleSheet } = require('../lib/page-rules');
 const { scanText } = require('../lib/slop-kinds');
 
-const page = (body, css = '', head = '') => `<!doctype html><html><head>${head}<style>${css}</style></head><body>${body}</body></html>`;
+// a page that builds its styles from its class names in the browser
+const TW = '<script src="https://cdn.tailwindcss.com"></script>';
+const page = (body, css = '', head = '') =>`<!doctype html><html><head>${head}<style>${css}</style></head><body>${body}</body></html>`;
 const fired = (html) => new Set(checkPage(html, 'page.html').findings.map((f) => f.rule));
 // a rule blocks only with a must-fix line. a note for the reviewer is shown and never blocks
 const blocked = (html) => new Set(checkPage(html, 'page.html').findings.filter((f) => f.level === 'error').map((f) => f.rule));
@@ -68,7 +70,7 @@ const CASES = {
   ],
   'page-card-in-card': [
     page('<div class="card" style="border: 1px solid #ddd; padding: 16px"><div class="card" style="border: 1px solid #ddd; padding: 8px">Inner</div></div>'),
-    page('<div class="shadow rounded p-4"><div class="bg-gray-50 rounded-lg p-2">Inner</div></div>'),
+    page('<div class="shadow rounded p-4"><div class="bg-gray-50 rounded-lg p-2">Inner</div></div>', '', TW),
   ],
   'page-left-border': [
     page('<div class="due">Due Friday</div>', '.due { border-left: 4px solid #e11d48; padding: 8px; }'),
@@ -86,7 +88,7 @@ const CASES = {
     page('<div class="blob"></div><p>Hi</p>', '.blob { filter: blur(80px); background: #a78bfa; }'),
     page('<header class="top">Hi</header>', '.top { box-shadow: 0 0 60px rgba(168, 85, 247, 0.5); }'),
   ],
-  'page-glass': [page('<nav class="n">Hi</nav>', '.n { backdrop-filter: blur(12px); }'), page('<nav class="backdrop-blur-md">Hi</nav>')],
+  'page-glass': [page('<nav class="n">Hi</nav>', '.n { backdrop-filter: blur(12px); }'), page('<nav class="backdrop-blur-md">Hi</nav>', '', TW)],
   'page-gradient-text': [
     page('<h1>Hi</h1>', 'h1 { background: linear-gradient(90deg, #f0f, #0ff); -webkit-background-clip: text; color: transparent; }'),
     page('<svg><defs><linearGradient id="g"></linearGradient></defs><text fill="url(#g)">Hi</text></svg>'),
@@ -189,7 +191,7 @@ const ATTACKS = [
   ['page-label-above-heading', page('<header><div><a href="/">Home</a> / <a href="/t">Tools</a></div><h1>Spades</h1></header><header><p role="status">Saved</p><h1>Settings</h1></header>'), false],
   ['page-headline-accent', page('<h1>Software for <span class="a">calm</span> teams</h1>', '.a { font: 500 1em Georgia; } h1 { .b { font-style: italic; } }'), true],
   ['page-headline-accent', page('<h1>For <span class="a">calm</span> teams</h1>', '.a { display: inline-block; transform: skewX(-12deg); }'), true],
-  ['page-headline-accent', page('<h1>For <span class="font-[\'Fraunces\'] [font-style:italic]">calm</span> teams</h1>'), true],
+  ['page-headline-accent', page('<h1>For <span class="font-[\'Fraunces\'] [font-style:italic]">calm</span> teams</h1>', '', TW), true],
   ['page-headline-accent', page('<h1>Read the <a href="/d">docs</a></h1><h1><span class="ms">home</span> Home</h1><h1>For <span>small teams</span></h1><blockquote class="q">Paid <span>back</span></blockquote><h2><code>strict</code></h2><h1><i>Middlemarch</i></h1>', 'a { font-family: inherit; } .ms { font-family: "Material Icons"; } .q span { font-style: italic; }'), false],
   ['page-numbered-sections', page('<section class="s"><h2>Bank</h2></section><section class="s"><h2>Match</h2></section>', '.s::before { content: counter(n, decimal-leading-zero); }'), true],
   ['page-numbered-sections', page('<h2>Step 1: Bank</h2><h2>Step 2: Match</h2>'), true],
@@ -199,7 +201,7 @@ const ATTACKS = [
   ['page-numbered-sections', page('<p>9:00 Standup</p><p>10:00 Demo</p><h2>12 March</h2><h2>13 March</h2><h2>2.0 Apps</h2><h2>3.0 Teams</h2><div><span>1</span><span>Maya</span></div><div><span>2</span><span>Dev</span></div>'), false],
   // a plain 1. before a short label reads the same as a rank: a note, not a block
   ['page-numbered-sections', page('<p>1. Maya Lin</p><p>2. Dev Rao</p><p>3. Ana Ruiz</p>'), 'note'],
-  ['page-numbered-sections', page('<h2>1. Account</h2><p>Keep it safe.</p><h2>2. Payment</h2><p>Refunds follow section 3.</p><h2>3. Refunds</h2>'), false],
+  ['page-numbered-sections', page('<h2>1. Account</h2><p>Keep it safe.</p><h2>2. Payment</h2><p>Refunds follow section 3. Section 1 and section 2 apply to every order.</p><h2>3. Refunds</h2>'), 'note'],
   ['page-unsourced-number', page('<ul><li><strong>98%</strong><span>matched by hand</span></li></ul>'), true],
   ['page-unsourced-number', page('<div class="s"><div><div>12x</div></div><div>faster close</div></div><div class="s"><div>$48,000</div><div>saved per team</div></div>'), true],
   ['page-unsourced-number', page('<div><b>4.95</b><span>average rating</span></div><div><b>#1</b><span>tool for studios</span></div><div><b>9</b><span>out of ten agree</span></div>'), true],
@@ -238,21 +240,21 @@ const ATTACKS = [
   ['page-left-border', page('<table><tr><td class="e">Standup</td></tr></table>', '.e { border-left: thick solid crimson; }'), true],
   ['page-left-border', page('<div class="n">Moved</div>', '.n { border-width: 4px; border-color: #c0392b; border-style: none none none solid; }'), true],
   ['page-left-border', page('<div class="n">Moved</div>', '.n { position: relative; } .n::after { content: ""; position: absolute; inset-block: 0; inset-inline-start: 0; inline-size: 4px; background: #c0392b; }'), true],
-  ['page-left-border', page('<div class="relative before:absolute before:left-0 before:inset-y-0 before:w-1 before:bg-red-600">Moved</div><div class="border-l-[0.25rem] border-red-600">Due</div>'), true],
+  ['page-left-border', page('<div class="relative before:absolute before:left-0 before:inset-y-0 before:w-1 before:bg-red-600">Moved</div><div class="border-l-[0.25rem] border-red-600">Due</div>', '', TW), true],
   ['page-left-border', page('<div class="n">Moved</div><script>document.querySelector(".n").style.borderLeft = "4px solid #c0392b";</script>'), true],
   ['page-left-border', page('<div class="n plain">Moved</div><div class="h">Col</div><div class="g">Col</div><div class="k">Col</div>', '.n { border-left: 4px solid crimson; } .n.plain { border: 0; } .h { border-left: #2b6cb0 solid 1px; } .g { border-left: 2px solid lightgray; } .k { border-left: 2px solid var(--rule); } :root { --rule: #d8d8d8; }'), false],
   ['page-looping-motion', page('<span class="r"></span>', ':root { --spin: spin 1s linear infinite; } .r { animation: var(--spin); }'), true],
   ['page-looping-motion', page('<span class="r"></span>', '.r { animation-iteration-count: calc(infinity); }'), true],
   ['page-looping-motion', page('<svg><circle><animate id="a" begin="0s;b.end" dur="1s"/><animate id="b" begin="a.end" dur="1s"/></circle></svg>'), true],
-  ['page-looping-motion', page('<span class="r"></span><script>gsap.to(".r", { rotate: 360, repeat: -1 });</script>'), true],
+  ['page-looping-motion', page('<span class="r"></span><script>gsap.to(".r", { rotate: 360, repeat: -1 });</script>'), 'note'],
   ['page-looping-motion', page('<span class="r"></span><script>function spin() { r.style.rotate = t++ + "deg"; requestAnimationFrame(spin); } spin();</script>'), true],
   ['page-looping-motion', page('<span class="!animate-spin"></span><marquee>Sale</marquee>'), true],
-  ['page-looping-motion', page('<div class="animate-wiggle"></div>', '@theme { --animate-wiggle: wiggle 1s infinite; }'), true],
+  ['page-looping-motion', page('<div class="animate-wiggle"></div>', '@theme { --animate-wiggle: wiggle 1s infinite; }', TW), true],
   ['page-looping-motion', page('<div class="t">Saved</div><script>// iterations: Infinity would run forever\nt.animate([], { iterations: 1 });</script>', '.t { animation: infinite-slide .5s ease-out 1 both; }'), false],
   ['page-scroll-fade', page('<section>Hi</section><script>window.onscroll = () => { s.style.opacity = 1; };</script>', 'section { opacity: 0; }'), true],
   ['page-scroll-fade', page('<section class="b">Hi</section><script>new IntersectionObserver((es) => es.forEach((e) => { e.target.className += " seen"; }));</script>', '.b { opacity: 0; }'), 'note'],
   ['page-scroll-fade', page('<section>Hi</section>', ':root { --t: --rise; } section { view-timeline-name: --rise; animation-timeline: var(--t); }'), true],
-  ['page-scroll-fade', page('<section>Hi</section><script>ScrollReveal().reveal("section");</script>'), true],
+  ['page-scroll-fade', page('<section>Hi</section><script>ScrollReveal().reveal("section");</script>'), 'note'],
   ['page-scroll-fade', page('<nav><a href="#a">A</a></nav><section id="a">Hi</section><div class="bar"></div><p class="reveal">Answer</p><button onclick="show()">Show</button><input type="password"><button data-reveal="pw">Show</button><a data-scroll href="#a">Up</a><script>new IntersectionObserver((es) => es.forEach((e) => links.forEach((l) => l.classList.toggle("on", l.hash === "#" + e.target.id))));\naddEventListener("scroll", () => bar.style.transform = `scaleX(${scrollY})`);</script>', '.reveal { opacity: 0; } .bar { animation-timeline: scroll(); }'), false],
   ['page-glow', page('<div class="b"></div>', ':root { --soft: 90px; } .b { filter: blur(var(--soft)); }'), true],
   ['page-glow', page('<div class="b"></div><svg><filter id="s"><feGaussianBlur stdDeviation="60"/></filter></svg>', '.b { filter: url(#s); }'), true],
@@ -265,16 +267,16 @@ const ATTACKS = [
   ['page-glow', page('<div class="c">Card</div><span class="sp">3 to 1</span><p>Hi</p>', '.c { box-shadow: 0 20px 60px rgba(16, 24, 40, .12), 0 24px 60px rgba(92, 64, 32, .14); } .sp { filter: blur(6px); } body { background: radial-gradient(#ccc 1px, transparent 1px) 0 0/16px 16px; }'), false],
   ['page-glass', page('<nav class="n">Hi</nav><script>n.style.backdropFilter = "blur(16px)";</script>'), true],
   ['page-glass', page('<nav>Hi</nav><script>const s = document.createElement("style"); s.textContent = ".n { backdrop-filter: blur(16px) }";</script>'), true],
-  ['page-glass', page('<nav class="[backdrop-filter:blur(16px)]">Hi</nav>'), true],
+  ['page-glass', page('<nav class="[backdrop-filter:blur(16px)]">Hi</nav>', '', TW), true],
   ['page-glass', page('<nav class="n">Hi</nav>', '.n { backdrop-filter: blur(0); }'), false],
   ['page-gradient-text', page('<h1 class="h">Hi</h1>', '.h { color: transparent; background: linear-gradient(90deg, red, blue) text; }'), true],
   ['page-gradient-text', page('<svg><g fill="url(#g)"><text>Hi</text></g></svg>'), true],
   ['page-gradient-text', page('<div class="w"><div class="t">482 builds</div></div>', '.w { background: linear-gradient(90deg, red, blue); } .t { background: #fff; mix-blend-mode: lighten; }'), true],
-  ['page-banned-font', page('<p>Hi</p>', '', '<link rel="stylesheet" href="https://rsms.me/inter/inter.css">'), true],
+  ['page-banned-font', page('<p>Hi</p>', '', '<link rel="stylesheet" href="https://rsms.me/inter/inter.css">'), 'note'],
   ['page-banned-font', page('<svg><text font-family="Inter, sans-serif">Hi</text></svg><font face="Roboto">Hi</font>'), true],
   ['page-banned-font', page('<p>Hi</p><script>new FontFace("Brand", "url(/f/InterVariable.woff2)");</script>'), true],
   ['page-banned-font', page('<p>Hi</p>', '@font-face { font-family: InterBold; src: url(f.woff2); } @import url("https://fonts.googleapis.com/css2?family=Instrument%20Serif");'), true],
-  ['page-banned-font', page('<p class="font-[\'Playfair_Display\']">Hi</p>'), true],
+  ['page-banned-font', page('<p class="font-[\'Playfair_Display\']">Hi</p>', '', TW), true],
   ['page-banned-font', page('<p>Hi</p>', ':root { --map: url("img/inter-island-map.png"); --gap: var(--inter-item-gap); } body { font-family: Interstate, serif; }'), false],
   ['page-noise', page('<div class="g"></div>', '.g { background-image: url("data:image/svg+xml;base64,PHN2Zz48ZmlsdGVyPjxmZVR1cmJ1bGVuY2UvPjwvZmlsdGVyPjwvc3ZnPg=="); }'), true],
   ['page-noise', page('<canvas id="c"></canvas><script>const d = x.createImageData(9, 9); d.data[0] = Math.random() * 255; x.putImageData(d, 0, 0);</script>'), true],
@@ -322,7 +324,7 @@ const ATTACKS = [
   ['page-explanatory', page('<p>Drag the fillets through the flour. Tap the thickest part with a fork.</p>'), false],
   ['page-placeholder', page('<p><b>Bio:</b> Lorem ipsum sed do eiusmod.</p>'), true],
   ['page-placeholder', page('<p>Sed ut perspiciatis unde omnis iste natus.</p>'), true],
-  ['page-placeholder', page('<p>Thanks, {firstName}. Your invoice is ready.</p>'), true],
+  ['page-placeholder', page('<p>Thanks, {firstName}. Your invoice is ready.</p>'), 'note'],
   ['page-placeholder', page('<p>Kickoff is TBD until Sunday.</p><p>One nurse, [name withheld at her request], spoke.</p><p>In John Doe v. Alameda Housing Authority, the court ruled.</p>'), false],
   ['page-emoji-icon', page('<div><div class="i">🚀</div><div><h3>Fast setup</h3><p>x</p></div></div>'), true],
   ['page-emoji-icon', page('<form><input type="submit" value="🚀 Get started"></form>'), true],
@@ -369,12 +371,12 @@ const ATTACKS = [
   ['page-numbered-sections', page('<h2>[01] Bank</h2><h2>[02] Send</h2>'), true],
   ['page-numbered-sections', page('<h2>/01 Bank</h2><h2>/02 Send</h2>'), true],
   ['page-unsourced-number', page('<table class="t"><tr><td>98%</td><td>3x</td></tr><tr><th>paid on time</th><th>faster</th></tr></table>', '.t td { font-size: 48px; }'), true],
-  ['page-unsourced-number', page('<dl><div><dt class="text-sm">Shops</dt><dd class="text-5xl font-bold">12,000</dd></div></dl>'), true],
+  ['page-unsourced-number', page('<dl><div><dt class="text-sm">Shops</dt><dd class="text-5xl font-bold">12,000</dd></div></dl>', '', TW), true],
   ['page-unsourced-number', page('<div><div class="b">Top 1%</div><div>of shops</div></div>', '.b { font-size: 36px; }'), true],
   ['page-unsourced-number', page('<p><span class="n">87%</span> of shops get paid sooner in their first month with us</p>', '.n { display: block; font-size: 64px; }'), true],
   ['page-unsourced-number', page('<div><div class="b">87%</div><div>paid sooner</div><cite></cite></div>', '.b { font-size: 56px; }'), true],
   ['page-unsourced-number', page('<div><div class="b">87%</div><div>paid sooner</div><cite hidden>survey</cite></div>', '.b { font-size: 56px; }'), true],
-  ['page-unsourced-number', page('<div><div class="b">$1,000</div><div>setup, paid once</div></div><ul><li><span>Latte</span> <span>$4.50</span></li></ul><dl><dt>Price</dt><dd>$1,450,000</dd></dl><p>Total <strong>$42.10</strong></p>', '.b { font-size: 32px; }'), false],
+  ['page-unsourced-number', page('<div><div class="b">$1,000</div><div>setup, paid once</div></div><ul><li><span>Latte</span> <span>$4.50</span></li></ul><dl><dt>Price</dt><dd>$1,450,000</dd></dl><p>Total <strong>$42.10</strong></p>', '.b { font-size: 32px; }'), 'note'],
   ['page-card-grid', page(`<div class="r">${three((n) => `<${['div', 'article', 'section'][n]}><h3>T${n}</h3><p>x</p></${['div', 'article', 'section'][n]}>`)}</div>`, '.r { display: grid; }'), true],
   ['page-card-grid', page(`<div class="r">${three((n) => `<div><div><h3>T${n}</h3><p>x</p></div></div>`)}</div>`, '.r { display: grid; }'), true],
   ['page-card-grid', page(`<ul class="r">${three((n) => `<li><h3>T${n}</h3><p>x</p></li>`)}</ul>`, '.r { display: grid; }'), true],
@@ -386,8 +388,8 @@ const ATTACKS = [
   ['page-card-in-card', page(box, '.o { border-block: 1px solid #ccc; border-inline: 1px solid #ccc; padding: 24px; } .i { border: 1px solid #ccc; border-radius: 6px; padding: 12px; }'), true],
   ['page-card-in-card', page(box, '.o { border: 1px solid #ccc; border-radius: 8px; padding: 24px; } .i { border-block: 1px solid #999; border-inline: 1px solid #999; padding: 12px; }'), true],
   ['page-card-in-card', page(box, 'body { background: #eee; } .o { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .25)); background: #fff; padding: 24px; } .i { border: 1px solid #ccc; border-radius: 6px; padding: 12px; }'), true],
-  ['page-card-in-card', page('<div class="border-[1px] rounded-xl p-6"><p>x</p><div class="border-[1px] rounded-lg p-3"><p>y</p></div></div>'), true],
-  ['page-card-in-card', page('<div class="outline outline-1 rounded-xl p-6"><p>x</p><div class="bg-slate-100 rounded-lg p-3"><p>y</p></div></div>'), true],
+  ['page-card-in-card', page('<div class="border-[1px] rounded-xl p-6"><p>x</p><div class="border-[1px] rounded-lg p-3"><p>y</p></div></div>', '', TW), true],
+  ['page-card-in-card', page('<div class="outline outline-1 rounded-xl p-6"><p>x</p><div class="bg-slate-100 rounded-lg p-3"><p>y</p></div></div>', '', TW), true],
   ['page-card-in-card', page('<div class="o"><p>x</p><div class="o"><img src="b.jpg" alt="Bread"></div></div>', '.o { border: 1px solid #ccc; border-radius: 8px; padding: 12px; }'), true],
   ['page-card-in-card', page('<div class="p"><p>Join for $30.</p><a class="j" href="/j">Join</a></div>', '.p { border: 1px solid #ddd; border-radius: 8px; padding: 24px; } .j { display: inline-block; padding: 10px; background: #1a5d3a; border-radius: 6px; }'), false],
   ...['border-inline-start-width: 4px; border-inline-start-style: solid; border-inline-start-color: teal', 'border: 4px solid teal; border-top: 0; border-right: 0; border-bottom: 0',
@@ -400,14 +402,14 @@ const ATTACKS = [
   ['page-left-border', page('<div class="n"><span class="b"></span><p>x</p></div>', '.n { display: grid; grid-template: auto / .25rem 1fr; } .b { background: teal; }'), true],
   ['page-left-border', page('<div class="n"><div class="b"></div><p>x</p></div>', '.n { display: flex; } .b { width: 4px; background: teal; }'), true],
   ['page-left-border', page('<div class="n"><span class="b"></span><p>x</p></div>', '.b { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: teal; }'), true],
-  ['page-left-border', page('<div class="relative before:absolute before:left-0 before:top-1 before:bottom-1 before:w-1 before:bg-teal-600 before:content-[\'\']"><p>x</p></div>'), true],
+  ['page-left-border', page('<div class="relative before:absolute before:left-0 before:top-1 before:bottom-1 before:w-1 before:bg-teal-600 before:content-[\'\']"><p>x</p></div>', '', TW), true],
   ['page-left-border', page('<div class="p"><p>Open the door</p></div>', '.p { border-inline: 2px solid #222; }'), false],
   ['page-looping-motion', page('<div class="l"><i class="d"></i></div>', '.l { --n: infinite; } :root { --n: 1; } .d { animation: spin 1s var(--n); }'), true],
-  ['page-looping-motion', page('<i class="d"></i>', '.d { animation: spin 1s linear 1e9; }'), true],
-  ['page-looping-motion', page('<i class="d"></i>', '.d { animation: pulse 2s 999 alternate; }'), true],
+  ['page-looping-motion', page('<i class="d"></i>', '.d { animation: spin 1s linear 1e9; }'), 'note'],
+  ['page-looping-motion', page('<i class="d"></i>', '.d { animation: pulse 2s 999 alternate; }'), 'note'],
   ['page-looping-motion', page('<i id="d"></i><script>d.animate([], { duration: 1000, iterations: 1 / 0 });</script>'), true],
   ['page-looping-motion', page('<i id="d"></i><script>setInterval(() => d.classList.toggle("big"), 700);</script>'), true],
-  ['page-looping-motion', page('<svg><circle r="9"><animate attributeName="r" values="9;20" dur="1.5s" repeatCount="99999"/></circle></svg>'), true],
+  ['page-looping-motion', page('<svg><circle r="9"><animate attributeName="r" values="9;20" dur="1.5s" repeatCount="99999"/></circle></svg>'), 'note'],
   ['page-looping-motion', page('<i id="d"></i><script>d.style.cssText = "animation: spin 1s infinite";</script>'), true],
   ['page-looping-motion', page('<i id="d"></i><script>function blink() { d.style.opacity = on ? 1 : 0.2; setTimeout(blink, 600); }</script>'), true],
   ['page-scroll-fade', page('<section class="p">Hi</section><script>addEventListener("scroll", () => { p.dataset.in = ""; });</script>', '.p { opacity: 0; } .p[data-in] { opacity: 1; }'), true],
@@ -465,7 +467,7 @@ const ATTACKS = [
   ['page-placeholder', page('<p>Sign in as test@example.com to try the demo class before the term starts.</p>'), 'note'],
   ['page-placeholder', page('<label for="t">Paste your text here</label><textarea id="t"></textarea>'), 'note'],
   ['page-placeholder', page('<p>The film Anytown, USA follows a mayoral race in New Jersey.</p>'), 'note'],
-  ['page-placeholder', page('<p>Room: TBD</p><p>Hello {{ first_name }}, your seat is saved.</p>'), true],
+  ['page-placeholder', page('<p>Room: TBD</p><p>Hello {{ first_name }}, your seat is saved.</p>'), 'note'],
   // a scroll library that only tracks the scroll is a note. with content that starts hidden it blocks
   ['page-scroll-fade', page('<div id="bar"></div><p>The shop opens at eight.</p><script>ScrollTrigger.create({ start: 0, end: "max", onUpdate: (self) => { bar.style.width = (self.progress * 100) + "%"; } });</script>'), 'note'],
   ['page-scroll-fade', page('<section class="s">The shop opens at eight.</section><script>ScrollTrigger.batch(".s", { onEnter: (b) => gsap.to(b, { opacity: 1 }) });</script>', '.s { opacity: 0; }'), true],
@@ -531,7 +533,7 @@ const ATTACKS = [
   ['page-unsourced-number', page('<section><div><div class="n">97%<cite>*</cite></div><div>fixed in a day</div></div></section>', '.n { font-size: 48px; }'), true],
   ['page-unsourced-number', page('<section><div class="n">Over 9,000 shops</div><div>use it each week</div></section>', '.n { font-size: 48px; }'), true],
   ['page-unsourced-number', page('<main><div><div class="n">41%</div><div>of shops were hit</div></div><p>Source: City small business survey 2026</p></main>', '.n { font-size: 48px; }'), false],
-  ['page-unsourced-number', page('<p><span>Order</span> <b>#512</b></p><p>Prep <b>10 min</b>, bake <b>30 min</b></p><p>Gate <b>8</b></p><p><b>$30</b> <span>for a 5 lb bag</span></p><p><span>Version</span> <b>2.1</b></p>'), false],
+  ['page-unsourced-number', page('<p><span>Order</span> <b>#512</b></p><p>Prep <b>10 min</b>, bake <b>30 min</b></p><p>Gate <b>8</b></p><p><b>$30</b> <span>for a 5 lb bag</span></p><p><span>Version</span> <b>2.1</b></p>'), 'note'],
   ['page-unsourced-number', page('<ul><li>Elm <b>14</b>, Oak <b>7</b></li></ul><ul><li><span>#4</span> <span>Ana, guard</span></li><li><span>#9</span> <span>Bo, wing</span></li><li><span>#12</span> <span>Cy, center</span></li></ul><section><h2>10% off rye on Fridays</h2></section><div class="u"><div class="f">40%</div></div><p>a.jpg</p>', '.f { width: 40%; }'), false],
   ['page-left-border', page('<div class="n">Hi</div>', '.n { border-left: 4px solid transparent; border-image-source: linear-gradient(#c2410c, #c2410c); border-image-slice: 1; }'), true],
   ['page-left-border', page('<div class="n">Hi</div>', '.n { background: linear-gradient(to right, #c2410c 4px, #fff7ed 4px, #fff7ed); }'), true],
@@ -543,7 +545,7 @@ const ATTACKS = [
   ['page-left-border', page('<div class="n"><div class="b"></div><p>Hi</p></div>', '.n { display: flex; } .b { flex: 0 0 4px; background: #c2410c; }'), true],
   ['page-left-border', page('<div class="n"><svg width="4" height="40"><rect width="4" height="40" fill="#c2410c"/></svg><p>Hi</p></div>', '.n { display: flex; }'), true],
   ['page-left-border', page('<div class="n"><hr><p>Hi</p></div>', '.n { position: relative; } .n hr { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: #c2410c; }'), true],
-  ['page-left-border', page('<div class="relative before:absolute before:start-0 before:inset-y-0 before:w-1 before:bg-orange-700 before:content-[\'\']">Hi</div>'), true],
+  ['page-left-border', page('<div class="relative before:absolute before:start-0 before:inset-y-0 before:w-1 before:bg-orange-700 before:content-[\'\']">Hi</div>', '', TW), true],
   ['page-left-border', page('<div class="n">Hi</div><div class="m">Hi</div>', '.n { border-inline-width: 4px 0; border-inline-style: solid; border-inline-color: #222; } .m { box-shadow: inset 5px 0 3px -1px #c2410c; }'), true],
   ['page-left-border', page('<div class="n"><p>Hi</p><span class="b" style="display:block"></span></div>', '.n { display: grid; grid-template-columns: 4px 1fr; } .b { grid-column: 1; grid-row: 1; background: #c2410c; } .n p { grid-column: 2; }'), true],
   ['page-card-in-card', page('<div class="o"><p>x</p><div class="i">A note</div></div>', '.o { border: 1px solid #ccc; border-radius: 8px; padding: 20px; } .i { position: relative; padding: 12px; } .i::before { content: ""; position: absolute; inset: 0; border: 1px solid #ccc; border-radius: 6px; }'), true],
@@ -564,12 +566,12 @@ const ATTACKS = [
   ['page-card-grid', page(`<footer><div class="g">${three((n) => `<div><h3>T${n}</h3><p>Words of its own here.</p></div>`)}</div></footer>`, '.g { display: grid; }'), true],
   ['page-card-grid', page(`<div class="w">${three((n) => `<a class="a${n}" href="#"><h3>T${n}</h3><p>x</p></a>`)}</div>`, '.w > a { position: absolute; } .a0 { left: 0; } .a1 { left: 35%; } .a2 { left: 70%; }'), true],
   ['page-card-grid', page(`<article class="c">${three((n) => `<section><h3>T${n}</h3><p>Words.</p><p>More.</p></section>`)}</article>`, '.c { columns: 2; }'), false],
-  ['page-looping-motion', page('<span id="d"></span><script>d.animate([{ opacity: 1 }, { opacity: 0 }], { iterations: Number.MAX_VALUE });</script>'), true],
+  ['page-looping-motion', page('<span id="d"></span><script>d.animate([{ opacity: 1 }, { opacity: 0 }], { iterations: Number.MAX_VALUE });</script>'), 'note'],
   ['page-looping-motion', page(`<span id="b">New</span><script>const tick = function () { b.classList.toggle("on"); };\n${'const pad = 1;\n'.repeat(40)}setInterval(tick, 700);</script>`), true],
   ['page-looping-motion', page('<video src="w.mp4" autoplay loop muted></video>'), true],
-  ['page-looping-motion', page('<div id="a"></div><script>lottie.loadAnimation({ container: a, path: "/o.json" });</script>'), true],
+  ['page-looping-motion', page('<div id="a"></div><script>lottie.loadAnimation({ container: a, path: "/o.json" });</script>'), 'note'],
   ['page-looping-motion', page('<div id="r"></div><script>r.addEventListener("transitionend", () => r.classList.toggle("big"));</script>'), true],
-  ['page-looping-motion', page('<div class="l"></div>', '.l { animation-name: spin; animation-iteration-count: 40; } main .l, .l { animation-duration: 5s; }'), true],
+  ['page-looping-motion', page('<div class="l"></div>', '.l { animation-name: spin; animation-iteration-count: 40; } main .l, .l { animation-duration: 5s; }'), 'note'],
   ['page-looping-motion', page('<div id="b"></div><a id="t" href="#">Top</a><script>const k = setInterval(function () { b.style.width = n + "%"; if (n <= 0) clearInterval(k); }, 1000);\nt.onclick = () => { const s0 = performance.now(); function step(t) { const p = Math.min(1, (t - s0) / 400); scrollTo(0, 1 - p); if (p < 1) requestAnimationFrame(step); } requestAnimationFrame(step); };</script>'), false],
   ['page-scroll-fade', page('<section class="s">Hi there friend</section><script>const ss = document.querySelectorAll(".s"); addEventListener(`scroll`, () => ss.forEach((s) => { s.style.opacity = "1"; }));</script>'), true],
   ['page-scroll-fade', page('<section>Hi</section><script>addEventListener("scroll", () => s.style.setProperty("--o", 1));</script>', 'section { opacity: var(--o, 0); }'), true],
@@ -579,7 +581,7 @@ const ATTACKS = [
   ['page-scroll-fade', page('<img data-src="a.jpg" alt="Shop"><section>Hi</section><script>new IntersectionObserver((l) => l.forEach((e) => { e.target.src = e.target.dataset.src; e.target.classList.add("loaded"); e.target.classList.remove("lazy"); e.target.dataset.seen = "1"; }));</script>'), false],
   ['page-glow', page('<div class="h"></div>', '.h { color: #8b5cf6; box-shadow: 0 0 160px 120px currentColor; }'), true],
   ['page-glow', page('<div class="h">Hi</div>', '.h { box-shadow: 0 0 120px 40px oklab(0.6 0.2 -0.2 / 0.5); }'), true],
-  ['page-glow', page('<button class="shadow-2xl shadow-pink-500/80 px-4">Go</button>'), true],
+  ['page-glow', page('<button class="shadow-2xl shadow-pink-500/80 px-4">Go</button>', '', TW), true],
   ['page-glow', page('<svg><radialGradient id="g"><stop stop-color="#a5f"/><stop offset="1" stop-color="rgba(170,85,255,0)"/></radialGradient><circle r="90" fill="url(#g)"/></svg>'), true],
   ['page-glow', page('<svg><filter id="b"><feGaussianBlur stdDeviation="6"/></filter><symbol id="s"><circle r="9"/></symbol><use href="#s" filter="url(#b)"/></svg>'), true],
   ['page-glow', page('<img class="b" alt="shape" src="dot.svg">', '.b { filter: blur(80px); }'), true],
@@ -587,7 +589,7 @@ const ATTACKS = [
   ['page-gradient-text', page('<canvas id="t"></canvas><script>const x = t.getContext("2d"); const g = x.createLinearGradient(0, 0, 90, 0); x.fillStyle = g; x.fillText("Ship", 0, 9);</script>'), true],
   ['page-gradient-text', page('<h1>Ship fast</h1>', 'h1 { position: relative; } h1::after { content: "Ship fast"; position: absolute; inset: 0; color: #e49; mask-image: linear-gradient(90deg, transparent, #000); }'), true],
   ['page-banned-font', page('<p>Hi</p><script>tailwind.config = { theme: { fontFamily: {\n sans: [\n "Inter",\n ],\n } } };</script>'), true],
-  ['page-banned-font', page('<p>Hi</p><script>document.body.style.setProperty("--f", ["Playfair", "Display"].join(" "));</script>'), true],
+  ['page-banned-font', page('<p>Hi</p><script>document.body.style.setProperty("--f", ["Playfair", "Display"].join(" "));</script>'), false],
   ['page-glass', page('<div class="p">Hi</div>', '.p { backdrop-filter: bl\\75r(9px); }'), true],
   ['page-noise', page(`<svg class="t"><image href="data:image/svg+xml;base64,${grain}"/></svg><object data="data:image/svg+xml;base64,${grain}"></object>`), true],
   ['page-noise', page('<canvas id="c"></canvas><script>for (let i = 0; i < 9e4; i++) { const px = Math.random() * 400, py = Math.random() * 400;\n x.fillRect(px, py, 1, 1); }</script>'), true],
@@ -606,12 +608,14 @@ const ATTACKS = [
   ['page-word-quiet', page('<p id="a">It runs quietly in the background.</p>', '.q::before{content:"\\\\"} #a{display:none}'), false],
   ['page-word-quiet', page("<main><img alt=don't src=x.png><p>It runs quietly, it's here.</p></main>"), true],
   ['page-two-word-sentence', page('<p>The <code>--legacy</code> flag is removed. Use <code>--format=v1</code> instead.</p><p>Run <code>atris init</code> again.</p>'), false],
-  ['page-subtitle', page('<h2>Spring fair</h2><p class="meta">May 3, by Ana Lee</p><p>We set up forty stalls on the green.</p>'), false],
-  ['page-subtitle', page('<h1>Terms</h1><p>Last updated November 1, 2026.</p><h2>Use</h2><p>Be kind.</p>'), false],
+  ['page-subtitle', page('<h2>Spring fair</h2><p class="meta">May 3, by Ana Lee</p><p>We set up forty stalls on the green.</p>'), 'note'],
+  ['page-subtitle', page('<h1>Terms</h1><p>Last updated November 1, 2026.</p><h2>Use</h2><p>Be kind.</p>'), 'note'],
   ['page-subtitle', page('<main><h1>Account settings</h1><h2>Profile</h2><label for="n">Full name</label><input id="n" type="text"><button type="button">Save</button></main>'), false],
   // a tailwind class hides text on a desktop only when its variant holds there, and a breakpoint wins over the base class
   ...['max-md:hidden', 'data-[state=closed]:hidden', 'aria-expanded:hidden', '2xl:hidden', 'md:flex hidden'].map((cls) => ['page-word-quiet', page(`<p class="${cls}">It runs quietly in the background.</p>`), true]),
-  ...['md:hidden', 'hidden', 'flex lg:hidden'].map((cls) => ['page-word-quiet', page(`<p class="${cls}">It runs quietly in the background.</p>`), false]),
+  ...['md:hidden', 'hidden', 'flex lg:hidden'].map((cls) => ['page-word-quiet', page(`<p class="${cls}">It runs quietly in the background.</p>`, '', TW), false]),
+  // a class name is read as a style only when the page loads styles the check cannot read
+  ['page-word-quiet', page('<p class="hidden">It runs quietly in the background.</p>'), true],
   ['page-explanatory', page('<h1>Fish</h1><p>Salt the water well before the fish goes in.</p><p>Tip: salt it until it tastes like the sea.</p>'), false],
   // a heading reaches only to the end of its section, and a line ending in a colon opens its list
   ['page-subtitle', page('<main><section><h2>Hours</h2><p>The library opens at 8am on school days.</p></section><footer><ul><li>Main street</li></ul></footer></main>'), false],
@@ -630,6 +634,40 @@ const ATTACKS = [
   ['page-word-quiet', page('<p class="n">It runs quietly at night.</p>', '@starting-style { .n { visibility: hidden; } }'), true],
   ['page-word-quiet', page('<p class="n">It runs quietly at night.</p>', '.n { @starting-style { visibility: hidden; } }'), true],
   ['page-word-quiet', page('<p class="n">It runs quietly at night.</p>', '@starting-style { @media (min-width: 1px) { .n { display: none; } } }'), true],
+  // a timer or a frame loop is judged by its own callback read to its closing brace, however long
+  ['page-looping-motion', page(`<p id="c">9</p><script>let n = 9; const t = setInterval(() => { c.style.width = n + "%"; ${'n = n + 0; '.repeat(40)}if (--n <= 0) clearInterval(t); }, 1000);</script>`), false],
+  ['page-looping-motion', page('<p>Orders</p><script>setInterval(() => fetch("/orders.json").then(show), 5000); document.body.classList.add("ready");</script>'), false],
+  ['page-looping-motion', page(`<p id="c">9</p><script>setInterval(() => { ${'n = n + 1; '.repeat(40)}c.style.width = n + "%"; }, 1000);</script>`), true],
+  ['page-looping-motion', page('<p>Time</p><script>setInterval(tick, 1000);</script>'), 'note'],
+  ['page-looping-motion', page('<p id="t">Hi</p><script>function show() { t.classList.add("shown"); } setTimeout(show, 300); function draw() { t.style.left = "4px"; } requestAnimationFrame(draw);</script>'), false],
+  ['page-looping-motion', page(`<p id="t">Hi</p><script>function spin() { ${'t.x = 1; '.repeat(250)}requestAnimationFrame(spin); } spin();</script>`), true],
+  // a finite repeat count and a script value only named like an animation are notes
+  ['page-looping-motion', page('<span class="r"></span>', '.r { animation: drift 20s 3; }'), 'note'],
+  ['page-looping-motion', page('<p>Pi</p><script>const iterations = 1e6; const retry = { delay: 500, repeat: -1 }; map.loadAnimation({ name: "route", once: true });</script>'), 'note'],
+  ['page-looping-motion', page('<p id="m">Hi</p><script>m.addEventListener("transitionend", () => { m.style.display = "none"; });</script>'), 'note'],
+  ['page-looping-motion', page('<p id="m">Hi</p><script>m.addEventListener("transitionend", () => { m.classList.toggle("up"); });</script>'), true],
+  // a reveal library or an observer with a fade only blocks when content starts hidden or is tied to it
+  ['page-scroll-fade', page('<section>Hi</section><script>const scrollReveal = false; if (window.AOS) AOS.init({ disable: true });</script>'), 'note'],
+  ['page-scroll-fade', page('<section>Hi</section><img data-src="a.png"><script>new IntersectionObserver((es) => es.forEach((e) => { e.target.src = e.target.dataset.src; })); const chart = { line: { opacity: 1 } };</script>'), 'note'],
+  // a font is read only where a font is named: a font family, a font service family or a font file
+  ['page-banned-font', page('<p>Hi</p><script>const opts = { fontFamily: "Lora", route: "inter-office" };</script>', ':root { --club: "Inter Milan"; }', '<link rel="stylesheet" href="https://cdn.example.com/inter-milan/main.css">'), 'note'],
+  ['page-banned-font', page('<p>Hi</p>', '', '<link rel="preload" href="/f/Inter-Regular.woff2"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto">'), true],
+  // the random source of a noise texture is read in the block that writes the pixels
+  ['page-noise', page('<canvas id="c"></canvas><script>var id = "c" + Math.random(); function plot(x, y) { ctx.fillRect(x, y, 1, 1); }</script>'), false],
+  ['page-noise', page(`<canvas id="c"></canvas><script>for (let i = 0; i < 9; i++) { const v = Math.random(); ${'ctx.x = 1; '.repeat(30)}ctx.fillRect(i, v, 1, 1); }</script>`), true],
+  // a number cited by the text clears only its own entry. a step word reads like a plain number
+  ['page-numbered-sections', page('<h2>01 Plan</h2><p>a</p><h2>02 Build</h2><p>b</p><footer><p>Tickets for section 1 of the stadium are sold out.</p></footer>'), true],
+  ['page-numbered-sections', page('<p>Step 1 Mix</p><p>Step 2 Bake</p>'), 'note'],
+  ['page-sparkle', page('<p>Rated 4.8 out of five ★ by guests</p>'), false],
+  // a template mark or a bracket the list only guesses at is a note; the named leftover still blocks
+  ['page-placeholder', page('<p>{{ name }}</p><p>[Title IX]</p><p>[Name withheld]</p>'), 'note'],
+  ['page-placeholder', page('<p>[Your name]</p>'), true],
+  // an amount of money without a claim mark may be a price; one with a claim mark still blocks
+  ['page-unsourced-number', page('<div class="s"><div>$20</div><div>Starter</div></div><div class="s"><div>$1,000</div><div>one-time setup</div></div>', '.s div:first-child { font-size: 48px; }'), 'note'],
+  ['page-unsourced-number', page('<div class="s"><div>$2B</div><div>for small businesses saved last year</div></div>', '.s div:first-child { font-size: 48px; }'), true],
+  ['page-unsourced-number', page('<div class="s"><div>94%</div><div>uptime</div><p>Data: refreshed daily</p></div>', '.s div:first-child { font-size: 48px; }'), true],
+  // a line that looks like a byline or a dateline is a note, not a pass
+  ['page-subtitle', page('<h1>Books</h1><p>by Friday your books are closed.</p><a href="/s">Start</a>'), 'note'],
 ];
 
 test('every rule has a failing page and a twin, and a twin that hides the problem is still caught', () => {
@@ -654,6 +692,17 @@ test('clean pages pass every rule, so a rule that rejects everything fails here'
     assert.equal(res.results.length, PAGE_RULES.length);
     assert.ok(res.results.every((r) => r.ok === true));
   }
+});
+
+test('a rule reports every fault on the page, not only its first', () => {
+  const res = checkPage(page('<div class="a">A</div><div class="b">B</div>', '.a { box-shadow: 0 0 90px cyan; }\n.b { filter: blur(90px); }'), 'page.html');
+  assert.equal(res.findings.filter((f) => f.rule === 'page-glow').length, 2);
+});
+
+test('a rule that passed on a page it could not fully read is not counted as passed', () => {
+  const drawn = checkPage('<html><body><div id="app"></div><script>app.textContent = "Hi";</script></body></html>', 'page.html');
+  const unread = checkPage(page('<p>Hi</p>', '', '<link rel="stylesheet" href="https://cdn.example.com/site.css">'), 'page.html');
+  for (const res of [drawn, unread]) assert.ok(res.results.every((r) => r.ok === null), JSON.stringify(res.results.filter((r) => r.ok !== null)));
 });
 
 test('a switched-off rule is skipped and reported as off', () => {

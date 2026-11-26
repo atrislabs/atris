@@ -50,6 +50,18 @@ test('an interrupted check stops the browser it started and removes its profile'
   assert.deepEqual(fs.readdirSync(tmp).filter((f) => f.startsWith('atris-render-')), []);
 });
 
+test('the owner sets how long the browser may take. a browser past it is stopped with the setting named', { skip: process.platform === 'win32' ? 'the stand-in browser is a shell script' : false }, async () => {
+  const dir = temp('page-render-wait-');
+  const sleeper = path.join(dir, 'chrome');
+  fs.writeFileSync(sleeper, '#!/bin/sh\nsleep 60\n', { mode: 0o755 });
+  fs.mkdirSync(path.join(dir, '.atris'));
+  fs.writeFileSync(path.join(dir, '.atris', 'slop.rules.json'), JSON.stringify({ renderSeconds: 1.5 }));
+  const started = Date.now();
+  const r = await renderCheck(__filename, { widths: [1280], root: dir, env: { CHROME_PATH: sleeper } });
+  assert.ok(Date.now() - started < 10000);
+  assert.equal(r.reason, 'the browser did not finish within 1.5 seconds at 1280px. a slow machine can wait longer with "renderSeconds" in .atris/slop.rules.json');
+});
+
 test('reading a dumped page returns the measurements and the page without the probe', () => {
   const page = '<html><head><base data-atris-probe="" href="file:///p/"></head><body><main>Hi</main><script data-atris-probe="">probe()</script></body></html>';
   const json = JSON.stringify({ res: { vw: 390, overflow: [] }, dom: page }).replace(/</g, '\\u003c');
