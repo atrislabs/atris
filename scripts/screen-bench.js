@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Scorecard for the page rules (lib/page-rules.js) against a labelled bench folder:
+// Scorecard for the page rules (lib/page-rules/) against a labelled bench folder:
 // <dir>/pages/*.html and <dir>/labels.json (labels[page].tells[label] = { present, evidence, line }).
 // It prints what was caught and what may be a false alarm. Always exits 0: a scorecard, not a gate.
 //
