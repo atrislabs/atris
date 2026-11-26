@@ -116,7 +116,7 @@ class Fixture:
             try:
                 if self.http("/api/health", timeout=0.15)[0] == 200:
                     return
-            except (URLError, TimeoutError, ConnectionResetError):
+            except (URLError, TimeoutError, socket.timeout, ConnectionResetError):
                 pass
             time.sleep(.05)
         raise RuntimeError("scratch Swarlo did not become healthy")
