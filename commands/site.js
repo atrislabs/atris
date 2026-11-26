@@ -123,6 +123,7 @@ function looks(argv) {
 function buildPage(input, argv) {
   const L = lang();
   const root = process.cwd();
+  rulesNote(root);
   const file = path.resolve(input);
   const res = L.checkFile(file, { root, label: shown(file) });
   if (!res.ok) return report([res]);

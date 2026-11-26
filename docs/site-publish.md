@@ -54,7 +54,7 @@ A rules file that is there and cannot be read stops the upload in either mode, s
 .atris/slop.rules.json could not be read: <why>. nothing was uploaded: fix the file or remove it
 ```
 
-After an upload `atris site publish --json` carries the check in `page_check`: `mode` (`watch` or `block`), `ok`, `off` (the switched-off rules) and `files` (each failing page with its findings and the same words in `text`). A refused upload prints the refusal on stderr and no `page_check`.
+After an upload `atris site publish --json` carries the check in `page_check`: `mode` (`watch` or `block`), `ok`, `off` (the switched-off rules) and `files` (each failing page with its findings and the same words in `text`). A refused upload prints no `page_check`. Its refusal goes to stderr, or with `--json` to stdout as `{ "files": [...] }`. A rules file that cannot be read prints one line on stderr and nothing on stdout.
 
 ## File handling
 
@@ -201,7 +201,7 @@ The hosted-sites lane serves files only. These Next.js features are not supporte
 | `site home page is missing: index.html` | | No `index.html` in the published folder. | Add `index.html` or point at the correct build output. |
 | `site files exceed upload limits:` | | A file exceeds 2 MB or the folder has more than 200 pages. | Shrink or split assets; reduce page count. |
 | `page check in block mode: nothing was uploaded.` | | A page broke a page rule and the project is in block mode. | Fix each named line, check again with `atris site check <dir>`, then publish. |
-| `.atris/slop.rules.json could not be read: ...` | | The rules file in the folder the command runs in is not valid json or not a json object. | Fix the file or remove it, then publish again. |
+| `.atris/slop.rules.json could not be read: ...` | | The rules file in the folder the command runs in is not valid json, is not a json object, or holds a `pages` or `off` value that cannot be used. | Fix the file or remove it, then publish again. |
 
 ## Verification tip
 

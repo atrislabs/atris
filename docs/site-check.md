@@ -29,7 +29,7 @@ A page a script draws gets a note on its pass line. Without `--render` the note 
 When `--render` is asked and the browser cannot run, the pass line ends with `the browser rules did not run` and a second line gives the reason: `the browser check did not run on page.html: <reason>`. The command exits 1. The reasons are:
 
 - No browser was found. Install one or set `CHROME_PATH`.
-- The browser stopped with an error and printed nothing: `the browser <path> stopped with code <n> and printed nothing. check CHROME_PATH`, or `stopped with signal <name>` when something killed it.
+- The browser stopped and printed nothing: `the browser <path> stopped with code <n> and printed nothing. check CHROME_PATH`, or `stopped with signal <name>` when something killed it.
 - The page did not finish loading in time at one width.
 
 `--json` prints each file with `ok`, `results`, `findings`, `off`, `notChecked`, `rendered` and the same words in `text`. `rendered` is true only when the browser rules ran. `reason` is there when `--render` was asked and the browser did not run.
@@ -42,13 +42,13 @@ A project switches one page rule off with `{ "off": ["page-glow"] }` in `.atris/
 
 ## A rules file that cannot be read
 
-When `.atris/slop.rules.json` is there and is not valid json, or does not hold a json object, every site command names it on stderr:
+When `.atris/slop.rules.json` is there and is not valid json, or does not hold a json object, every site command names it on stderr. The same goes for a `pages` value that is neither `"block"` nor `"watch"` and an `off` that is not a list. A plain list, the form `atris slop rules --add` writes, is fine and means watch mode.
 
 ```
 .atris/slop.rules.json could not be read: <why>
 ```
 
-`site check` still checks the pages. `site check --mode` prints only that line and exits 1. `site rules` says the project's mode is unknown until the file can be read. In `--json` its `mode` is `unknown`. Publish and deploy upload nothing. See [site-publish.md](site-publish.md#page-check).
+`site check` still checks the pages. `site check --mode` prints only that line and exits 1. `site rules` says the project's mode is unknown until the file can be read. In `--json` its `mode` is `unknown`. Publish and deploy upload nothing. See [site-publish.md](site-publish.md#page-check). New pages do not land either until the file reads. A rule id in `off` that matches no rule is dropped without a word.
 
 ## Content pages
 

@@ -124,7 +124,7 @@ test('in block mode publish and deploy upload nothing unless every page passes',
   const refusals = [
     [folder('site-bad', { 'index.html': BAD }), /refused site-bad\/index\.html/],
     [folder('site-edited', { 'index.html': plain.replace('every week', 'each week') }), /edited after it was built\. rebuild it from the content page\./],
-    [folder('site-look', { 'index.html': compilePage(GOOD, { look: 'paper', lookCss: 'body{font-family:Georgia,serif}' }) }), /look paper has no pick on record\. only the owner picks a look\./],
+    [folder('site-look', { 'index.html': compilePage(GOOD, { look: 'paper', lookCss: 'body{font-family:Georgia,serif}' }) }), /look paper has no pick on record in this folder\. only the owner picks a look\./],
   ];
   for (const [dir, said] of refusals) {
     const err = [];
@@ -308,7 +308,7 @@ test('a page built in a picked look passes the upload check from the folder wher
 
 test('a rules file that cannot be read is named and the upload is refused', async () => {
   const before = uploads;
-  folder('broken', { '.atris/slop.rules.json': '{ "pages": "block", }', 'index.html': compilePage(GOOD) });
+  folder('broken', { '.atris/slop.rules.json': '{ "pages": "block", }', 'index.html': compilePage(GOOD), 'good.html': GOOD });
   process.chdir(path.join(root, 'broken'));
   try {
     const said = /^\.atris\/slop\.rules\.json could not be read: /m;
@@ -316,10 +316,23 @@ test('a rules file that cannot be read is named and the upload is refused', asyn
     assert.strictEqual(res.code, 0);
     assert.match(res.err, said);
     assert.match((await cli(['rules'])).err, said);
+    const mode = await cli(['check', '--mode']);
+    assert.deepStrictEqual([mode.code, mode.out], [1, '']);
+    assert.match((await cli(['good.html', '--out', 'dist'])).err, said);
     const err = [];
     assert.strictEqual(await upload(['.', '--slug', 'demo'], { error: (s) => err.push(s) }), 1);
     assert.match(err.join('\n'), said);
     assert.strictEqual(await deploy.run(['.', '--name', 'demo', '--dry-run'], quiet), 1);
+    // a setting that parses and means nothing is named the same way, system error names keep their case
+    for (const [text, why] of [['{ "pages": "blocked" }', /pages is neither "block" nor "watch"/], ['{ "off": "page-subtitle" }', /off is not a list of rule ids/]]) {
+      fs.writeFileSync(path.join(root, 'broken', '.atris', 'slop.rules.json'), text);
+      const named = await cli(['check', '--mode']);
+      assert.strictEqual(named.code, 1);
+      assert.match(named.err, why);
+    }
+    fs.rmSync(path.join(root, 'broken', '.atris', 'slop.rules.json'));
+    fs.mkdirSync(path.join(root, 'broken', '.atris', 'slop.rules.json'));
+    assert.match((await cli(['check', '--mode'])).err, /could not be read: EISDIR/);
   } finally { process.chdir(root); }
   assert.strictEqual(uploads, before);
 });

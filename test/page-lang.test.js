@@ -148,6 +148,10 @@ test('the landing gate holds a new page to every rule and leaves an edited old p
   assert.strictEqual(res.reason, 'slop_gate');
   assert.ok(res.offenders.includes('new.html:3 lang-tags'), res.offenders.join(', '));
   assert.ok(!res.offenders.some((o) => o.startsWith('old.html')), res.offenders.join(', '));
+  // a rules file with a typo holds the same way: the owner's choice is unknown
+  fs.writeFileSync(path.join(repo, '.atris', 'slop.rules.json'), '{ "pages": "block", }\n');
+  assert.strictEqual(candidatePolicyGate(task).reason, 'slop_gate');
+  fs.writeFileSync(path.join(repo, '.atris', 'slop.rules.json'), '{ "pages": "block" }\n');
   // a moved page, a template partial and an ignored file in a named folder are not new pages
   git('commit', '-qm', 'new');
   git('checkout', '-qb', 'move', 'master');
