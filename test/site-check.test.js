@@ -93,18 +93,18 @@ test('rules prints every rule the check enforces', async () => {
 });
 
 test('only a person at a terminal can pick a look', async () => {
-  folder('atris/looks', { 'paper.css': 'body{font-family:Georgia,serif}' });
-  const res = await cli(['look', 'pick', 'paper']);
+  folder('atris/looks', { 'serif.css': 'body{font-family:Georgia,serif}' });
+  const res = await cli(['look', 'pick', 'serif']);
   assert.strictEqual(res.code, 1);
   assert.ok(!fs.existsSync(path.join(root, 'atris', 'looks', 'picked.json')));
-  assert.match((await cli(['look'])).out, /paper: not picked/);
+  assert.match((await cli(['look'])).out, /serif: not picked/);
   assert.doesNotMatch((await cli(['--help'])).out, /site looks/);
 });
 
 test('a content page builds to index.html in a look', async () => {
-  const res = await cli(['pages/good.html', '--look', 'paper', '--out', 'built']);
+  const res = await cli(['pages/good.html', '--look', 'serif', '--out', 'built']);
   assert.strictEqual(res.code, 0);
-  assert.match(fs.readFileSync(path.join(root, 'built', 'index.html'), 'utf8'), /<meta name="atris-page" content="paper sha256:/);
+  assert.match(fs.readFileSync(path.join(root, 'built', 'index.html'), 'utf8'), /<meta name="atris-page" content="serif sha256:/);
   assert.strictEqual((await cli(['pages/bad.html', '--out', 'built2'])).code, 1);
   assert.ok(!fs.existsSync(path.join(root, 'built2')));
 });
@@ -121,6 +121,13 @@ test('in watch mode publish says what would fail and uploads as before', async (
   assert.strictEqual(await deploy.run([dir, '--name', 'demo', '--dry-run'], quiet), 0);
 });
 
+test('a fullstack deploy says its page check read only the html in the folder before the server build', async () => {
+  const dir = folder('site-server', { 'package.json': '{ "scripts": { "start": "node server.js" } }' });
+  const out = [];
+  assert.strictEqual(await deploy.run([dir, '--fullstack', '--name', 'demo', '--dry-run'], { ...quiet, log: (s) => out.push(s) }), 0);
+  assert.match(out.join('\n'), /^page check read 0 html files in the folder\. pages the server builds or draws were not checked$/m);
+});
+
 test('in block mode publish and deploy upload nothing unless every page passes', () => blocking(async () => {
   const before = uploads;
   const plain = compilePage(GOOD);
@@ -128,7 +135,7 @@ test('in block mode publish and deploy upload nothing unless every page passes',
     [folder('site-bad', { 'index.html': BAD }), /refused site-bad\/index\.html/],
     [folder('site-edited', { 'index.html': plain.replace('every week', 'each week') }), /edited after it was built\. rebuild it from the content page\./],
     [folder('site-head', { 'index.html': plain.replace('</head>', '<style>p{color:red}</style>\n</head>') }), /edited after it was built/],
-    [folder('site-look', { 'index.html': compilePage(GOOD, { look: 'paper', lookCss: 'body{font-family:Georgia,serif}' }) }), /look paper has no pick on record in this folder\. only the owner picks a look\./],
+    [folder('site-look', { 'index.html': compilePage(GOOD, { look: 'serif', lookCss: 'body{font-family:Georgia,serif}' }) }), /look serif has no pick on record in this folder\. only the owner picks a look\./],
   ];
   for (const [dir, said] of refusals) {
     const err = [];
@@ -144,7 +151,7 @@ test('in block mode publish and deploy upload nothing unless every page passes',
   fs.symlinkSync(path.join(root, 'site-bad', 'index.html'), path.join(root, 'site-clean', 'link.html'));
   assert.strictEqual(await upload(['site-clean', '--slug', 'demo']), 0);
   assert.strictEqual(uploads, before + 1);
-  recordPick(root, 'paper');
+  recordPick(root, 'serif');
   assert.strictEqual(await upload(['site-look', '--slug', 'demo']), 0);
   assert.strictEqual(uploads, before + 2);
 }));
@@ -308,11 +315,11 @@ test('check and build agree on a switched-off rule from any folder', async () =>
 });
 
 test('a page built in a picked look passes the upload check from the folder where it was picked and built', async () => {
-  folder('picked', { '.atris/slop.rules.json': '{ "pages": "block" }', 'web/page.html': GOOD, 'web/atris/looks/paper.css': 'body{font-family:Georgia,serif}' });
+  folder('picked', { '.atris/slop.rules.json': '{ "pages": "block" }', 'web/page.html': GOOD, 'web/atris/looks/serif.css': 'body{font-family:Georgia,serif}' });
   process.chdir(path.join(root, 'picked', 'web'));
   try {
-    recordPick(process.cwd(), 'paper');
-    assert.strictEqual((await cli(['page.html', '--look', 'paper', '--out', 'dist'])).code, 0);
+    recordPick(process.cwd(), 'serif');
+    assert.strictEqual((await cli(['page.html', '--look', 'serif', '--out', 'dist'])).code, 0);
     const err = [];
     assert.strictEqual(await deploy.run(['dist', '--name', 'demo', '--dry-run'], { ...quiet, error: (s) => err.push(s) }), 0);
     assert.strictEqual(err.join('\n'), '');

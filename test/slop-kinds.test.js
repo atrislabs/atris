@@ -172,3 +172,24 @@ test('slop help names the kinds', () => {
   try { slopCommand(['help']); } finally { console.log = orig; }
   assert.match(lines.join('\n'), /--kind email/);
 });
+
+test('an html page under the screen kind names what was not read and which rules are off', () => {
+  const dir = tmpDir('slop-screen-page-');
+  fs.mkdirSync(path.join(dir, '.atris'));
+  fs.writeFileSync(path.join(dir, '.atris', 'slop.rules.json'), '{ "off": ["page-subtitle"] }');
+  fs.writeFileSync(path.join(dir, 'drawn.html'), '<html><body><div id="app"></div><script>app.textContent = "Hi";</script></body></html>\n');
+  const plain = run(['detect', '--kind', 'screen', 'drawn.html'], '', dir);
+  assert.equal(plain.status, 0, plain.stdout + plain.stderr);
+  assert.match(plain.stdout, /drawn\.html: not checked: a script draws this page/);
+  assert.match(plain.stdout, /switched off in \.atris\/slop\.rules\.json: page-subtitle/);
+  const json = JSON.parse(run(['detect', '--kind', 'screen', 'drawn.html', '--json'], '', dir).stdout);
+  assert.deepEqual(json.off, ['page-subtitle']);
+  assert.equal(json.not_checked[0].file, 'drawn.html');
+});
+
+test('the screen rule list marks the rules html pages skip and points html pages at atris site rules', () => {
+  const list = run(['rules', '--kind', 'screen'], '', tmpDir('slop-screen-rules-')).stdout;
+  assert.match(list, /screen-subtitle.*not run on \.html/);
+  assert.doesNotMatch(list, /screen-raw-colour.*not run on \.html/);
+  assert.match(list, /html pages: atris site rules lists the page rules/);
+});

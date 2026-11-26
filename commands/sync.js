@@ -4,8 +4,7 @@ const path = require('path');
 const { stateHome } = require('../lib/state-home');
 const { ensureWikiScaffold } = require('../lib/wiki');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
-const { openingLinesForRoot, upsertAgentsOpeningLines } = require('../lib/opening-lines');
-const { screensRulesForRoot, upsertScreensAdapters } = require('../lib/screens-card');
+const { openingLinesForRoot, upsertAgentsOpeningLines, screensRulesForRoot, upsertScreensAdapters } = require('../lib/opening-lines');
 const { ensureRunIgnore } = require('../lib/gitignore');
 const {
   upsertAgentVoiceCard,

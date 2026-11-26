@@ -50,7 +50,7 @@ A note never fails a page. The check exits 0, `ok` stays true and publish, deplo
 
 ## The rule list
 
-`atris site rules` prints every rule in force, grouped, with the order of work and the upload mode. It lists 7 content page rules, 25 page rules in three groups and 7 browser rules that only run with `--render`. `--json` gives the same list as `grammar`, `page`, `browser`, `mode` and `off`. Read the list there. This page does not copy it.
+`atris site rules` prints every rule in force, grouped, with the order of work (the `## screens` bullets of atris.md) and the upload mode. It lists 7 content page rules, 25 page rules in three groups and 7 browser rules that only run with `--render`. `--json` gives the same list as `grammar`, `page`, `browser`, `mode` and `off`. Read the list there. This page does not copy it.
 
 A project switches one page rule off with `{ "off": ["page-glow"] }` in `.atris/slop.rules.json`. A switched-off rule is still named: on a passing check (`switched off in .atris/slop.rules.json: page-glow`), on a passing upload, in the upload's `page_check` field and in `site rules`, as text and in `off` in `--json`.
 
@@ -70,9 +70,11 @@ A content page is plain html that starts at `<main>`, with no class, style or sc
 
 `atris site <page.html> --look <name> --out <dir>` checks the page and then writes `<dir>/index.html` in that look. `plain` is built in. Other looks live at `atris/looks/<name>.css` and only the owner picks one, at a terminal, with `atris site look pick <name>`. `atris site look` lists the looks and which are picked.
 
+A theme (`--theme`) colours a markdown site. A look (`--look`) is the owner's stylesheet for a content page. No look may take a built-in theme's name. `--look paper` is refused.
+
 ## Before upload
 
-`atris site publish` and `atris site deploy` run the same check on every html page after any build. See [site-publish.md](site-publish.md#page-check) for watch and block mode.
+`atris site publish` runs the same check on every html page after any build. `atris site deploy` runs it on the html pages in the folder. `--fullstack` reads only the html already in the folder and says so, since the server builds its pages after the upload. See [site-publish.md](site-publish.md#page-check) for watch and block mode.
 
 ## Where the rules live
 
@@ -81,6 +83,7 @@ A content page is plain html that starts at `<main>`, with no class, style or sc
 - `lib/page-lang.js` holds the content page grammar, looks, `checkFile` and the upload check.
 - `lib/page-render.js` holds the browser rules and the `--render` run.
 - `commands/site.js` holds `site check` and `site rules`.
+- `atris slop detect --kind screen` hands each html page to the same check and prints what it did not read and which rules are off. `atris slop rules --kind screen` marks the rules html pages skip.
 
 ## Adding a rule
 

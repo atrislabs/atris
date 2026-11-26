@@ -717,12 +717,21 @@ test('a switched-off rule is skipped and reported as off', () => {
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('the screen kind runs page rules on html once, and keeps the old rules elsewhere', () => {
+test('the screen kind gives an html page the site check verdict, and keeps the old rules elsewhere', () => {
   const html = page('<h1>Leads</h1><p class="subtitle">Everything you need in one place</p>');
   const rules = scanText(html, 'page.html', 'screen').findings.map((f) => f.rule);
   assert.ok(rules.includes('page-subtitle'));
   assert.ok(!rules.includes('screen-subtitle'));
+  const content = '<main><h1>Leads</h1><p class="lead" onclick="go()">Maria Lopez</p></main>';
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-screen-kind-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'c.html'), content);
+    const site = require('../lib/page-lang').checkFile(path.join(dir, 'c.html'), { root: dir, label: 'c.html' });
+    assert.deepEqual(scanText(content, 'c.html', 'screen', { root: dir }).findings.map((f) => f.rule), site.findings.map((f) => f.rule));
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  assert.deepEqual(scanText('<html><body><div id="app"></div><script>app.textContent = "Hi";</script></body></html>', 'd.html', 'screen').notChecked.length, 1);
   assert.ok(scanText('<Header title="Leads" subtitle="Everything you need in one place" />', 'Page.tsx', 'screen').findings.some((f) => f.rule === 'screen-subtitle'));
+  assert.deepEqual(scanText('<input placeholder="Jane Doe" />', 'Page.jsx', 'screen').findings.filter((f) => f.level === 'error'), []);
   const groups = ruleSheet();
   assert.deepEqual(Object.keys(groups).sort(), ['look', 'shape', 'words']);
 });

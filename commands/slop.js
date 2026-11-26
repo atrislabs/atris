@@ -21,7 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const escapeRegExp = require('../lib/escape-regexp');
-const { KINDS, rulesForKind, scanText, walkKind } = require('../lib/slop-kinds');
+const { KINDS, PAGE_REPLACES, rulesForKind, scanText, walkKind } = require('../lib/slop-kinds');
 
 const SCAN_EXTS = new Set(['.css', '.scss', '.sass', '.less', '.tsx', '.jsx', '.ts', '.js', '.mjs', '.html', '.vue', '.svelte', '.astro',
   '.md', '.mdx', '.txt']); // prose too: the voice doctrine (em-dash, hype-copy) is enforceable, not just advice
@@ -359,10 +359,15 @@ function detectKind(argv, kind) {
   }
   const findings = [];
   const components = {};
+  // an html page gets the atris site check verdict, so it also says what that check did not read
+  const notChecked = [];
+  const off = new Set();
   for (const doc of docs) {
     const res = scanText(doc.text, doc.label, kind, { subject });
     findings.push(...res.findings);
     if (res.components) components[doc.label] = res.components;
+    if (res.notChecked && res.notChecked.length) notChecked.push({ file: doc.label, lines: res.notChecked });
+    for (const id of res.off || []) off.add(id);
   }
   const errors = findings.filter((f) => f.level === 'error').length;
   const warnings = findings.length - errors;
@@ -370,7 +375,7 @@ function detectKind(argv, kind) {
   if (json) {
     console.log(JSON.stringify({
       ok: errors === 0, kind, scanned: docs.length, errors, warnings, findings,
-      ...(kind === 'screen' ? { components } : {}),
+      ...(kind === 'screen' ? { components, not_checked: notChecked, off: [...off] } : {}),
     }, null, 2));
     return code;
   }
@@ -383,6 +388,9 @@ function detectKind(argv, kind) {
   }
   if (errors) console.log(`\n  ${errors} error${errors === 1 ? '' : 's'}${warnings ? `, ${warnings} warning${warnings === 1 ? '' : 's'}` : ''} as ${kind} · exit 1\n`);
   else console.log(`\n  ✓ ${kind}: no errors in ${docs.length} file${docs.length === 1 ? '' : 's'}${warnings ? ` (${warnings} warning${warnings === 1 ? '' : 's'})` : ''} · exit 0\n`);
+  for (const n of notChecked) console.log(`  ${n.file}: not checked: ${n.lines.join('; ')}`);
+  if (off.size) console.log(`  switched off in .atris/slop.rules.json: ${[...off].join(', ')}`);
+  if (kind === 'screen' && docs.some((d) => /\.html?$/i.test(d.label))) console.log('  html pages: the browser rules did not run. atris site check <file> --render runs them');
   return code;
 }
 
@@ -722,8 +730,10 @@ function slopCommand(argv) {
     if (kind) {
       const list = rulesForKind(kind);
       console.log(`\n  atris slop, rules for --kind ${kind}:\n`);
-      for (const r of list) console.log(`  ${ICON[r.level]} ${r.id.padEnd(26)} ${r.why}${r.project ? '  (project)' : ''}`);
-      console.log(`\n  ${list.length} rule${list.length === 1 ? '' : 's'}; each says where it came from with --json on detect\n`);
+      for (const r of list) console.log(`  ${ICON[r.level]} ${r.id.padEnd(26)} ${r.why}${r.project ? '  (project)' : ''}${PAGE_REPLACES.has(r.id) ? '  (not run on .html)' : ''}`);
+      console.log(`\n  ${list.length} rule${list.length === 1 ? '' : 's'}; each says where it came from with --json on detect`);
+      if (kind === 'screen') console.log('  html pages: atris site rules lists the page rules');
+      console.log('');
       return 0;
     }
     const project = loadProjectRules();
@@ -750,7 +760,7 @@ function slopCommand(argv) {
   Kinds: precise rules for what customers read
     atris slop detect --kind customer-copy <paths|->   no AI, agent or automate, no em dash, no hype
     atris slop detect --kind email <file|-> [--subject "..."]   Hey <Name>, one question, 75 words, no sign-off
-    atris slop detect --kind screen <paths>   no subtitle or explanatory text, no all caps, no left bars
+    atris slop detect --kind screen <paths>   no subtitle or explanatory text, no all caps, no left bars; html pages get the atris site check rules
     atris slop rules --kind <kind>            list a kind's rules
     atris slop rules --add <id> <pattern> <why> --kind <kind> [--said "<his words, date>"]
   An email file starts with "Subject: ..." then the body. Errors exit 1, warnings do not.

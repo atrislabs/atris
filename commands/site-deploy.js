@@ -835,7 +835,10 @@ async function run(argv, deps = {}) {
       errorLog(`  ${error.message}`);
       return 2;
     }
-    if (checkPages()) return 1;
+    // render builds the server after the push, so only the html already in the folder is read here
+    const files = require('../lib/page-lang').htmlFilesIn(root);
+    if (checkPages(files)) return 1;
+    log(`page check read ${files.length} html file${files.length === 1 ? '' : 's'} in the folder. pages the server builds or draws were not checked`);
     if (options.dryRun) {
       printFullstackPlan(options.name, packagePlan, log);
       return 0;

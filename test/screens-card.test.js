@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { extractScreensRules, screensRulesForRoot, upsertScreensAdapters } = require('../lib/screens-card');
+const { extractScreensRules, screensRulesForRoot, upsertScreensAdapters } = require('../lib/opening-lines');
 
 const repoRoot = path.join(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -22,11 +22,11 @@ test('init puts the six screen rules in every start-up file and a rerun adds not
     });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(bullets.length, 6);
-    for (const rel of ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md', '.cursorrules', '.cursor/rules/atris-screens.mdc']) {
+    for (const rel of ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md', '.cursorrules']) {
       const content = fs.readFileSync(path.join(dir, rel), 'utf8');
       for (const bullet of bullets) assert.ok(content.includes(bullet), `${rel} is missing: ${bullet}`);
     }
-    assert.match(fs.readFileSync(path.join(dir, '.cursor/rules/atris-screens.mdc'), 'utf8'), /^---\nalwaysApply: true\n---/);
+    assert.equal(fs.existsSync(path.join(dir, '.cursor/rules/atris-screens.mdc')), false);
     assert.deepEqual(upsertScreensAdapters(dir, screensRulesForRoot(dir)), []);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

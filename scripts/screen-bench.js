@@ -48,7 +48,8 @@ function score(dir) {
       } else absent.add(rule);
     }
     for (const f of res.findings) if (absent.has(f.rule) && !present.has(f.rule)) alarms.push({ page: name, line: f.line, rule: f.rule, text: f.text });
-    if (present.size) { withTell++; if (res.findings.length) caught++; }
+    // a page counts as caught only when a rule for one of its labelled tells fired
+    if (present.size) { withTell++; if ([...present].some((r) => fired.has(r))) caught++; }
     pages.push({ page: name, findings: res.findings.length, rules: [...fired] });
   }
   return { dir, pages: { caught, withTell }, rules: perRule, alarms, perPage: pages };

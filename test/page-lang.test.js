@@ -53,14 +53,18 @@ test('a built page must still be what was built, in plain or a picked look', () 
   assert.strictEqual(builtProblems(plain.replace('<style>', '<style>p{color:#333}'), root)[0].rule, 'built-edited');
   fs.mkdirSync(path.join(root, 'atris', 'looks'), { recursive: true });
   const css = 'body{font-family:Georgia,serif}';
+  fs.writeFileSync(path.join(root, 'atris', 'looks', 'serif.css'), css);
+  const serif = compilePage(content, { look: 'serif', lookCss: css });
+  assert.strictEqual(builtProblems(serif, root)[0].rule, 'built-look-unpicked');
+  recordPick(root, 'serif');
+  assert.deepStrictEqual(builtProblems(serif, root), []);
+  fs.writeFileSync(path.join(root, 'atris', 'looks', 'serif.css'), `${css}h1{font-size:3em}`);
+  recordPick(root, 'serif');
+  assert.strictEqual(builtProblems(serif, root)[0].rule, 'built-look-unpicked');
+  // a look never shares a name with a built-in theme, so --look and --theme never mean the same word
   fs.writeFileSync(path.join(root, 'atris', 'looks', 'paper.css'), css);
-  const paper = compilePage(content, { look: 'paper', lookCss: css });
-  assert.strictEqual(builtProblems(paper, root)[0].rule, 'built-look-unpicked');
-  recordPick(root, 'paper');
-  assert.deepStrictEqual(builtProblems(paper, root), []);
-  fs.writeFileSync(path.join(root, 'atris', 'looks', 'paper.css'), `${css}h1{font-size:3em}`);
-  recordPick(root, 'paper');
-  assert.strictEqual(builtProblems(paper, root)[0].rule, 'built-look-unpicked');
+  assert.throws(() => recordPick(root, 'paper'), /^Error: paper is the name of a built-in theme/);
+  fs.rmSync(path.join(root, 'atris', 'looks', 'paper.css'));
   assert.deepStrictEqual(lookSelectorProblems('main > h1, a[href^="http"], p:first-child{x:y}'), []);
   assert.strictEqual(lookSelectorProblems('.hero{x:y}\n#top{x:y}').length, 2);
 });

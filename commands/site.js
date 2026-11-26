@@ -1,6 +1,7 @@
 // atris site, turn a folder of markdown (docs, your wiki, memory) into a
 // beautiful, navigable static site in the design system. Built on lib/site.js.
 // A content page (plain html starting at <main>) is checked and built in a look (lib/page-lang.js).
+// A theme colours a markdown site. A look is the owner's stylesheet for a content page.
 //
 //   atris site <dir|doc.md> [--out dist] [--theme atris|terminal|paper] [--title T] [--serve]
 //   atris site <page.html> [--look <name>] [--out dist]
@@ -71,19 +72,16 @@ function rules(argv) {
     console.log(JSON.stringify({ grammar: GRAMMAR.map((r) => ({ id: r.id, line: r.line })), page: sheet, browser: browser.map((r) => ({ id: r.id, line: r.why, needs: '--render' })), mode, off }, null, 2));
     return 0;
   }
+  // the order of work is the screens section of atris.md, the same copy every start-up file carries
+  const order = require('../lib/opening-lines').screensRulesForRoot(root);
   const out = [
-    'order of work',
-    '  write the content first as plain html, starting at <main>, with no class, style or script.',
-    '  run atris site check <file> until every page rule passes, then once more with --render before the page is done.',
-    '  a line marked for the reviewer is a note: a guess from words or names. it never fails a page. judge each one.',
-    '  build it in a few looks for the owner\'s board: atris site <file> --look <name> --out <dir>.',
-    '  never pick a look. only the owner picks one: atris site look pick <name>.',
-    '',
+    ...(order ? ['order of work, from the screens section of atris.md', ...order.split('\n').map((l) => `  ${l}`), ''] : []),
     'content page',
     ...GRAMMAR.map((r) => `  ${r.id}: ${r.line}`),
     '',
     'upload check',
-    '  publish and deploy check every html page after any build.',
+    '  publish checks every html page after any build. deploy checks the html pages in the folder before it uploads.',
+    '  deploy --fullstack reads only the html already in the folder. pages the server builds or draws are not checked.',
     '  watch mode, the default: they print what fails and upload anyway.',
     '  block mode: they upload nothing until every page passes. the landing gate holds new pages the same way.',
     unread ? '  this project\'s mode is unknown until .atris/slop.rules.json can be read.' : `  this project is in ${mode} mode.`,
@@ -178,12 +176,16 @@ async function run(argv) {
   A content page is plain html that starts at <main>. check runs every page rule on it
   and --render adds the browser rules. rules prints them all. building it writes
   <out>/index.html in a look.
+  A theme (--theme) colours a markdown site. A look (--look) is the owner's stylesheet
+  for a content page and never takes a theme's name.
   Looks live at atris/looks/<name>.css. Only the owner picks one, at a terminal.
 
   publish uploads any built web folder through the hosted-sites api. deploy is
   the older site setup flow; --fullstack deploys a node server with render.
-  Both check every html page in the folder after any build. In watch mode, the default,
-  they say what fails and upload anyway. In block mode they upload nothing if one fails.
+  publish checks every html page after any build. deploy checks the html pages in
+  the folder, and --fullstack does not check pages the server builds. In watch mode,
+  the default, they say what fails and upload anyway. In block mode they upload
+  nothing if one fails.
   atris site rules says how to turn block mode on.
 `);
     return input === 'help' || hasFlag(argv, '--help') ? 0 : 2;
