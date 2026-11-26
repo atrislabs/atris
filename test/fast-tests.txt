@@ -216,3 +216,4 @@ test/check-command.test.js
 test/check-select.test.js
 test/timestone-command.test.js
 test/page-rules.test.js
+test/page-render.test.js
