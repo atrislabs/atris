@@ -598,6 +598,14 @@ const ATTACKS = [
   ...['max-md:hidden', 'data-[state=closed]:hidden', 'aria-expanded:hidden', '2xl:hidden', 'md:flex hidden'].map((cls) => ['page-word-quiet', page(`<p class="${cls}">It runs quietly in the background.</p>`), true]),
   ...['md:hidden', 'hidden', 'flex lg:hidden'].map((cls) => ['page-word-quiet', page(`<p class="${cls}">It runs quietly in the background.</p>`), false]),
   ['page-explanatory', page('<h1>Fish</h1><p>Salt the water well before the fish goes in.</p><p>Tip: salt it until it tastes like the sea.</p>'), false],
+  // a heading reaches only to the end of its section, and a line ending in a colon opens its list
+  ['page-subtitle', page('<main><section><h2>Hours</h2><p>The library opens at 8am on school days.</p></section><footer><ul><li>Main street</li></ul></footer></main>'), false],
+  ['page-subtitle', page('<section><h1>Team</h1></section><section><p>Three bakers share the ovens and start the dough at four every morning.</p></section>'), false],
+  ['page-subtitle', page('<h2>Hours</h2><p>The shop opens on these days:</p><ul><li>Monday</li></ul>'), false],
+  ['page-subtitle', page('<h2>Hours</h2><p>The shop opens early.</p><ul><li>Monday</li></ul>'), true],
+  // product text quoted in <q> is not the page's own voice
+  ['page-two-word-sentence', page('<p>The coach answers each sentence with one nudge.</p><ul><li><q>Cut this.</q></li></ul>'), false],
+  ['page-word-real', page('<p>The coach answers each sentence with one nudge.</p><ul><li><q>Give a real example.</q></li></ul>'), false],
 ];
 
 test('every rule has a failing page and a twin, and a twin that hides the problem is still caught', () => {

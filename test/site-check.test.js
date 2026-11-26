@@ -44,14 +44,30 @@ test('check refuses a bad page line by line on stderr and passes a good one', as
   folder('pages', { 'bad.html': BAD, 'good.html': GOOD });
   const bad = await cli(['check', 'pages/bad.html']);
   assert.strictEqual(bad.code, 1);
-  assert.match(bad.err, /^refused pages\/bad\.html \(2 lines to fix\)\nline 4: /);
-  assert.match(bad.err, /line 6: a tag a content page does not use: "<div>"/);
+  assert.match(bad.err, /^refused pages\/bad\.html \(2 things to fix\)\nline 4: /);
+  assert.match(bad.err, /line 6: a tag not on the allowed list: "<div>"/);
   const good = await cli(['check', 'pages/good.html']);
   assert.deepStrictEqual([good.code, good.out], [0, 'ok pages/good.html: every rule passes']);
   const json = JSON.parse((await cli(['check', 'pages', '--json'])).out);
   assert.deepStrictEqual(json.files.map((f) => [f.file, f.kind, f.ok]), [['pages/bad.html', 'content', false], ['pages/good.html', 'content', true]]);
   // one call gives the data and the words a plain run prints
   assert.deepStrictEqual(json.files.map((f) => f.text), [bad.err, good.out]);
+});
+
+test('a markdown site of one short paragraph passes its own check', async () => {
+  folder('md', { 'team.md': '# Team\n\nThree bakers share the ovens and start the dough at four every morning.\n' });
+  for (const theme of ['atris', 'terminal', 'paper']) {
+    await cli(['md', '--out', `md-${theme}`, '--theme', theme]);
+    const res = await cli(['check', `md-${theme}`]);
+    assert.deepStrictEqual([theme, res.code, res.err], [theme, 0, '']);
+  }
+});
+
+test('a form refusal names the one thing that is wrong, and the count matches the list', async () => {
+  folder('forms', { 'hidden.html': '<main>\n<h1>Sign up</h1>\n<form>\n<label for="e">Email</label>\n<input id="e" type="email">\n<button>Join</button>\n<p role="alert" hidden>That email is taken.</p>\n</form>\n</main>\n' });
+  const res = await cli(['check', 'forms/hidden.html']);
+  assert.match(res.err, /^refused forms\/hidden\.html \(2 things to fix\)\n/);
+  assert.match(res.err, /line 3: a form whose failure words never show: "<form>"\. write what went wrong in an <output>, or in an element with role="alert"/);
 });
 
 test('check always says which rules the project switched off', async () => {
@@ -91,7 +107,7 @@ test('in watch mode publish says what would fail and uploads as before', async (
   const out = [], err = [];
   assert.strictEqual(await upload([dir, '--slug', 'demo', '--json'], { log: (s) => out.push(s), error: (s) => err.push(s) }), 0);
   assert.strictEqual(uploads, before + 1);
-  assert.match(err.join('\n'), /^page check in watch mode: the upload goes ahead\. in block mode these lines would stop it\.\nwould refuse site-watch\/index\.html \(2 lines to fix\)\nline 4: /);
+  assert.match(err.join('\n'), /^page check in watch mode: the upload goes ahead\. in block mode these lines would stop it\.\nwould refuse site-watch\/index\.html \(2 things to fix\)\nline 4: /);
   const json = JSON.parse(out.join('\n'));
   assert.deepStrictEqual([json.verified, json.page_check.mode, json.page_check.ok, json.page_check.files[0].file], [true, 'watch', false, 'site-watch/index.html']);
   assert.strictEqual(await deploy.run([dir, '--name', 'demo', '--dry-run'], quiet), 0);
