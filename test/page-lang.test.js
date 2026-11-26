@@ -150,7 +150,10 @@ test('the landing gate holds a new page to every rule and leaves an edited old p
   assert.ok(!res.offenders.some((o) => o.startsWith('old.html')), res.offenders.join(', '));
   // a rules file with a typo holds the same way: the owner's choice is unknown
   fs.writeFileSync(path.join(repo, '.atris', 'slop.rules.json'), '{ "pages": "block", }\n');
-  assert.strictEqual(candidatePolicyGate(task).reason, 'slop_gate');
+  const typo = candidatePolicyGate(task);
+  assert.strictEqual(typo.reason, 'slop_gate');
+  assert.ok(typo.next_action.startsWith('fix or remove .atris/slop.rules.json'), typo.next_action);
+  assert.ok(typo.gate.advisories.some((a) => a.reason === 'page_rules_unreadable' && a.file === '.atris/slop.rules.json' && /could not be read/.test(a.detail)));
   fs.writeFileSync(path.join(repo, '.atris', 'slop.rules.json'), '{ "pages": "block" }\n');
   // a moved page, a template partial and an ignored file in a named folder are not new pages
   git('commit', '-qm', 'new');
@@ -165,4 +168,14 @@ test('the landing gate holds a new page to every rule and leaves an edited old p
   const moved = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['moved.html', 'docs', 'card.component.html'] } });
   assert.strictEqual(moved.ok, true, (moved.offenders || []).join(', '));
   assert.ok(moved.gate.advisories.some((a) => a.reason === 'new_html_not_a_page' && a.file === 'card.component.html'));
+  // with no base branch to compare against the new page check cannot run: block mode holds and says so
+  git('commit', '-qm', 'move');
+  git('branch', '-m', 'master', 'trunk');
+  const noBase = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['new.html'] } });
+  assert.strictEqual(noBase.reason, 'new_page_check_not_run');
+  assert.ok(noBase.gate.advisories.some((a) => a.reason === 'new_page_check_not_run' && /base branch/.test(a.detail)));
+  fs.writeFileSync(path.join(repo, '.atris', 'slop.rules.json'), '{}\n');
+  const noBaseWatch = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['new.html'] } });
+  assert.strictEqual(noBaseWatch.ok, true);
+  assert.ok(noBaseWatch.gate.advisories.some((a) => a.reason === 'new_page_check_not_run'));
 });
