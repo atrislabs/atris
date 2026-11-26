@@ -43,7 +43,7 @@ ok page.html: every page rule passes. the browser rules did not run: atris site 
 page.html:7 for the reviewer: text about the page or a helper caption: "This page lists every draft". it may be fine: <why>.
 ```
 
-A note never fails a page. The check exits 0, `ok` stays true and publish, deploy and the landing gate go ahead in every mode. The count in `N things to fix` counts only the faults. They print before the notes. `site rules` marks each rule that only leaves notes and each rule with a part that does. The landing gate keeps the notes for a new page in `page_notes` on its record.
+A note never fails a page. The check exits 0, `ok` stays true and publish, deploy and the landing gate go ahead in every mode. The count in `N things to fix` counts only the faults. They print before the notes. `site rules` marks each rule that only leaves notes and each rule with a part that does. The landing gate keeps the notes for a new page in `page_notes` on its record. It reads every new html file, a piece of a page too. A new page it could not read in full is named in an advisory.
 
 ## The rule list
 

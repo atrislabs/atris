@@ -115,7 +115,7 @@ test('in watch mode publish says what would fail and uploads as before', async (
   const out = [], err = [];
   assert.strictEqual(await upload([dir, '--slug', 'demo', '--json'], { log: (s) => out.push(s), error: (s) => err.push(s) }), 0);
   assert.strictEqual(uploads, before + 1);
-  assert.match(err.join('\n'), /^page check in watch mode: the upload goes ahead\. in block mode these lines would stop it\.\nwould refuse site-watch\/index\.html \(2 things to fix\)\nline 4: /);
+  assert.match(err.join('\n'), /^page check in watch mode: these lines do not stop the upload\. in block mode each page marked would refuse stops it\.\nwould refuse site-watch\/index\.html \(2 things to fix\)\nline 4: /);
   const json = JSON.parse(out.join('\n'));
   assert.deepStrictEqual([json.verified, json.page_check.mode, json.page_check.ok, json.page_check.files[0].file], [true, 'watch', false, 'site-watch/index.html']);
   assert.strictEqual(await deploy.run([dir, '--name', 'demo', '--dry-run'], quiet), 0);
@@ -127,6 +127,7 @@ test('in block mode publish and deploy upload nothing unless every page passes',
   const refusals = [
     [folder('site-bad', { 'index.html': BAD }), /refused site-bad\/index\.html/],
     [folder('site-edited', { 'index.html': plain.replace('every week', 'each week') }), /edited after it was built\. rebuild it from the content page\./],
+    [folder('site-head', { 'index.html': plain.replace('</head>', '<style>p{color:red}</style>\n</head>') }), /edited after it was built/],
     [folder('site-look', { 'index.html': compilePage(GOOD, { look: 'paper', lookCss: 'body{font-family:Georgia,serif}' }) }), /look paper has no pick on record in this folder\. only the owner picks a look\./],
   ];
   for (const [dir, said] of refusals) {
@@ -139,6 +140,8 @@ test('in block mode publish and deploy upload nothing unless every page passes',
   }
   assert.strictEqual(uploads, before);
   folder('site-clean', { 'index.html': plain, 'node_modules/x.html': BAD });
+  // a linked page publish does not upload is not checked either
+  fs.symlinkSync(path.join(root, 'site-bad', 'index.html'), path.join(root, 'site-clean', 'link.html'));
   assert.strictEqual(await upload(['site-clean', '--slug', 'demo']), 0);
   assert.strictEqual(uploads, before + 1);
   recordPick(root, 'paper');
@@ -168,6 +171,13 @@ test('a page whose styles or words the check could not see never reads as every 
   assert.match(err.join('\n'), /line 1: a style sheet that is not in the folder: "css\/sty1es\.css"/);
   folder('spa', { 'index.html': raw('<script src="app.js"></script>', '<div id="root"></div>'), 'app.js': '' });
   assert.match((await cli(['check', 'spa'])).out, /not checked: a script draws this page/);
+  // a failing page beside it does not hide it, in the words or in the record
+  folder('spa', { 'bad.html': BAD });
+  const out = [];
+  err.length = 0;
+  assert.strictEqual(await upload(['spa', '--slug', 'demo', '--json'], { log: (s) => out.push(s), error: (s) => err.push(s) }), 0);
+  assert.match(err.join('\n'), /spa\/index\.html: not checked: a script draws this page/);
+  assert.deepStrictEqual(JSON.parse(out.join('\n')).page_check.not_checked.map((n) => n.file), ['spa/index.html']);
 });
 
 test('a site atris builds from clean markdown passes the upload check in every theme', async () => {
@@ -283,7 +293,7 @@ test('a passing upload still names the rules the project switched off, on screen
   const code = await withRules({ pages: 'block', off: ['page-subtitle'] }, () => upload([dir, '--slug', 'demo', '--json'], { log: (s) => out.push(s), error: (s) => err.push(s) }));
   assert.deepStrictEqual([code, uploads], [0, before + 1]);
   assert.strictEqual(err.join('\n'), 'page check in block mode: switched off in .atris/slop.rules.json: page-subtitle');
-  assert.deepStrictEqual(JSON.parse(out.join('\n')).page_check, { mode: 'block', ok: true, off: ['page-subtitle'], files: [] });
+  assert.deepStrictEqual(JSON.parse(out.join('\n')).page_check, { mode: 'block', ok: true, off: ['page-subtitle'], files: [], not_checked: [] });
 });
 
 // Every site command reads the rules file, the look picks and the build from the folder it runs in.
@@ -395,7 +405,7 @@ test('a page with only notes for the reviewer passes check, the upload check and
   const built = folder('noted-site', { 'index.html': compilePage(NOTED) });
   assert.strictEqual(await upload([built, '--slug', 'demo']), 0);
   assert.strictEqual(uploads, before + 1);
-  // the landing gate lands a new page with only notes and reads template marks from the page, not its raw text
+  // the landing gate lands a new page with only notes and holds one that fails
   const { spawnSync } = require('child_process');
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-note-gate-'));
   try {
@@ -414,21 +424,11 @@ test('a page with only notes for the reviewer passes check, the upload check and
     const shown = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['docs.html'] } });
     assert.strictEqual(shown.reason, 'slop_gate');
     assert.ok(shown.offenders.some((o) => /^docs\.html:\d+ lang-tags$/.test(o)), shown.offenders.join(', '));
-    // braces written as entities, or shown in kbd, are words on a whole page: the page rules run on them
-    const QUIET = '<p>Type the name where it goes and the room stays quiet for the hour.</p>';
-    fs.writeFileSync(path.join(repo, 'entity.html'), GOOD.replace('</section>', `${QUIET.replace('the name', '&#123;&#123; name &#125;&#125;')}\n</section>`));
-    fs.writeFileSync(path.join(repo, 'kbd.html'), GOOD.replace('</section>', `${QUIET.replace('the name', '<kbd>{{ name }}</kbd>')}\n</section>`));
-    fs.writeFileSync(path.join(repo, 'words.html'), GOOD.replace('</section>', `${QUIET.replace('the name', '{{ name }}')}\n</section>`));
+    // template marks in the words never switch the page rules off
+    fs.writeFileSync(path.join(repo, 'words.html'), GOOD.replace('</section>', '<p>Type {{ name }} where it goes and the room stays quiet for the hour.</p>\n</section>'));
     git('add', '.');
-    for (const file of ['entity.html', 'kbd.html']) {
-      const held = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: [file] } });
-      assert.strictEqual(held.reason, 'slop_gate', file);
-      assert.ok(held.offenders.some((o) => o.endsWith('page-word-quiet')), held.offenders.join(', '));
-    }
-    // marks in plain words cannot be told from a real template: it is skipped and the record says why
-    const skipped = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['words.html'] } });
-    assert.strictEqual(skipped.ok, true);
-    assert.ok(skipped.gate.advisories.some((a) => a.reason === 'new_html_not_a_page' && /template marks outside a code sample/.test(a.detail)));
+    const held = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['words.html'] } });
+    assert.ok(held.offenders.some((o) => o.endsWith('page-word-quiet')), (held.offenders || []).join(', '));
     // a broken rules file is named on a page that passes too
     fs.writeFileSync(path.join(repo, '.atris', 'slop.rules.json'), '{ "pages": "blok" }\n');
     const typo = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['new.html'] } });

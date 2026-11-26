@@ -35,13 +35,13 @@ atris site publish . --slug my-app --build --profile app
 
 ## Page check
 
-After any build and before anything is uploaded, publish checks every html page in the folder with the same rules as `atris site check` ([site-check.md](site-check.md)). Built pages are also held to the look they were built in: a page edited after its build, a look the owner never picked or a linked style sheet missing from the folder each count as a fault. `atris site deploy` runs the same check before its upload and before `--dry-run` prints its plan.
+After any build and before anything is uploaded, publish checks every html page it uploads with the same rules as `atris site check` ([site-check.md](site-check.md)). Built pages are also held to the look they were built in: a page edited after its build, a look the owner never picked or a linked style sheet missing from the folder each count as a fault. `atris site deploy` runs the same check before its upload and before `--dry-run` prints its plan.
 
 The project picks what a failing page does in `.atris/slop.rules.json`. `atris site rules` prints the mode in force. Its `--json` carries it as `mode`. Run publish and deploy from the project root: the rules file, the look picks and the build are read from the folder the command runs in. A rules file in a parent folder is not read.
 
-- **Watch** is the default. The check writes what would fail to stderr under `page check in watch mode: the upload goes ahead`. The upload goes on as before.
+- **Watch** is the default. The check writes what would fail to stderr under `page check in watch mode: these lines do not stop the upload. in block mode each page marked would refuse stops it.` The upload goes on as before.
 - **Block** is on with `"pages": "block"`. A failing page stops the upload: the check prints `refused <file>` with one line per fault, then `page check in block mode: nothing was uploaded.` and the command exits 1. `atris init` turns block mode on for a new project.
-- A note for the reviewer never stops an upload in either mode. A passing upload prints its notes on stderr. See [site-check.md](site-check.md#notes-for-the-reviewer).
+- A note for the reviewer never stops an upload in either mode. The notes on passing pages and each page the check could not read in full (`<file>: not checked: <what>`) print on stderr in every mode, beside any failing page. See [site-check.md](site-check.md#notes-for-the-reviewer).
 
 To switch one page rule off, list its id under `off`, like `{ "pages": "block", "off": ["page-glow"] }`. The content page grammar cannot be switched off. A passing upload still names every rule that is switched off, since a page may pass only because one is off:
 
@@ -55,7 +55,7 @@ A rules file that is there and cannot be read stops the upload in either mode, s
 .atris/slop.rules.json could not be read: <why>. nothing was uploaded: fix the file or remove it
 ```
 
-After an upload `atris site publish --json` carries the check in `page_check`: `mode` (`watch` or `block`), `ok`, `off` (the switched-off rules) and `files` (each failing page with its findings and the same words in `text`). A refused upload prints no `page_check`. Its refusal goes to stderr, or with `--json` to stdout as `{ "files": [...] }`. A rules file that cannot be read prints one line on stderr and nothing on stdout.
+After an upload `atris site publish --json` carries the check in `page_check`: `mode` (`watch` or `block`), `ok`, `off` (the switched-off rules), `files` (each failing page with its findings and the same words in `text`) and `not_checked` (each page the check could not read in full, as `file` and `lines`). `ok` says only that no rule failed. Read it with `not_checked`. A refused upload prints no `page_check`. Its refusal goes to stderr, or with `--json` to stdout as `{ "files": [...] }`. A rules file that cannot be read prints one line on stderr and nothing on stdout.
 
 ## File handling
 
@@ -120,7 +120,7 @@ preview url: <preview url>
 publish id: <publish id>
 ```
 
-With `--json`, it prints the full API response object (including `publish_id`, `previous_publish_id`, `slug`, `pages`, `verified` and `urls`) plus a `page_check` field: `{ "mode": "watch" | "block", "ok": true | false, "files": [...] }`, where each failing file has `file`, `findings` and the report lines in `text`. When block mode refuses a page, nothing is uploaded and `--json` prints the check report (`{ "files": [...] }`) instead.
+With `--json`, it prints the full API response object (including `publish_id`, `previous_publish_id`, `slug`, `pages`, `verified` and `urls`) plus a `page_check` field: `{ "mode": "watch" | "block", "ok": true | false, "off": [...], "files": [...], "not_checked": [...] }`, where each failing file has `file`, `findings` and the report lines in `text` and each page not read in full has `file` and `lines`. When block mode refuses a page, nothing is uploaded and `--json` prints the check report (`{ "files": [...] }`) instead.
 
 When `verified` is not `true`, the human output still shows `verified: no`. The CLI also writes `site is not live: verified no` to stderr.
 

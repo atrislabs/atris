@@ -155,7 +155,7 @@ test('the landing gate holds a new page to every rule and leaves an edited old p
   assert.ok(typo.next_action.startsWith('fix or remove .atris/slop.rules.json'), typo.next_action);
   assert.ok(typo.gate.advisories.some((a) => a.reason === 'page_rules_unreadable' && a.file === '.atris/slop.rules.json' && /could not be read/.test(a.detail)));
   fs.writeFileSync(path.join(repo, '.atris', 'slop.rules.json'), '{ "pages": "block" }\n');
-  // a moved page, a template partial and an ignored file in a named folder are not new pages
+  // a moved page and an ignored file in a named folder are not new pages. a stray file there is named
   git('commit', '-qm', 'new');
   git('checkout', '-qb', 'move', 'master');
   git('mv', 'old.html', 'moved.html');
@@ -163,11 +163,19 @@ test('the landing gate holds a new page to every rule and leaves an edited old p
   fs.writeFileSync(path.join(repo, '.gitignore'), 'docs/coverage/\n');
   fs.writeFileSync(path.join(repo, 'docs', 'coverage', 'index.html'), page(`<div>${PROSE}</div>`));
   fs.writeFileSync(path.join(repo, 'docs', 'readme.md'), 'Notes for the docs.\n');
-  fs.writeFileSync(path.join(repo, 'card.component.html'), '<div class="user">\n<span>{{ user.name }}</span>\n</div>\n');
   git('add', '.');
-  const moved = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['moved.html', 'docs', 'card.component.html'] } });
+  fs.writeFileSync(path.join(repo, 'docs', 'draft.html'), page(`<div>${PROSE}</div>`));
+  const moved = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['moved.html', 'docs'] } });
   assert.strictEqual(moved.ok, true, (moved.offenders || []).join(', '));
-  assert.ok(moved.gate.advisories.some((a) => a.reason === 'new_html_not_a_page' && a.file === 'card.component.html'));
+  assert.deepStrictEqual(moved.gate.advisories.filter((a) => a.reason === 'new_page_untracked_skipped').map((a) => a.detail), ['docs/draft.html']);
+  // a piece of a page gets the page rules, a tell both scans see is named once, and a page a script draws is named as not read
+  fs.writeFileSync(path.join(repo, 'card.html'), '<p>Each student stays quiet in the room for the hour.</p>\n');
+  fs.writeFileSync(path.join(repo, 'glass.html'), '<!doctype html><html lang="en"><head><style>\n.c{backdrop-filter:blur(10px)}\n</style></head><body><main><p class="c">Each student wrote a draft every week and the teacher read them.</p></main></body></html>\n');
+  fs.writeFileSync(path.join(repo, 'spa.html'), '<!doctype html><html lang="en"><head><script src="app.js"></script></head><body><div id="root"></div></body></html>\n');
+  git('add', 'card.html', 'glass.html', 'spa.html');
+  const piece = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['card.html', 'glass.html', 'spa.html'] } });
+  assert.deepStrictEqual(piece.offenders, ['card.html:1 page-word-quiet', 'glass.html:2 page-glass']);
+  assert.ok(piece.gate.advisories.some((a) => a.reason === 'new_page_not_read' && a.file === 'spa.html' && /a script draws this page/.test(a.detail)), JSON.stringify(piece.gate.advisories));
   // with no base branch to compare against the new page check cannot run: block mode holds and says so
   git('commit', '-qm', 'move');
   git('branch', '-m', 'master', 'trunk');
