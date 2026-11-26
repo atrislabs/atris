@@ -59,7 +59,7 @@ When `.atris/slop.rules.json` is there and is not valid json, or does not hold a
 .atris/slop.rules.json could not be read: <why>
 ```
 
-`site check` still checks the pages. `site rules` says the project's mode is unknown until the file can be read. In `--json` its `mode` is `unknown`. Publish and deploy upload nothing. See [site-publish.md](site-publish.md#page-check). New pages do not land either until the file reads. A rule id in `off` that matches no rule is dropped without a word.
+`site check` still checks the pages. `site rules` says the project's mode is unknown until the file can be read. In `--json` its `mode` is `unknown`. Publish and deploy upload nothing. See [site-publish.md](site-publish.md#page-check). A failing new page does not land until the file reads. A rule id in `off` that matches no rule is dropped without a word.
 
 ## Content pages
 

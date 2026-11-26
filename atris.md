@@ -116,7 +116,7 @@ What you ship should not read as generated. If someone would believe an AI made 
 
 ## screens
 
-Any page or screen a person will look at follows these. The check enforces them so read what it prints and fix every line.
+Any page or screen a person will look at follows these. The check enforces them so read what it prints, fix every must-fix line and judge each note for the reviewer.
 
 - Write the content first, as plain HTML. Start the file at `<main>`. No class, no style, no script. The tool adds the look.
 - Run `atris site check <file>` and then `atris site check <file> --render` before you call a page done. The first reads the file. The second opens the page in a browser at phone and desktop width. Each answers yes or no for each rule and prints the line to fix. `atris site rules` prints every rule.
