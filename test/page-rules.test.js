@@ -202,7 +202,9 @@ const ATTACKS = [
   ['page-unsourced-number', page('<div class="s" data-v="98%">of invoices matched</div>', '.s::before { content: attr(data-v); display: block; }'), true],
   ['page-unsourced-number', page('<div class="r"><span>Seats</span><span>25</span></div><dl><dt>Order</dt><dd>48210</dd></dl><div><span>12</span><span>Mon</span></div><div><span>Diavola</span><span>11</span></div><div><b>98%</b><span>matched</span><p>Source: Ledger survey, March</p></div>'), false],
   ['page-all-caps', page('<p><span>FAS</span><span>TER</span> <span>NOTES</span> today</p>'), true],
-  ['page-all-caps', page('<p>Our CIVIC plan</p><p>SALE50 now</p><p>TRY IT NOW</p><p>Open the README and pay in USDC.</p>'), false],
+  ['page-all-caps', page('<p>Our CIVIC plan</p><p>SALE50 now</p><p>Open the README and pay in USDC.</p><p>Your key is QWER-ASDF-ZXCV and your code BKNG-TAHO.</p>'), false],
+  ['page-all-caps', page('<p>TRY IT NOW and pay nothing.</p>'), true],
+  ['page-all-caps', page('<p>BUY ONE GET ONE on every wool coat.</p>'), true],
   ['page-all-caps', page('<p class="k">Fifty</p><input class="k2" type="submit" value="Buy">', '.k { font: small-caps 700 20px Georgia; } :root { --c: uppercase; } .k2 { text-transform: var(--c); }'), true],
   ['page-all-caps', page('<section class="p"><h2>Plans</h2></section>', '.p { h2 { text-transform: uppercase; } } :is(h3, .tag) { color: red; }'), true],
   ['page-all-caps', page('<p class="d">on Monday the floor was wet.</p><h2 class="sc">Plans</h2><p>FAFSA and FDIC rules, chapter VIII</p>', 'p::first-letter { text-transform: uppercase; } .sc { text-transform: none; } h2 { text-transform: uppercase; }'), false],
@@ -588,6 +590,14 @@ const ATTACKS = [
   ['page-word-quiet', page('<p id="a">It runs quietly in the background.</p>', '.q::before{content:"/*"} #a{display:none}'), false],
   ['page-word-quiet', page('<p id="a">It runs quietly in the background.</p>', '.q::before{content:"\\\\"} #a{display:none}'), false],
   ['page-word-quiet', page("<main><img alt=don't src=x.png><p>It runs quietly, it's here.</p></main>"), true],
+  ['page-two-word-sentence', page('<p>The <code>--legacy</code> flag is removed. Use <code>--format=v1</code> instead.</p><p>Run <code>atris init</code> again.</p>'), false],
+  ['page-subtitle', page('<h2>Spring fair</h2><p class="meta">May 3, by Ana Lee</p><p>We set up forty stalls on the green.</p>'), false],
+  ['page-subtitle', page('<h1>Terms</h1><p>Last updated November 1, 2026.</p><h2>Use</h2><p>Be kind.</p>'), false],
+  ['page-subtitle', page('<main><h1>Account settings</h1><h2>Profile</h2><label for="n">Full name</label><input id="n" type="text"><button type="button">Save</button></main>'), false],
+  // a tailwind class hides text on a desktop only when its variant holds there, and a breakpoint wins over the base class
+  ...['max-md:hidden', 'data-[state=closed]:hidden', 'aria-expanded:hidden', '2xl:hidden', 'md:flex hidden'].map((cls) => ['page-word-quiet', page(`<p class="${cls}">It runs quietly in the background.</p>`), true]),
+  ...['md:hidden', 'hidden', 'flex lg:hidden'].map((cls) => ['page-word-quiet', page(`<p class="${cls}">It runs quietly in the background.</p>`), false]),
+  ['page-explanatory', page('<h1>Fish</h1><p>Salt the water well before the fish goes in.</p><p>Tip: salt it until it tastes like the sea.</p>'), false],
 ];
 
 test('every rule has a failing page and a twin, and a twin that hides the problem is still caught', () => {
