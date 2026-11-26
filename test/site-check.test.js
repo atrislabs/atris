@@ -324,6 +324,18 @@ test('a rules file that cannot be read is named and the upload is refused', asyn
   assert.strictEqual(uploads, before);
 });
 
+test('a rules file in the list form atris slop rules --add writes reads as watch mode and the upload goes ahead', async () => {
+  const before = uploads;
+  folder('listform', { '.atris/slop.rules.json': '[{ "id": "no-synergy", "pattern": "synerg", "why": "the owner never says synergy" }]', 'index.html': compilePage(GOOD) });
+  process.chdir(path.join(root, 'listform'));
+  try {
+    const mode = await cli(['check', '--mode']);
+    assert.deepStrictEqual([mode.code, mode.out.trim(), mode.err], [0, 'watch', '']);
+    assert.strictEqual(await upload(['.', '--slug', 'demo'], quiet), 0);
+  } finally { process.chdir(root); }
+  assert.strictEqual(uploads, before + 1);
+});
+
 test('rules says which rules this project switched off, in text and in --json', async () => {
   assert.deepStrictEqual(JSON.parse((await cli(['rules', '--json'])).out).off, []);
   assert.doesNotMatch((await cli(['rules'])).out, /switched off/);
