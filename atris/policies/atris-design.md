@@ -148,7 +148,7 @@ gap: clamp(1.5rem, 4vw, 6rem);
 - animations that swap styles endlessly without purpose (rotating shapes, morphing buttons)
 - bounce or elastic easing: they feel dated and tacky. real objects decelerate smoothly.
 
-**the move:** one well-timed animation beats ten scattered ones. page load with staggered reveals (50-100ms delays) creates more impact than hover effects on every button.
+**the move:** every animation has a job: it shows where a thing went or confirms what just happened. nothing else moves. animate everything and the screen turns into a christmas tree; pick the few that need it and they stand out. the menu, picker, tooltip and speed rules live in the design skill.
 
 **easing:** use exponential easing for natural deceleration:
 ```css
@@ -334,9 +334,9 @@ vary your choices. alternate themes. try different directions between projects.
 ## before shipping
 
 - can you name the aesthetic in 2-3 words?
-- did you pick a real font, not a default?
-- is there at least one intentional animation?
-- does the background have depth?
+- do the fonts come from the theme or the owner's pick, not from you?
+- does every animation show where something went or confirm an action?
+- does the background come from the theme, with no gradient, mesh or glow added for depth?
 - do hover states feel inviting, not confusing?
 - does scrolling feel native?
 - does the hero pass the H1 test (what/who/why/CTA)?
