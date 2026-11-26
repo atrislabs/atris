@@ -166,6 +166,35 @@ test('a named Codex search model reaches a member while unpinned search stays wi
   assert.deepEqual([recovered.id, recovered.roster_model, recovered.roster_effort], ['codex', 'gpt-6.1-terra', 'low']);
 }));
 
+test('the workspace roster dispatches all nine members to their assigned jobs and models', () => withRoom((root, machineFile) => {
+  const project = path.resolve(__dirname, '../atris');
+  fs.copyFileSync(path.join(project, 'ROSTER.md'), path.join(root, 'atris', 'ROSTER.md'));
+  ready(root, 'codex', 'claude', 'agy');
+  const options = { now: NOW, sessionRoster: false, machineRosterFile: machineFile,
+    machineRosterMarkdownFile: path.join(path.dirname(machineFile), 'ROSTER.md') };
+  const assignments = [
+    [['scout', 'navigator'], 'search', 'codex', 'gpt-6.1-terra', 'low'],
+    [['researcher', 'replay-lead'], 'purposeful search', 'codex', 'gpt-6.2-sol', 'xhigh'],
+    [['computer-operator'], 'computer use', 'codex', 'gpt-6.1-terra', null],
+    [['computer-lead'], 'important computer decisions', 'codex', 'gpt-6.2-sol', 'xhigh'],
+    [['interop-translator'], 'interoperability', 'agy', 'gemini-4-neon-medium', null],
+    [['builder', 'executor'], 'build', 'claude', 'claude-opus-5-5', null],
+  ];
+  for (const [members, job, runner, model, effort] of assignments) {
+    for (const owner of members) {
+      const card = path.join(project, 'team', owner, 'MEMBER.md');
+      if (fs.existsSync(card)) {
+        const seat = path.join(root, 'atris', 'team', owner);
+        fs.mkdirSync(seat, { recursive: true });
+        fs.copyFileSync(card, path.join(seat, 'MEMBER.md'));
+      }
+      const result = resolveMissionTickRunner({ runner: 'auto', owner }, root, options);
+      assert.deepEqual([result.roster_job, result.mission.runner, result.mission.model, result.mission.roster_effort ?? null],
+        [job, runner, model, effort], owner);
+    }
+  }
+}));
+
 test('a registry normalization rewrite preserves roster, unknown keys, and engine entries', () => withRoom((root) => {
   ready(root, 'codex');
   const file = engineRegistryFile(root);

@@ -1,4 +1,6 @@
-# Coordination campaign
+# Kaizen Spark
+
+This workspace uses Kaizen Spark to test coordination. The daily run checks handoffs against receiver state and retains reproducible failures. The team roster selects an engine for each job. A claim that one engine is better for a job requires a separate comparison on the same tasks, followed by a repeat on fresh cases.
 
 ## Situation
 
