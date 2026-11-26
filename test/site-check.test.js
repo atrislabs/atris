@@ -33,7 +33,10 @@ function folder(name, files) {
   return name;
 }
 let uploads = 0;
-publish.run = async () => { uploads++; return 0; };
+const deploy = require('../commands/site-deploy');
+const quiet = { log() {}, error() {} };
+const fetch = async () => { uploads++; return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify({ verified: true }) }; };
+const upload = (argv) => publish.run(argv, { ...quiet, fetch, apiBase: 'http://127.0.0.1:9', loadCredentials: () => ({ token: 't' }) });
 
 test('check refuses a bad page line by line on stderr and passes a good one', async () => {
   folder('pages', { 'bad.html': BAD, 'good.html': GOOD });
@@ -85,17 +88,28 @@ test('publish and deploy upload nothing unless every page passes', async () => {
     [folder('site-look', { 'index.html': compilePage(GOOD, { look: 'paper', lookCss: 'body{font-family:Georgia,serif}' }) }), /look paper has no pick on record\. only the owner picks a look\./],
   ];
   for (const [dir, said] of refusals) {
-    const res = await cli(['publish', dir, '--slug', 'demo']);
-    assert.strictEqual(res.code, 1, dir);
-    assert.match(res.err, said);
-    const dry = await cli(['deploy', dir, '--name', 'demo', '--dry-run']);
-    assert.strictEqual(dry.code, 1, dir);
+    const err = [];
+    assert.strictEqual(await publish.run([dir, '--slug', 'demo'], { ...quiet, error: (s) => err.push(s), fetch }), 1, dir);
+    assert.match(err.join('\n'), said);
+    // a slug or name of help is a slug, not a request for help
+    assert.strictEqual(await upload([dir, '--slug', 'help']), 1, dir);
+    assert.strictEqual(await deploy.run([dir, '--name', 'help', '--dry-run'], quiet), 1, dir);
   }
   assert.strictEqual(uploads, before);
   folder('site-clean', { 'index.html': plain, 'node_modules/x.html': BAD });
-  assert.strictEqual((await cli(['publish', 'site-clean', '--slug', 'demo'])).code, 0);
+  assert.strictEqual(await upload(['site-clean', '--slug', 'demo']), 0);
   assert.strictEqual(uploads, before + 1);
   recordPick(root, 'paper');
-  assert.strictEqual((await cli(['publish', 'site-look', '--slug', 'demo'])).code, 0);
+  assert.strictEqual(await upload(['site-look', '--slug', 'demo']), 0);
   assert.strictEqual(uploads, before + 2);
+});
+
+test('publish --build checks the built folder and uploads only when it passes', async () => {
+  const before = uploads;
+  const build = "node -e \"require('fs').mkdirSync('dist');require('fs').copyFileSync('page.html','dist/index.html')\"";
+  const app = (name, page) => folder(name, { 'package.json': JSON.stringify({ scripts: { build } }), 'page.html': page });
+  assert.strictEqual(await upload([app('app-bad', BAD), '--slug', 'demo', '--build']), 1);
+  assert.strictEqual(uploads, before);
+  assert.strictEqual(await upload([app('app-good', compilePage(GOOD)), '--slug', 'demo', '--build']), 0);
+  assert.strictEqual(uploads, before + 1);
 });

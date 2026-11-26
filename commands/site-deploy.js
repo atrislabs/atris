@@ -825,6 +825,8 @@ async function run(argv, deps = {}) {
     return 2;
   }
 
+  const checkPages = (files) => require('../lib/page-lang').checkBeforeUpload(root, { files, log, err: errorLog });
+
   if (options.fullstack) {
     let packagePlan;
     try {
@@ -833,6 +835,7 @@ async function run(argv, deps = {}) {
       errorLog(`  ${error.message}`);
       return 2;
     }
+    if (checkPages()) return 1;
     if (options.dryRun) {
       printFullstackPlan(options.name, packagePlan, log);
       return 0;
@@ -851,6 +854,7 @@ async function run(argv, deps = {}) {
     errorLog(`  could not read site directory: ${error.message}`);
     return 1;
   }
+  if (checkPages(pages.filter((page) => /\.html?$/i.test(page.path)).map((page) => page.sourcePath))) return 1;
 
   const liveUrl = `https://${options.name}.atris.ai`;
   const totalBytes = pages.reduce((sum, page) => sum + page.size, 0);

@@ -7,7 +7,7 @@
 //   atris site check <file|dir> [--json] [--render]
 //   atris site rules [--json]
 //   atris site looks | atris site look pick <name>
-//   atris site publish <dir> --slug <slug> [--profile strict|app] [--spa] [--no-claim] [--json]
+//   atris site publish <dir> --slug <slug> [--profile strict|app] [--spa] [--no-claim] [--build] [--json]
 
 const fs = require('fs');
 const path = require('path');
@@ -16,50 +16,8 @@ const { hasFlag } = require('../lib/arg-parser');
 
 function flag(argv, name) { const i = argv.indexOf(name); return i !== -1 ? argv[i + 1] : null; }
 const lang = () => require('../lib/page-lang');
-const shown = (file) => { const rel = path.relative(process.cwd(), file); return !rel ? path.basename(file) : rel.startsWith('..') ? file : rel; };
-const sentence = (s) => String(s || '').trim().replace(/[.\s]+$/, '');
-
-// One line per finding: what is wrong, then the fix.
-function refusal(res) {
-  const lines = new Set(res.findings.map((f) => f.line)).size;
-  const out = [`refused ${res.file} (${lines} line${lines === 1 ? '' : 's'} to fix)`];
-  for (const f of res.findings) {
-    const what = sentence(String(f.why).split(/:\s|\.\s/)[0]);
-    out.push(`line ${f.line}: ${what}${f.text ? `: "${f.text}"` : ''}. ${sentence(f.fix)}.`);
-  }
-  return out.join('\n');
-}
-
-function report(files, { json, log = console.log, err = console.error } = {}) {
-  if (json) log(JSON.stringify({ files }, null, 2));
-  for (const res of files) {
-    const say = res.ok ? log : err;
-    if (!json) say(res.ok ? `ok ${res.file}: every rule passes` : refusal(res));
-    if (res.off && res.off.length) say(`switched off in .atris/slop.rules.json: ${res.off.join(', ')}`);
-  }
-  return files.every((r) => r.ok) ? 0 : 1;
-}
-
-// Every html page in the folder, checked before anything leaves this machine. Nothing skips it.
-function gateFolder(argv, valueFlags) {
-  if (argv.some((a) => a === '--help' || a === '-h' || a === 'help')) return 0;
-  if (argv.includes('--build')) {
-    console.error('publish --build cannot be checked before upload. build first, then publish the build folder.');
-    return 2;
-  }
-  let dir = null;
-  for (let i = 0; i < argv.length; i++) {
-    if (valueFlags.includes(argv[i])) { i++; continue; }
-    if (!argv[i].startsWith('-')) { dir = argv[i]; break; }
-  }
-  if (!dir) return 0;
-  const root = process.cwd();
-  const files = lang().htmlFilesIn(dir).map((file) => lang().checkFile(file, { root, label: shown(file), built: true }));
-  if (files.every((r) => r.ok)) return 0;
-  report(files.filter((r) => !r.ok), { json: argv.includes('--json') });
-  console.error('nothing was uploaded.');
-  return 1;
-}
+const shown = (file) => lang().shown(file);
+const report = (...a) => lang().report(...a);
 
 async function check(argv) {
   const target = argv.find((a) => !a.startsWith('-'));
@@ -157,14 +115,8 @@ function isContentFile(input) {
 }
 
 async function run(argv) {
-  if (argv[0] === 'publish') {
-    const gate = gateFolder(argv.slice(1), ['--slug', '--profile']);
-    return gate || require('../lib/site-publish').run(argv.slice(1));
-  }
-  if (argv[0] === 'deploy') {
-    const gate = gateFolder(argv.slice(1), ['--name', '--api-base']);
-    return gate || require('./site-deploy').run(argv.slice(1));
-  }
+  if (argv[0] === 'publish') return require('../lib/site-publish').run(argv.slice(1));
+  if (argv[0] === 'deploy') return require('./site-deploy').run(argv.slice(1));
   if (argv[0] === 'check') return check(argv.slice(1));
   if (argv[0] === 'rules') return rules(argv.slice(1));
   if (argv[0] === 'looks' || argv[0] === 'look') return looks(argv);
@@ -181,7 +133,7 @@ async function run(argv) {
     atris site rules [--json]
     atris site looks
     atris site look pick <name>
-    atris site publish <dir> --slug <slug> [--profile strict|app] [--spa] [--no-claim] [--json]
+    atris site publish <dir> --slug <slug> [--profile strict|app] [--spa] [--no-claim] [--build] [--json]
     atris site deploy <dir> --name <slug> [--spa] [--dry-run] --yes
     atris site deploy <dir> --fullstack --name <slug> [--dry-run] --yes
 
@@ -194,7 +146,7 @@ async function run(argv) {
 
   publish uploads any built web folder through the hosted-sites api. deploy is
   the older site setup flow; --fullstack deploys a node server with render.
-  Both check every html page in the folder first and upload nothing if one fails.
+  Both check every html page in the folder after any build and upload nothing if one fails.
 `);
     return input === 'help' || hasFlag(argv, '--help') ? 0 : 2;
   }
