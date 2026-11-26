@@ -174,6 +174,13 @@ test('the landing gate holds a new page to every rule and leaves an edited old p
   const noBase = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['new.html'] } });
   assert.strictEqual(noBase.reason, 'new_page_check_not_run');
   assert.ok(noBase.gate.advisories.some((a) => a.reason === 'new_page_check_not_run' && /base branch/.test(a.detail)));
+  // a broken rules file with no base names the file, not a block mode it never asked for
+  fs.writeFileSync(path.join(repo, '.atris', 'slop.rules.json'), '{ "off": ["page-glow"], }\n');
+  const noBaseTypo = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['new.html'] } });
+  assert.strictEqual(noBaseTypo.reason, 'new_page_check_not_run');
+  assert.ok(!/blocks on pages/.test(noBaseTypo.message) && /rules file could not be read/.test(noBaseTypo.message), noBaseTypo.message);
+  assert.ok(noBaseTypo.next_action.startsWith('fix or remove .atris/slop.rules.json'), noBaseTypo.next_action);
+  assert.ok(noBaseTypo.gate.advisories.some((a) => a.reason === 'page_rules_unreadable'));
   fs.writeFileSync(path.join(repo, '.atris', 'slop.rules.json'), '{}\n');
   const noBaseWatch = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['new.html'] } });
   assert.strictEqual(noBaseWatch.ok, true);

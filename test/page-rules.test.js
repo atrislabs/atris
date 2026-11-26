@@ -459,7 +459,16 @@ const ATTACKS = [
   ['page-emoji-icon', page('<h2>&#x2063;📦 Ship day</h2>'), true],
   ['page-emoji-icon', page('<ul><li>♠ A Q 9</li><li>♥ K 4 2</li></ul><ul><li>★★★★☆ Good bread</li></ul><button>▶ Play</button>'), false],
   ['page-placeholder', page('<p>Ut enim ad minim veniam, quis nostrud exercitation ullamco.</p>'), true],
-  ['page-placeholder', page('<p>Visit 9 Oak Road, Anytown, open daily.</p>'), true],
+  ['page-placeholder', page('<p>Visit 9 Oak Road, Anytown, open daily.</p>'), 'note'],
+  // TBD, a sample email, a "here" label and a real place named Anytown may be the real words: a note
+  ['page-placeholder', page('<table><tr><td>Room</td><td>TBD</td></tr></table><p>Room: TBD</p>'), 'note'],
+  ['page-placeholder', page('<p>Sign in as test@example.com to try the demo class before the term starts.</p>'), 'note'],
+  ['page-placeholder', page('<label for="t">Paste your text here</label><textarea id="t"></textarea>'), 'note'],
+  ['page-placeholder', page('<p>The film Anytown, USA follows a mayoral race in New Jersey.</p>'), 'note'],
+  ['page-placeholder', page('<p>Room: TBD</p><p>Hello {{ first_name }}, your seat is saved.</p>'), true],
+  // a scroll library that only tracks the scroll is a note. with content that starts hidden it blocks
+  ['page-scroll-fade', page('<div id="bar"></div><p>The shop opens at eight.</p><script>ScrollTrigger.create({ start: 0, end: "max", onUpdate: (self) => { bar.style.width = (self.progress * 100) + "%"; } });</script>'), 'note'],
+  ['page-scroll-fade', page('<section class="s">The shop opens at eight.</section><script>ScrollTrigger.batch(".s", { onEnter: (b) => gsap.to(b, { opacity: 1 }) });</script>', '.s { opacity: 0; }'), true],
   ['page-placeholder', page('<h2>Lorem&#x2063; ipsum</h2>'), true],
   ['page-placeholder', page('<table><tr><td>/users/{user_id}</td></tr></table><p>She was known as the Jane Doe of Mill Creek until last year.</p>'), false],
   ['page-dot-separator', page('<p class="m"><span>Rye</span><span>Spelt</span></p>', '.m span + span::before { content: counter(c, disc); margin: 0 4px; }'), true],

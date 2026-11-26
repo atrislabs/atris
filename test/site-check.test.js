@@ -414,5 +414,24 @@ test('a page with only notes for the reviewer passes check, the upload check and
     const shown = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['docs.html'] } });
     assert.strictEqual(shown.reason, 'slop_gate');
     assert.ok(shown.offenders.some((o) => /^docs\.html:\d+ lang-tags$/.test(o)), shown.offenders.join(', '));
+    // braces written as entities, or shown in kbd, are words on a whole page: the page rules run on them
+    const QUIET = '<p>Type the name where it goes and the room stays quiet for the hour.</p>';
+    fs.writeFileSync(path.join(repo, 'entity.html'), GOOD.replace('</section>', `${QUIET.replace('the name', '&#123;&#123; name &#125;&#125;')}\n</section>`));
+    fs.writeFileSync(path.join(repo, 'kbd.html'), GOOD.replace('</section>', `${QUIET.replace('the name', '<kbd>{{ name }}</kbd>')}\n</section>`));
+    fs.writeFileSync(path.join(repo, 'words.html'), GOOD.replace('</section>', `${QUIET.replace('the name', '{{ name }}')}\n</section>`));
+    git('add', '.');
+    for (const file of ['entity.html', 'kbd.html']) {
+      const held = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: [file] } });
+      assert.strictEqual(held.reason, 'slop_gate', file);
+      assert.ok(held.offenders.some((o) => o.endsWith('page-word-quiet')), held.offenders.join(', '));
+    }
+    // marks in plain words cannot be told from a real template: it is skipped and the record says why
+    const skipped = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['words.html'] } });
+    assert.strictEqual(skipped.ok, true);
+    assert.ok(skipped.gate.advisories.some((a) => a.reason === 'new_html_not_a_page' && /template marks outside a code sample/.test(a.detail)));
+    // a broken rules file is named on a page that passes too
+    fs.writeFileSync(path.join(repo, '.atris', 'slop.rules.json'), '{ "pages": "blok" }\n');
+    const typo = candidatePolicyGate({ workspace_root: repo, metadata: { changed_files: ['new.html'] } });
+    assert.ok(typo.gate.advisories.some((a) => a.reason === 'page_rules_unreadable'), JSON.stringify(typo.gate.advisories));
   } finally { fs.rmSync(repo, { recursive: true, force: true }); }
 }));
