@@ -24,7 +24,8 @@ test('the probe copy keeps the doctype first, loads files from the page folder a
   }
 });
 
-// Every folder a test makes is removed when the run ends, on a pass, a failed assert or an early exit.
+// Every folder a test makes is removed when the run ends: on a pass, a failed assert, process.exit
+// or a signal, which is turned into process.exit so the exit hook runs.
 const made = [];
 function temp(prefix) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -34,6 +35,7 @@ function temp(prefix) {
 const cleanup = () => { for (const dir of made.splice(0)) fs.rmSync(dir, { recursive: true, force: true }); };
 test.after(cleanup);
 process.on('exit', cleanup);
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.once(sig, () => process.exit(sig === 'SIGINT' ? 130 : sig === 'SIGHUP' ? 129 : 143));
 
 test('an interrupted check stops the browser it started and removes its profile', { skip: process.platform === 'win32' ? 'the stand-in browser is a shell script' : false }, async () => {
   // a browser that never ends: the check is interrupted while it waits
@@ -61,8 +63,14 @@ test('the browser finder honours CHROME_PATH and finds nothing on an empty compu
   assert.equal(findBrowser({ PATH: '' }, 'linux'), null);
 });
 
+test('with no browser the check says what to install', async () => {
+  const r = await renderCheck(__filename, { env: { PATH: '' }, platform: 'linux' });
+  assert.equal(r.ran, false);
+  assert.equal(r.reason, 'no browser found on this computer. install Chrome, Chromium, Edge or Brave, or set CHROME_PATH');
+});
+
 const BROWSER = findBrowser();
-const skip = BROWSER ? false : 'no browser found on this computer; install Chrome or set CHROME_PATH to run it';
+const skip = BROWSER ? false : 'no browser found on this computer; install Chrome, Chromium, Edge or Brave, or set CHROME_PATH to run it';
 
 function page(html) {
   const dir = temp('page-render-test-');

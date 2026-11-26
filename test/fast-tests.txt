@@ -82,6 +82,7 @@ test/improve.test.js
 test/init-for-agents.test.js
 test/init.test.js
 test/landing-check.test.js
+test/landing-reasons.test.js
 test/learnings.test.js
 test/lesson-gate.test.js
 test/lesson-sweep.test.js

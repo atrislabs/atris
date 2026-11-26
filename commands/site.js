@@ -19,28 +19,31 @@ const lang = () => require('../lib/page-lang');
 const shown = (file) => lang().shown(file);
 const report = (...a) => lang().report(...a);
 
+// The project folder that holds .atris/slop.rules.json, found from the current folder upward.
+const rulesRoot = () => require('../lib/page-rules').rulesRoot(process.cwd());
+
 async function check(argv) {
-  if (hasFlag(argv, '--mode')) { console.log(require('../lib/page-rules').pageMode(process.cwd())); return 0; }
+  if (hasFlag(argv, '--mode')) { console.log(require('../lib/page-rules').pageMode(rulesRoot())); return 0; }
   const target = argv.find((a) => !a.startsWith('-'));
   if (!target) { console.error('  atris site check <file|dir> [--json] [--render]\n  atris site check --mode'); return 2; }
-  const root = process.cwd();
+  const root = rulesRoot();
   const list = lang().htmlFilesIn(target);
   if (!list.length) { console.error(`no html pages at ${target}`); return 2; }
   const siteRoot = fs.statSync(target).isDirectory() ? path.resolve(target) : null;
   const files = list.map((file) => ({ path: file, ...lang().checkFile(file, { root, label: shown(file), siteRoot }) }));
   if (hasFlag(argv, '--render')) {
-    let renderCheck;
-    try { ({ renderCheck } = require('../lib/page-render')); } catch (e) {
-      console.error(`the browser check did not run: ${e.message.split('\n')[0]}`);
-      return 1;
-    }
+    let renderCheck = null, why = '';
+    try { ({ renderCheck } = require('../lib/page-render')); } catch (e) { why = e.message.split('\n')[0]; }
+    // a page the browser could not open keeps its page rule results, rendered false and the reason
     for (const res of files) {
-      const r = await renderCheck(res.path, { widths: [390, 1280] });
-      if (!r || !r.ran) { console.error(`the browser check did not run on ${res.file}: ${(r && r.reason) || 'no reason given'}`); return 1; }
+      const r = renderCheck ? await renderCheck(res.path, { widths: [390, 1280], root }) : null;
+      if (!r || !r.ran) { res.reason = (r && r.reason) || why || 'no reason given'; continue; }
       res.findings.push(...(r.findings || []));
       res.results.push(...(r.results || []));
       res.ok = res.findings.length === 0;
       res.rendered = true;
+      // the browser read the words a script drew. the note that they were not read no longer holds
+      if (r.drewText) res.notChecked = res.notChecked.filter((n) => !n.startsWith('a script draws this page'));
     }
   }
   return report(files.map(({ path: _p, ...res }) => res), { json: hasFlag(argv, '--json') });
@@ -48,17 +51,20 @@ async function check(argv) {
 
 function rules(argv) {
   const { GRAMMAR } = lang();
-  const sheet = require('../lib/page-rules').ruleSheet();
+  const pageRules = require('../lib/page-rules');
+  const sheet = pageRules.ruleSheet();
+  const root = rulesRoot();
+  const off = pageRules.switchedOff(root);
   // the browser rules only run when the page is opened in a browser, so they are listed apart
   const browser = require('../lib/page-render').RENDER_RULES;
   if (hasFlag(argv, '--json')) {
-    console.log(JSON.stringify({ grammar: GRAMMAR.map((r) => ({ id: r.id, line: r.line })), page: sheet, browser: browser.map((r) => ({ id: r.id, line: r.why, needs: '--render' })), mode: require('../lib/page-rules').pageMode(process.cwd()) }, null, 2));
+    console.log(JSON.stringify({ grammar: GRAMMAR.map((r) => ({ id: r.id, line: r.line })), page: sheet, browser: browser.map((r) => ({ id: r.id, line: r.why, needs: '--render' })), mode: pageRules.pageMode(root), off }, null, 2));
     return 0;
   }
   const out = [
     'order of work',
     '  write the content first as plain html, starting at <main>, with no class, style or script.',
-    '  run atris site check <file> until every rule passes, then once more with --render before the page is done.',
+    '  run atris site check <file> until every page rule passes, then once more with --render before the page is done.',
     '  build it in a few looks for the owner\'s board: atris site <file> --look <name> --out <dir>.',
     '  never pick a look. only the owner picks one: atris site look pick <name>.',
     '',
@@ -69,9 +75,10 @@ function rules(argv) {
     '  publish and deploy check every html page after any build.',
     '  watch mode, the default: they print what fails and upload anyway.',
     '  block mode: they upload nothing until every page passes. the landing gate holds new pages the same way.',
-    `  this project is in ${require('../lib/page-rules').pageMode(process.cwd())} mode. atris site check --mode prints it.`,
+    `  this project is in ${pageRules.pageMode(root)} mode. atris site check --mode prints it.`,
     `  ${require('../lib/page-lang').BLOCK_LINE}. atris init turns it on for a new project.`,
   ];
+  if (off.length) out.push('', `switched off in .atris/slop.rules.json: ${off.join(', ')}`);
   for (const [group, list] of Object.entries(sheet)) {
     out.push('', `page rules: ${group}`, ...list.map((r) => `  ${r.id}: ${r.line}`));
   }
@@ -96,7 +103,7 @@ function looks(argv) {
   return 0;
 }
 
-// A content page becomes <out>/index.html in a look, after every rule passes.
+// A content page becomes <out>/index.html in a look, after every page rule passes.
 function buildPage(input, argv) {
   const L = lang();
   const root = process.cwd();
@@ -154,8 +161,9 @@ async function run(argv) {
   Each .md becomes a page; an index links them all. Same anti-slop design system,
   semantic data-atris-block sections, ready for the web app. --serve previews it.
 
-  A content page is plain html that starts at <main>. check runs every rule on it,
-  rules prints them all, and building it writes <out>/index.html in a look.
+  A content page is plain html that starts at <main>. check runs every page rule on it
+  and --render adds the browser rules. rules prints them all. building it writes
+  <out>/index.html in a look.
   Looks live at atris/looks/<name>.css. Only the owner picks one, at a terminal.
 
   publish uploads any built web folder through the hosted-sites api. deploy is
