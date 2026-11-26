@@ -70,6 +70,7 @@ def main():
                                       "--git-common-dir"], text=True).strip()
     swarlo = (args.swarlo_root or Path(common).parent.parent / "swarlo").resolve()
     seed = args.seed if args.seed is not None else secrets.randbits(32)
+    print(f"replay this workload with --seed {seed}", flush=True)
     passed = 0
     commands = (
         [sys.executable, "-B", str(HERE / "judge.py"), "--swarlo-root", str(swarlo)],
@@ -84,7 +85,11 @@ def main():
     except Exception as exc:
         print(f"discovery failed: {exc}", flush=True)
     print(f"replay this workload with --seed {seed}")
-    print(f"pass {passed}, fail {4 - passed}")
+    # The campaign reads the final TAP summary and an explicit overall score.
+    # Inner test runners also report counts, which describe a single group.
+    print(f"reading: {passed / 4}")
+    print(f"# pass {passed}")
+    print(f"# fail {4 - passed}")
     return int(passed < 4)
 
 
