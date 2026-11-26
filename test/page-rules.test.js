@@ -631,6 +631,15 @@ const ATTACKS = [
   ['page-menu-centre', page('<div role="menu" class="m origin-top-right"><a href="/r">Rename</a></div><ul role="listbox" class="m data-[side=bottom]:origin-top"><li>Ana</li></ul>', '.m { animation: grow .15s; } @keyframes grow { from { transform: scale(.95); } }'), false],
   ['page-menu-centre', page('<div role="menu" class="m" data-state="closed"><a href="/r">Rename</a></div>', '.m[data-state=closed] { transform: scale(.95); } .m { transition: opacity .2s; }'), false],
   ['page-menu-centre', page('<div role="menu" class="m"><a href="/r">Rename</a></div><script>m.style.transformOrigin = side + " left";</script>', '.m { animation: grow .15s; } @keyframes grow { from { transform: scale(.95); } }'), false],
+  // an @starting-style block is only the first frame before a transition: the page at rest is read without it
+  ['page-scroll-fade', page('<section><h2>Hours</h2><p>The shop opens at eight on weekdays and at ten on Saturday.</p></section><a class="top" href="#">Top</a><script>addEventListener("scroll", () => { top.style.opacity = scrollY > 400 ? 1 : 0; });</script>', '@starting-style { section { opacity: 0; } } section { transition: opacity .4s; }'), false],
+  ['page-scroll-fade', page('<section><h2>Hours</h2><p>The shop opens at eight on weekdays and at ten on Saturday.</p></section><a class="top" href="#">Top</a><script>addEventListener("scroll", () => { top.style.opacity = scrollY > 400 ? 1 : 0; });</script>', 'section { transition: opacity .4s; @starting-style { opacity: 0; } }'), false],
+  ['page-scroll-fade', page('<section><h2>Hours</h2><p>The shop opens at eight on weekdays and at ten on Saturday.</p></section><a class="top" href="#">Top</a><script>addEventListener("scroll", () => { top.style.opacity = scrollY > 400 ? 1 : 0; });</script>', '@media (min-width: 1px) { @layer base { @starting-style { section { opacity: 0; } } } } section { transition: opacity .4s; }'), false],
+  ['page-label-above-heading', page('<header><h1>Sync</h1><span class="t">Saved</span></header>', '@starting-style { .t { transform: translateY(-40px); } } .t { transition: transform .3s; }'), false],
+  ['page-label-above-heading', page('<header><h1>Sync</h1><span class="t">Saved</span></header>', '.t { transition: transform .3s; @starting-style { transform: translateY(-40px); } }'), false],
+  ['page-word-quiet', page('<p class="n">It runs quietly at night.</p>', '@starting-style { .n { visibility: hidden; } }'), true],
+  ['page-word-quiet', page('<p class="n">It runs quietly at night.</p>', '.n { @starting-style { visibility: hidden; } }'), true],
+  ['page-word-quiet', page('<p class="n">It runs quietly at night.</p>', '@starting-style { @media (min-width: 1px) { .n { display: none; } } }'), true],
 ];
 
 test('every rule has a failing page and a twin, and a twin that hides the problem is still caught', () => {
