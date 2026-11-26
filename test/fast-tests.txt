@@ -111,6 +111,7 @@ test/now.test.js
 test/orb.test.js
 test/outbound-artifact-gate.test.js
 test/outbound-send-gate.test.js
+test/page-lang.test.js
 test/permission-grants.test.js
 test/policy-lessons.test.js
 test/probe.test.js
@@ -141,6 +142,7 @@ test/self-heal.test.js
 test/serve.test.js
 test/sessionstart-plant.test.js
 test/signup.test.js
+test/site-check.test.js
 test/site.test.js
 test/skill-audit-codeblocks.test.js
 test/slides-deck.test.js
