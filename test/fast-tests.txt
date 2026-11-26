@@ -135,6 +135,7 @@ test/run-glass-logs.test.js
 test/run-roadmap.test.js
 test/runner-command.test.js
 test/runtime-bootstrap.test.js
+test/screens-card.test.js
 test/self-heal-prompt.test.js
 test/self-heal.test.js
 test/serve.test.js

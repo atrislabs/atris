@@ -6,6 +6,7 @@ const { ensureExperimentsFramework } = require('./experiments');
 const { ensureWorkspaceBrain } = require('../lib/workspace-scaffold');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
 const { openingLinesForRoot, renderAgentsOpeningBlock, upsertAgentsOpeningLines } = require('../lib/opening-lines');
+const { screensRulesForRoot, upsertScreensAdapters } = require('../lib/screens-card');
 const { ensureRunIgnore } = require('../lib/gitignore');
 const { snapshotBeforeInit, commitInitFiles } = require('../lib/init-commit');
 const { INTENTS } = require('../lib/intents');
@@ -1157,6 +1158,11 @@ Read atris/MAP.md. Begin iteration 1.`;
     // Create new CLAUDE.md with just Atris block
     fs.writeFileSync(rootClaudeMd, upsertAtrisClaudeBootBlock('', { openingLines: openingLinesForRoot(process.cwd()) }).content);
     markReady('adapters', 'CLAUDE.md', '✓ created CLAUDE.md with atris block');
+  }
+
+  // Last, so every start-up file above already exists to carry the copy.
+  for (const rel of upsertScreensAdapters(process.cwd(), screensRulesForRoot(process.cwd()))) {
+    markReady('adapters', `${rel} screen rules`, `✓ Added the atris.md screen rules to ${rel}`);
   }
   }
 

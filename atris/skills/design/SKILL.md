@@ -1,7 +1,7 @@
 ---
 name: design
 description: Frontend aesthetics policy. Use when building UI, components, landing pages, dashboards, or any frontend work. Prevents generic ai-generated look.
-version: 3.2.20
+version: 3.3.0
 allowed-tools: Read, Write, Edit, Bash, Glob
 tags:
   - design
@@ -11,6 +11,8 @@ tags:
 # atris-design
 
 Start with the taste files that [../taste/SKILL.md](../taste/SKILL.md) points to for what the people you work for like. This file holds the full visual rules for building it.
+
+The enforced rules for any page: `atris site rules` prints them and `atris site check <file>` answers yes or no for each one. Run the check before you call a page done and fix every line it prints. Where this file and the check disagree, the check wins.
 
 The taste organ of the Atris system. Opinionated: these are Keshav's principles, not general best practices. Prevents ai-generated frontend from looking generic, and improves itself (see "self-improve" at the bottom, it is part of the job, not optional).
 
@@ -22,26 +24,19 @@ Canonical home: `atris-cli/atris/skills/design/SKILL.md` (this file, git-tracked
 2. **Read `atris/policies/design-seed.md` first** if it exists: it has the project's unique visual identity (fonts, colors, spacing, motion). This is the design DNA. Do not override it with defaults.
 3. Read `.atris/theme.json` if it exists: brand colors and fonts are already decided, use them.
 4. Reference `atris/policies/atris-design.md` for full anti-slop guidance
-5. After building, run the workspace design gate (`npm run audit:design` in atrisos-web, `atris slop` elsewhere) before claiming done.
+5. After building, run `atris site check <file>` on every page and the workspace design gate (`npm run audit:design` in atrisos-web, `atris slop` elsewhere) before claiming done.
 
 ## Quick Reference
 
-**Typography:** avoid inter/roboto/arial/system fonts. pick one distinctive font, use weight extremes (200 vs 800). size jumps should be dramatic (3x). use `clamp()` for fluid sizing. use `ch` units for measure (`max-width: 65ch`).
+**Typography:** fonts come from the design seed or theme. never pick one yourself. if none is set, make a few looks for the board and let the owner pick. use `clamp()` for fluid sizing. use `ch` units for measure (`max-width: 65ch`).
 
-Font alternatives: instead of Inter: Instrument Sans, Plus Jakarta Sans, Outfit. Instead of Roboto: Onest, Figtree, Urbanist. Editorial: Fraunces, Newsreader, Lora.
-
-**Color:** commit to a palette. use OKLCH for perceptually uniform colors. tint your neutrals toward your brand hue (never pure gray). never put gray text on colored backgrounds. never use pure black (#000) or pure white (#fff). avoid the AI palette: cyan-on-dark, purple-to-blue gradients, neon accents on dark.
-
-```css
---brand: oklch(65% 0.2 250);
---gray-100: oklch(95% 0.01 250); /* tinted, not pure gray */
-```
+**Color:** colours come from the design seed or theme. never pick a palette yourself. never put gray text on colored backgrounds. avoid the AI palette: cyan-on-dark, purple-to-blue gradients, neon accents on dark.
 
 **Layout:** break the hero + 3 cards + footer template. no card-in-card nesting. no identical card grids. asymmetry is interesting. dramatic whitespace. use container queries for component-level responsiveness. fluid spacing with `clamp()`.
 
 **Motion:** one well-timed animation beats ten scattered ones. use exponential easing (`cubic-bezier(0.25, 1, 0.5, 1)`), never bounce/elastic. 150-300ms duration. only animate transform and opacity. always respect `prefers-reduced-motion`. no cursor-following lines, no meteor effects, no buttons that chase the cursor. no pulsing or glowing live-status dots, no looping ambient animations.
 
-**Interaction:** progressive disclosure: start simple, reveal complexity. optimistic UI: update immediately, sync later. every interactive element needs ALL states: default, hover, focus, active, disabled, loading, error, success. don't make every button primary.
+**Interaction:** progressive disclosure: start simple, reveal complexity. optimistic UI: update immediately, sync later. every interactive element needs ALL states: default, hover, focus, active, disabled, loading, error, success. one main button per screen.
 
 **Hover:** make elements feel inviting on hover (brighten, subtle scale 1.02-1.05). never fade out, shift, or hide content behind hover. hover doesn't exist on mobile. no hover lift: a translate-y shift or a scale past 1.05 on every card is the generated-card reflex; the shift breaks the never-move-content rule and the big grow reads as a template.
 
@@ -53,9 +48,9 @@ Font alternatives: instead of Inter: Instrument Sans, Plus Jakarta Sans, Outfit.
 
 **Hero (H1 test):** must answer in 5 seconds: what is it, who is it for, why care, what's the CTA.
 
-**Assets:** high-res screenshots only. no fake dashboards with primary colors. no decorative non-system emojis.
+**Assets:** art is made from the product itself: real high-res screenshots. no fake dashboards with primary colors. no decorative non-system emojis.
 
-**Backgrounds:** add depth. gradients, patterns, mesh effects. flat = boring. but no glassmorphism everywhere, that's AI slop.
+**Backgrounds:** do not add gradients, patterns, mesh or glass effects for depth. the background comes from the theme.
 
 **Hierarchy:** 2-3 text levels max. don't mix 5 competing styles.
 
@@ -85,11 +80,11 @@ Iterating toward "slightly better" = local maximum (safe, forgettable). Great de
 
 ## Anti-Attractors
 
-Models have gravity wells (purple gradients, instrument serif, claude beige). Escape them deliberately: name what you don't want, seed with a specific reference, inject a constraint (monochrome, one font weight), rotate your defaults between projects.
+Models have gravity wells (purple gradients, instrument serif, claude beige). Escape them deliberately: name what you don't want, seed with a specific reference and make a few different looks for the board. The owner picks.
 
 ## The Scarcity Principle
 
-Taste emerges from constraints. Pick constraints before starting: one font, two colors, three spacing values. Infinite options produce the distribution center.
+Taste emerges from constraints: one font, two colors, three spacing values. They come from the owner's pick and the theme, never from you. Infinite options produce the distribution center.
 
 ## The AI Slop Test
 
@@ -117,7 +112,7 @@ Every entry: id, rule, detector, status. A detector is a regex/command a gate ca
 | D12 | one accent moment per card: brand accent for the primary action only, gold for confidence/progress fills, green only for completed; everything else tonal | judgment | active |
 | D13 | motion is calm and eased: 120-300ms ease-out on opacity/transform only, loops match a measured source cadence, prefers-reduced-motion always freezes them | judgment | active |
 | D14 | compact selectors lead with the chosen name and a discriminating icon; remove redundant field labels and visible type explanations when icon, title, and accessible label carry them | judgment | active |
-| D15 | copy density on landing pages: hero lede one sentence, one sentence per feature card, one line per FAQ answer, legal in one short footer paragraph; a section paragraph past ~40 words gets cut or moved one click deep (Keshav 2026-09-01: "SO much blabber yap text. keep it clean") | `<p>` in landing html over 60 words flags; otherwise judgment | active |
+| D15 | copy density on landing pages: no lede under the hero heading (D38), one sentence per feature card, one line per FAQ answer, legal in one short footer paragraph; a section paragraph past ~40 words gets cut or moved one click deep (Keshav 2026-09-01: "SO much blabber yap text. keep it clean") | `<p>` in landing html over 60 words flags; otherwise judgment | active |
 | D16 | verify mobile with real device emulation (Playwright iPhone profile, WebKit for iOS), never headless Chrome --window-size: Chrome floors the window at 500px wide and renders a fake layout (caught 2026-09-01: two "passing" screenshots hid a broken phone nav) | command scan for `--window-size=3` or `--window-size=4` in verify scripts | active |
 | D33 | first viewport restraint: one dominant idea, at most one secondary live region, and everything else behind progressive disclosure; reject permanent three-column cockpit density as default SaaS structure | judgment | active |
 | D35 | one alignment contract per component: wrapper, metadata, controls, and rendered content share the same width and inset source at every viewport | judgment | active |
@@ -138,7 +133,7 @@ Every entry: id, rule, detector, status. A detector is a regex/command a gate ca
 | D31 | developer-only overlays stay off the product surface by default; any temporary visible launcher must have an immediate dismiss control | judgment | active |
 | D32 | before changing repeated UI copy, verify the operator's exact executable and surface; matching labels do not prove the installed app, dev app, header, and composer share one live path | judgment | active |
 | D34 | engine settings show only the selected engine’s effective model and supported controls; preserve saved choices missing from the option list instead of displaying another engine | `node scripts/test-engine-settings.mjs` in project-obelisk | graduated (engine settings regression) |
-| D36 | marketing front pages: headline + one 2-line paragraph + buttons per section, card copy max 2 sentences, long artifacts live one click deep (Keshav 2026-08-31 "aggressive amounts of texts still", inspiration Oscar/Headway) | judgment | active |
+| D36 | marketing front pages: headline + buttons per section with no paragraph under the headline (D38), card copy max 2 sentences, long artifacts live one click deep (Keshav 2026-08-31 "aggressive amounts of texts still", inspiration Oscar/Headway) | judgment | active |
 | D37 | public site links use clean paths (/syllabus, /welcome?paid=1), never a visible .html, in hrefs, canonicals, sitemaps, and payment redirects (Keshav 2026-11-02 on foundry.atris.ai: "why does it show .html ... we should be a higher standard than lovable") | `grep -nE 'href="[^"#]*\.html' landing/*.html` returns nothing | active |
 | D38 | no taglines, helper text, or secondary labels (field labels over values, sublines under headings, intro paragraphs, eyebrow tags); if a screen needs one to make sense, fix the layout instead: a two-column table with column heads, a date grid, a heading-left content-right split (Keshav 2026-11-02 on foundry.atris.ai: "as perfect as Linear's website or Apple Notes ... Cut taglines, helper text and secondary labels. If a screen needs them to make sense, fix the layout") | judgment | active |
 
@@ -158,9 +153,9 @@ This skill compounds or it dies. The contract, every frontend session:
 ## Before Shipping Checklist
 
 - can you name the aesthetic in 2-3 words?
-- distinctive font, not default?
+- fonts and colours from the theme or the owner's pick, not chosen by you?
 - at least one intentional animation? zero pulsing/looping ones?
-- background has depth? not claude beige?
+- no gradient, mesh or glow added for depth? not claude beige?
 - hover states feel inviting, not confusing?
 - scrolling feels native?
 - hero passes H1 test (what/who/why/CTA)?
@@ -173,7 +168,7 @@ This skill compounds or it dies. The contract, every frontend session:
 - did you name the moves in craft vocabulary (vertical rhythm, negative space, bolder/quieter)?
 - did you use anti-attractors (named what to avoid, seeded a reference, set a constraint)?
 - if agent-facing: does it have agentic affordances (clear errors, structured output, stable exit codes)?
-- ran the design gate? (`npm run audit:design` / `atris slop`)
+- ran `atris site check <file>` on every page and fixed every line it printed? ran the design gate? (`npm run audit:design` / `atris slop`)
 - new operator correction this session? then a new lesson row exists in the canonical and it is committed.
 - would a designer clock this as ai-generated?
 

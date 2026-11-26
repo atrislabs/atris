@@ -61,7 +61,8 @@ test('init writes FOR_AGENTS and the AGENTS adapter breadcrumb', () => {
     assert.match(agentsContent, /## Read on demand/);
     assert.ok(agentsContent.includes('atris/AGENT_REFERENCE.md'));
     assert.doesNotMatch(agentsContent, /New here\? Read/);
-    assert.ok(agentsContent.length < 7000, `AGENTS.md boot stays lean, got ${agentsContent.length} chars`);
+    // 7000 before the screen rules copy (about 700 chars) joined the boot.
+    assert.ok(agentsContent.length < 7700, `AGENTS.md boot stays lean, got ${agentsContent.length} chars`);
     const referenceContent = fs.readFileSync(path.join(tempDir, 'atris', 'AGENT_REFERENCE.md'), 'utf8');
     assert.match(referenceContent, /Every created task leads with three plain fields/);
     assert.match(referenceContent, /accept\/revise gates and never skips proof/);
