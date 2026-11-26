@@ -136,6 +136,7 @@ def main():
         [sys.executable, "-B", str(HERE / "judge.py"), "--swarlo-root", str(swarlo)],
         [sys.executable, "-B", str(HERE / "challenge.py"), "--swarlo-root", str(swarlo)],
         ["node", "--test", "test/element-complete-replay.test.js", "test/fleet-keyed-report.test.js"],
+        [sys.executable, "-B", str(HERE / "join.py")],
     )
     for cmd in commands:
         passed += subprocess.run(cmd, cwd=ROOT).returncode == 0
@@ -150,10 +151,11 @@ def main():
     print(f"replay this workload with --seed {seed}")
     # The campaign reads the final TAP summary and an explicit overall score.
     # Inner test runners also report counts, which describe a single group.
-    print(f"reading: {passed / 4}")
+    total = len(commands) + 1
+    print(f"reading: {passed / total}")
     print(f"# pass {passed}")
-    print(f"# fail {4 - passed}")
-    return int(passed < 4)
+    print(f"# fail {total - passed}")
+    return int(passed < total)
 
 
 if __name__ == "__main__":

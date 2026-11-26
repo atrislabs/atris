@@ -780,6 +780,7 @@ async function fleet(args = []) {
     console.log('  atris fleet: coordinate agent swarm via Swarlo');
     console.log('');
     console.log('  fleet              show workspace fleet (default)');
+    console.log('  fleet verify <manifest.json> [--retry-failed] [--json]   check pinned local repos and their joint behavior');
     console.log('  fleet --global     query the machine Swarlo hub');
     console.log('  fleet post <msg>   post message to board (global)');
     console.log('  fleet task <prompt> create a task for agents (global)');
@@ -794,6 +795,26 @@ async function fleet(args = []) {
     console.log('  fleet down <member> deactivate launched members ([--hub id])');
     console.log('  fleet launched     list activated members (alias: roster)');
     console.log('');
+    return;
+  }
+
+  if (subcommand === 'verify') {
+    try {
+      if (scope.global || argv.length !== 2 || flags.some(flag => !['--json', '--retry-failed'].includes(flag))) {
+        throw new Error('usage: atris fleet verify <manifest.json> [--retry-failed] [--json]');
+      }
+      const result = await require('../lib/fleet-verify').verifyFleet(argv[1], { retryFailed: flags.includes('--retry-failed') });
+      if (json) console.log(JSON.stringify(result));
+      else {
+        for (const target of result.targets) console.log(`${target.name}: ${target.state}${target.detail ? ', ' + target.detail : ''}`);
+        console.log(`joint check: ${result.joint.state}${result.joint.detail ? ', ' + result.joint.detail : ''}`);
+      }
+      process.exitCode = result.ok ? 0 : 1;
+    } catch (error) {
+      if (json) console.log(JSON.stringify({ ok: false, error: error.message }));
+      else console.error(error.message);
+      process.exitCode = 1;
+    }
     return;
   }
 

@@ -43,3 +43,5 @@ rg "founderCommand|--global|singleRepo|defaultScanRoot|isFreshWorkspace" command
 ## Recovering a checked delivery after a restart
 
 Open [the coordination campaign](../../campaigns/cmp-coordination-spark/BRIEF.md) when a worker has lost its acknowledgement. `commands/fleet.js` sends a keyed report to the retry-safe receiver. `lib/element-swarm.js` binds completion to the current claim and stores its check. The [joint judge](../../campaigns/cmp-coordination-spark/judge.py) reads the resulting card and thread.
+
+For a cross-repository contract, start with [the two-repository example](../../campaigns/cmp-spark-repo-contract/BRIEF.md). `atris fleet verify` runs individually pinned local repository checks and then exercises their shared interface on fresh copies. [Runner](../../../lib/fleet-verify.js) [Independent exercise](../../campaigns/cmp-coordination-spark/join.py)
