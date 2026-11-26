@@ -95,6 +95,10 @@ const CASES = {
     page('<svg><filter id="n"><feTurbulence baseFrequency="0.8"/></filter></svg>'),
     page('<div class="bg">Hi</div>', '.bg { background-image: url(/img/grain.png); }'),
   ],
+  'page-menu-centre': [
+    page('<button>More</button><div role="menu" class="m"><button role="menuitem">Rename</button></div>', '.m { animation: grow .15s ease-out; } @keyframes grow { from { transform: scale(.95); opacity: 0; } }'),
+    page('<button popovertarget="p">More</button><div id="p" popover class="m"><a href="/r">Rename</a></div>', '.m { position-anchor: --more; position-area: bottom span-right; transition: scale .15s, opacity .15s; } .m:popover-open { scale: 1; } @starting-style { .m:popover-open { scale: .9; opacity: 0; } }'),
+  ],
 };
 
 const prose = (topic) => [
@@ -606,6 +610,27 @@ const ATTACKS = [
   // product text quoted in <q> is not the page's own voice
   ['page-two-word-sentence', page('<p>The coach answers each sentence with one nudge.</p><ul><li><q>Cut this.</q></li></ul>'), false],
   ['page-word-real', page('<p>The coach answers each sentence with one nudge.</p><ul><li><q>Give a real example.</q></li></ul>'), false],
+  // a menu that grows out of its own middle: the same fault written by a state, a transition, an anchor and nesting
+  ['page-menu-centre', page('<ul role="listbox" class="l" data-state="closed"><li role="option">Ana</li></ul>', '.l { transition: transform 120ms; } .l[data-state="closed"] { transform: scale(0.96); } .l[data-state="open"] { transform: none; }'), true],
+  ['page-menu-centre', page('<button aria-expanded="false">File</button><div role="menu" class="menu"><a href="/n">New</a></div>', '.menu { transform: scaleY(0); transition: transform .2s; } .menu.open { transform: scaleY(1); }'), true],
+  ['page-menu-centre', page('<button id="b">More</button><div popover anchor="b" class="p"><a href="/r">Rename</a></div>', '.p:popover-open { animation: in .2s; } @keyframes in { 0% { transform: translateY(-4px) scale(.9); } }'), true],
+  ['page-menu-centre', page('<div popover class="p"><a href="/r">Rename</a></div>', '.p { top: anchor(bottom); left: anchor(left); transition: all .2s; } @starting-style { .p:popover-open { transform: scale(.95); } }'), true],
+  ['page-menu-centre', page('<div role="menu" popover class="m"><a href="/r">Rename</a></div>', '.m { transition: .2s; &:popover-open { @starting-style { scale: .95; } } }'), true],
+  ['page-menu-centre', page('<div role="menu" class="m" style="animation: grow .2s"><a href="/r">Rename</a></div>', '.m { transform-origin: center; } .m[data-state=open] { transform-origin: 50% 50%; } @keyframes grow { from { scale: 95%; } }'), true],
+  ['page-menu-centre', page('<button aria-expanded="true">File</button><div role="menu" class="m"><a href="/n">New</a></div>', '.m { opacity: 0; transition: opacity .2s, transform .2s; } button[aria-expanded="true"] + .m { opacity: 1; transform: scale(1.04); }'), true],
+  // honest menus and pages like them
+  ['page-menu-centre', page('<div role="menu" class="m"><a href="/r">Rename</a></div>', '.m { animation: grow .15s; transform-origin: top left; } @keyframes grow { from { transform: scale(.95); } }'), false],
+  ['page-menu-centre', page('<div role="menu" class="m"><a href="/r">Rename</a></div>', '.m { animation: grow .15s; transform-origin: top; } @keyframes grow { from { transform: scale(.95); } }'), false],
+  ['page-menu-centre', page('<div role="menu" class="m" data-state="open"><a href="/r">Rename</a></div>', '.m { transition: transform .15s; transform-origin: var(--radix-dropdown-menu-content-transform-origin); } .m[data-state=closed] { transform: scale(.95); }'), false],
+  ['page-menu-centre', page('<div role="menu" class="m" data-state="open"><a href="/r">Rename</a></div>', '.m { transition: transform .15s; } .m[data-state=closed] { transform: scale(.95); } .m[data-state=open] { transform-origin: top right; }'), false],
+  ['page-menu-centre', page('<div role="menu" class="m"><a href="/r">Rename</a></div>', '.m { animation: fade .15s; } @keyframes fade { from { opacity: 0; transform: translateY(-4px); } }'), false],
+  ['page-menu-centre', page('<dialog class="d"><p>Delete this list?</p><button>Delete</button></dialog>', '.d[open] { animation: pop .2s; } @keyframes pop { from { transform: scale(.9); } }'), false],
+  ['page-menu-centre', page('<div popover class="t"><p>Saved</p></div>', '.t { transition: scale .2s; } @starting-style { .t:popover-open { scale: .9; } }'), false],
+  ['page-menu-centre', page('<div class="c"><p>Saved</p></div>', '.c { animation: pop .3s; } @keyframes pop { from { transform: scale(.9); } }'), false],
+  ['page-menu-centre', page('<div role="menu" class="m"><a href="/r">Rename</a></div>', '.m { animation: in .15s; transition: scale .2s; } .m.open { scale: 1; } @keyframes in { from { transform: scale(1); opacity: 0; } to { transform: scale(100%); } }'), false],
+  ['page-menu-centre', page('<div role="menu" class="m origin-top-right"><a href="/r">Rename</a></div><ul role="listbox" class="m data-[side=bottom]:origin-top"><li>Ana</li></ul>', '.m { animation: grow .15s; } @keyframes grow { from { transform: scale(.95); } }'), false],
+  ['page-menu-centre', page('<div role="menu" class="m" data-state="closed"><a href="/r">Rename</a></div>', '.m[data-state=closed] { transform: scale(.95); } .m { transition: opacity .2s; }'), false],
+  ['page-menu-centre', page('<div role="menu" class="m"><a href="/r">Rename</a></div><script>m.style.transformOrigin = side + " left";</script>', '.m { animation: grow .15s; } @keyframes grow { from { transform: scale(.95); } }'), false],
 ];
 
 test('every rule has a failing page and a twin, and a twin that hides the problem is still caught', () => {
