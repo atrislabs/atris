@@ -31,6 +31,10 @@ def main():
     reading = data["reading"]
     output = reading.get("output_tail", "")
     seeds = re.findall(r"replay this workload with --seed (\d+)", output)
+    issues = []
+    for line in output.splitlines():
+        if line.startswith("coordination issues "):
+            issues = json.loads(line.removeprefix("coordination issues "))
     if data["passed"]:
         print(reading["summary"], "seed " + (seeds[-1] if seeds else "unavailable"))
         return 0
@@ -40,7 +44,11 @@ def main():
         counter = len(data["campaign"]["missions"]) + 1
         mission = f"m-spark-investigate-{counter}"
         command = "python3 -B atris/campaigns/cmp-coordination-spark/round.py"
-        if seeds:
+        if issues and re.fullmatch(r"[0-9a-f]{64}", issues[0].get("case_id", "")):
+            command += " --replay-case " + issues[0]["case_id"]
+        elif issues:
+            command += " --seed " + str(int(issues[0]["seed"]))
+        elif seeds:
             command += " --seed " + seeds[-1]
         details = {"mission_id": mission, "member": "replay-lead",
                    "objective": "Reproduce the failed coordination check locally. Verify the receiver before proposing any change.",

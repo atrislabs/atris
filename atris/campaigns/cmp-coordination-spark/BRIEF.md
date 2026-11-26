@@ -47,3 +47,7 @@ python3 -B atris/campaigns/cmp-coordination-spark/round.py --seed 20261126
 ```
 
 Inspect the watch with `atris campaign show cmp-spark-coordination-watch`. Pausing this campaign makes its daily check skip work until resumed.
+
+The watch grows its regression set from evidence. If the receiver stores the wrong message or loses an intended delivery, repeat the same operations against a fresh database. Two observations of the same violation save the full sequence, including the authors, payload, keys and restart positions. A failed setup or a mixed result opens an investigation without adding an unconfirmed belief. Future rounds replay up to three saved sequences before exploring a new one. They keep the sequence after repair so a later change can expose a regression.
+
+The reviewer's command uses `--replay-case` and the saved sequence's identifier. This keeps the original experiment reproducible if the workload generator changes. The receiver's stored author, text and destination are checked independently of its acknowledgement.
