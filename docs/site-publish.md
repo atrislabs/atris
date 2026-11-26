@@ -33,6 +33,17 @@ Example:
 atris site publish . --slug my-app --build --profile app
 ```
 
+## Page check
+
+After any build and before anything is uploaded, publish checks every html page in the folder with the same rules as `atris site check` ([site-check.md](site-check.md)). Built pages are also held to the look they were built in: a page edited after its build, a look the owner never picked or a linked style sheet missing from the folder each count as a fault. `atris site deploy` runs the same check before its upload and before `--dry-run` prints its plan.
+
+The project picks what a failing page does in `.atris/slop.rules.json`. `atris site check --mode` prints the mode in force.
+
+- **Watch** is the default. The check writes what would fail to stderr under `page check in watch mode: the upload goes ahead`. The upload goes on as before.
+- **Block** is on with `"pages": "block"`. A failing page stops the upload: the check prints `refused <file>` with one line per fault, then `page check in block mode: nothing was uploaded.` and the command exits 1. `atris init` turns block mode on for a new project.
+
+To switch one page rule off, list its id under `off`, like `{ "pages": "block", "off": ["page-glow"] }`. The report still names every rule that is switched off. The content page grammar cannot be switched off.
+
 ## File handling
 
 The walker skips `node_modules` and `.git` directories, `.DS_Store`, any name starting with `.` (dotfiles and dotfolders), and symbolic links. Paths are normalized to use forward slashes and never start with `/`.
@@ -96,7 +107,7 @@ preview url: <preview url>
 publish id: <publish id>
 ```
 
-With `--json`, it prints the full API response object (including `publish_id`, `previous_publish_id`, `slug`, `pages`, `verified`, and `urls`).
+With `--json`, it prints the full API response object (including `publish_id`, `previous_publish_id`, `slug`, `pages`, `verified` and `urls`) plus a `page_check` field: `{ "mode": "watch" | "block", "ok": true | false, "files": [...] }`, where each failing file has `file`, `findings` and the report lines in `text`. When block mode refuses a page, nothing is uploaded and `--json` prints the check report (`{ "files": [...] }`) instead.
 
 When `verified` is not `true`, the human output still shows `verified: no`, and the CLI also writes `site is not live: verified no` to stderr.
 
@@ -105,7 +116,7 @@ When `verified` is not `true`, the human output still shows `verified: no`, and 
 | Code | When |
 |------|------|
 | 0 | Publish succeeded and `verified` is `true`. |
-| 1 | Not logged in, network failure, server returned an error, or `verified` is not `true`. |
+| 1 | A page failed the page check in block mode, not logged in, network failure, server returned an error, or `verified` is not `true`. |
 | 2 | Missing or invalid arguments, directory errors, missing `index.html`, build failure, file limit exceeded, or unknown flags. |
 
 ## Recipes
@@ -177,7 +188,8 @@ The hosted-sites lane serves files only. These Next.js features are not supporte
 | `not logged in. run atris login first.` | | No bearer token in credentials. | Run `atris login`. |
 | `site home page is missing: index.html` | | No `index.html` in the published folder. | Add `index.html` or point at the correct build output. |
 | `site files exceed upload limits:` | | A file exceeds 2 MB or the folder has more than 200 pages. | Shrink or split assets; reduce page count. |
+| `page check in block mode: nothing was uploaded.` | | A page broke a page rule and the project is in block mode. | Fix each named line, check again with `atris site check <dir>`, then publish. |
 
 ## Verification tip
 
-After publishing, check mobile layout with Playwright device emulation (for example iPhone or Pixel presets). Do not rely on headless Chrome with `--window-size` for phone checks; it floors viewport width at 500px and will miss real mobile breakpoints. WebKit emulation is a good stand-in for iOS Safari.
+Before publishing, run `atris site check <dir> --render`. It opens each page at 390 and 1280 pixels wide and catches sideways scrolling, cut off text and buttons too small to tap. Headless Chrome will not open a window narrower than 500 pixels. The check runs the page in a frame of the asked width. For iOS Safari itself, WebKit emulation in Playwright is a good stand-in.
