@@ -139,6 +139,33 @@ test('clear restores router behavior and invalid jobs or wrong-role engines fail
   assert.match(command(root, ['assign', 'build', 'unknown']).err, /unknown engine/);
 }));
 
+test('a named Codex search model reaches a member while unpinned search stays with the router', () => withRoom(root => {
+  ready(root, 'codex', 'haiku');
+  assert.notEqual(resolveEngineForRoleRanked('navigator', root, { now: NOW }).engine.id, 'codex');
+  assert.match(command(root, ['assign', 'search', 'codex', '--effort', 'low']).err, /codex cannot do search/);
+
+  const terra = command(root, ['assign', 'search', 'codex', '--model', 'gpt-6.1-terra', '--effort', 'low']);
+  assert.equal(terra.exit, 0, terra.err);
+  const search = resolveEngineForRoleRanked('navigator', root, { now: NOW }).engine;
+  assert.deepEqual([search.id, search.roster_model, search.roster_effort], ['codex', 'gpt-6.1-terra', 'low']);
+
+  const sol = command(root, ['assign', 'purposeful search', 'codex', '--like', 'search', '--model', 'gpt-6.2-sol', '--effort', 'xhigh']);
+  assert.equal(sol.exit, 0, sol.err);
+  fs.appendFileSync(path.join(root, 'atris', 'ROSTER.md'), '\n## team\n- researcher: purposeful search\n');
+  const picked = require('../lib/member-engine').memberRosterEngine('researcher', root, { now: NOW });
+  assert.equal(picked.role, 'navigator');
+  assert.equal(picked.model, 'gpt-6.2-sol');
+  assert.equal(picked.engine.roster_effort, 'xhigh');
+  const mission = resolveMissionTickRunner({ runner: 'auto', owner: 'researcher' }, root, { now: NOW }).mission;
+  assert.deepEqual([mission.runner, mission.model, mission.roster_effort], ['codex', 'gpt-6.2-sol', 'xhigh']);
+
+  const backup = command(root, ['assign', 'search', 'haiku', '--backup', 'codex gpt-6.1-terra low']);
+  assert.equal(backup.exit, 0, backup.err);
+  setEngineHealth('haiku', 'credit_out', root);
+  const recovered = resolveEngineForRoleRanked('navigator', root, { now: NOW }).engine;
+  assert.deepEqual([recovered.id, recovered.roster_model, recovered.roster_effort], ['codex', 'gpt-6.1-terra', 'low']);
+}));
+
 test('a registry normalization rewrite preserves roster, unknown keys, and engine entries', () => withRoom((root) => {
   ready(root, 'codex');
   const file = engineRegistryFile(root);

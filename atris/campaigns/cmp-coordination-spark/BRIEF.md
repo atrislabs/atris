@@ -10,6 +10,8 @@ Use two isolated project copies, scratch databases, fake members and loopback HT
 
 ## Action
 
+When a failed check needs investigation, assign the role before the engine. Scout locates the evidence. Replay Lead answers the specific question about what failed. Builder or Executor owns a code change, and the existing check verifies it. The [workspace roster](../../ROSTER.md) chooses the model for each role.
+
 Start with the unchanged projects. Freeze the judge and record the failed cases. Fix the narrowest shared cause. Run the same cases on the candidate and use a different reviewer to challenge an untested boundary. Test durable behavior across process restarts. Count actual verifier invocations and receiver rows. Pass references and summaries between reviewers, keeping detailed logs at the evidence source.
 
 ## Reward and review
