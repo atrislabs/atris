@@ -120,6 +120,15 @@ test('ship removes a clean copy once its branch is on origin and says how much i
   assert.equal(record.saved_on, 'origin/codex/ship-clean');
 });
 
+test('sweep removes an empty unregistered gitlink and keeps one holding files', (t) => {
+  const ws = workspace(t), head = git(ws.app, ['rev-parse', 'HEAD']);
+  git(ws.app, ['update-index', '--add', '--cacheinfo', `160000,${head},sovereign`]); git(ws.app, ['commit', '-qm', 'track empty sovereign pointer']); git(ws.app, ['push', '-q', 'origin', 'master']);
+  const empty = addCopy(ws, 'empty-gitlink'), filled = addCopy(ws, 'filled-gitlink');
+  fs.writeFileSync(path.join(filled, 'sovereign', 'notes.txt'), 'local work\n'); age(empty, 3); age(filled, 3);
+  const repo = repoReport(sweepWorkspace({ workspace: ws.root, apply: true }));
+  assert.deepEqual(repo.removed.map((item) => item.path), [empty], JSON.stringify(repo.kept)); assert.equal(fs.existsSync(empty), false); assert.equal(fs.existsSync(path.join(filled, 'sovereign', 'notes.txt')), true);
+});
+
 test('ship keeps the copy when asked with --keep-copy', (t) => {
   const ws = workspace(t);
   const copy = addCopy(ws, 'ship-keep');
