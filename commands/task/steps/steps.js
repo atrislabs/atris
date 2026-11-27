@@ -1,5 +1,7 @@
 'use strict';
 
+const { workerEnvMarker } = require('../../../lib/task-core');
+
 // commands/task/steps/steps.js: Working a task step by step: step options, running a step, the
 // current step, and step.
 // Owner: executor. Moved out of commands/task.js on 2026-11-16 by lib/split-file.js; read README.md
@@ -174,6 +176,13 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
   let task = taskDetail(taskDb, db, taskId);
   if (!task) throw taskStepError('not_found', `task not found: ${taskId}`, { status: 404, exitCode: 1 });
   const initialPage = taskPageContract(task, { reviewer });
+  if (initialPage.stage.current === 'plan' && Boolean(workerEnvMarker())) {
+    throw taskStepError('agent_proof_only_plan_approval_blocked', 'only a person can approve a plan', {
+      status: 403,
+      exitCode: 2,
+      page: initialPage,
+    });
+  }
   const initialHandoffState = task.status === 'review' ? reviewHandoffForTask(task, { suppressExistingFollowUp: true }) : null;
   if (initialHandoffState && (initialHandoffState.next_action === 'continue_work' || initialHandoffState.next_action === 'human_accept_waiting')) {
     const reason = initialHandoffState.next_action === 'continue_work'
@@ -231,6 +240,13 @@ function runTaskStep(taskDb, db, taskId, options = {}) {
     version = planned.event.version;
     stagePacket = planned.stage_packet;
   } else if (current === 'plan') {
+    if (Boolean(workerEnvMarker())) {
+      throw taskStepError('agent_proof_only_plan_approval_blocked', 'only a person can approve a plan', {
+        status: 403,
+        exitCode: 2,
+        page: actionPage,
+      });
+    }
     const firstMove = String(options.firstMove || '').trim();
     if (!firstMove) {
       throw taskStepError('first_move_required', 'atris task step: --first-move required', { status: 400, exitCode: 2, page: actionPage });

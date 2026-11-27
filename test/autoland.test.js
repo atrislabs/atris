@@ -648,18 +648,23 @@ test('clarify: the gate strips agent jargon and closes the thought before an ope
 });
 
 test('live update: a landing texts its capability sentence the moment it lands', () => {
-  const tasks = [
-    { display_id: 'CLI-1', title: 'Fix onboarding', claimed_by: 'onboarding', metadata: { landing_happened: 'A new user now reaches task setup before any proof tick, so Atris avoids a fake first receipt.' } },
-    { display_id: 'CLI-2', title: 'Mission XP: Decide and start the next useful mission after: x', metadata: { landing_happened: 'Stopped with reason: no concrete follow-up mission found.' } },
-  ];
-  const text = autoland.composeLiveUpdate({ landedRefs: ['CLI-1', 'CLI-2'], tasks, project: 'atris-cli' });
-  assert.match(text, /atris atris-cli: just landed/);
-  assert.match(text, /- a new user now reaches task setup before any proof tick/);
-  assert.match(text, /\(onboarding, needs review\)/);
-  // Clean-stop check-offs never page the operator.
-  assert.doesNotMatch(text, /no concrete follow-up/);
-  // A landing that is nothing but clean stops sends no text at all.
-  assert.equal(autoland.composeLiveUpdate({ landedRefs: ['CLI-2'], tasks, project: 'atris-cli' }), '');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-autoland-live-update-'));
+  try {
+    const tasks = [
+      { display_id: 'CLI-1', title: 'Fix onboarding', claimed_by: 'onboarding', metadata: { landing_happened: 'A new user now reaches task setup before any proof tick, so Atris avoids a fake first receipt.' } },
+      { display_id: 'CLI-2', title: 'Mission XP: Decide and start the next useful mission after: x', metadata: { landing_happened: 'Stopped with reason: no concrete follow-up mission found.' } },
+    ];
+    const text = autoland.composeLiveUpdate({ landedRefs: ['CLI-1', 'CLI-2'], tasks, project: 'atris-cli', root });
+    assert.match(text, /atris atris-cli: just landed/);
+    assert.match(text, /- a new user now reaches task setup before any proof tick/);
+    assert.match(text, /\(onboarding, needs review\)/);
+    // Clean-stop check-offs never page the operator.
+    assert.doesNotMatch(text, /no concrete follow-up/);
+    // A landing that is nothing but clean stops sends no text at all.
+    assert.equal(autoland.composeLiveUpdate({ landedRefs: ['CLI-2'], tasks, project: 'atris-cli', root }), '');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 5 });
+  }
 });
 
 test('digest and live update render plain trust labels without scores', () => {

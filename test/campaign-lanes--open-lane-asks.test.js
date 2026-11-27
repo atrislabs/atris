@@ -10,7 +10,7 @@ function opened(askId, lane, extra = {}) {
 }
 
 function answered(askId, answer = 'yes') {
-  return { type: 'ask_answered', actor: 'keshav', data: { ask_id: askId, answer } };
+  return { type: 'ask_answered', actor: 'human:keshav', data: { ask_id: askId, answer } };
 }
 
 test('returns an empty set when there are no events', () => {
@@ -71,7 +71,7 @@ test('ignores events that are not ask events, and answers with no data', () => {
     { type: 'campaign_started', actor: 'frontend-dev', data: { title: 'Lock apps' } },
     opened('a1', 'billing'),
     { type: 'mission_started', actor: 'payments-infra', data: { mission_id: 'm1' } },
-    { type: 'ask_answered', actor: 'keshav' },
+    { type: 'ask_answered', actor: 'human:keshav' },
     { type: 'judge_ran' },
   ];
   assert.deepEqual([...openLaneAsks(events)], ['billing']);

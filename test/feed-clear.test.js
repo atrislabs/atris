@@ -68,3 +68,35 @@ test('help: clear has its own line and does not split say from its explanation',
   assert.match(lines[say + 1], /a short note in the feed/);
   assert.ok(lines.some((line) => line.includes('atris feed clear --confirm')));
 });
+
+test('after clearing, working shelf agrees on needs_decision and new_results while keeping live work', async (t) => {
+  const ctx = project(t, ['writer', 'scout']);
+  feed.proposeCard(ctx.root, { as: 'writer', title: 'Draft a welcome message', why: 'Help new people', env: ctx.env });
+  tasks.addTask(ctx.db, {
+    workspaceRoot: ctx.root,
+    title: 'Ship checkout polish',
+    status: 'done',
+    metadata: { result: 'Checkout loads twice as fast.' },
+  });
+  const live = feed.proposeCard(ctx.root, { as: 'scout', title: 'Call the ten oldest leads', why: 'Old leads answer more often', env: ctx.env }).card;
+  feed.decide(ctx.root, live.id, 'approve', { env: ctx.env, deps: ctx.deps });
+
+  const before = feed.listCards(ctx.root, { filter: 'all', env: ctx.env });
+  assert.equal(before.counts.needs_decision, 1);
+  assert.equal(before.counts.new_results, 1);
+  assert.equal(before.counts.working, 1);
+
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  room.clear(ctx.root, { env: ctx.env, confirmed: true });
+
+  const allShelf = feed.listCards(ctx.root, { filter: 'all', env: ctx.env });
+  const waitingShelf = feed.listCards(ctx.root, { filter: 'needs_decision', env: ctx.env });
+  const workingShelf = feed.listCards(ctx.root, { filter: 'working', env: ctx.env });
+
+  for (const [name, shelf] of [['all', allShelf], ['needs_decision', waitingShelf], ['working', workingShelf]]) {
+    assert.equal(shelf.counts.needs_decision, 0, `${name} shelf needs_decision after clear`);
+    assert.equal(shelf.counts.new_results, 0, `${name} shelf new_results after clear`);
+    assert.equal(shelf.counts.working, 1, `${name} shelf working count after clear`);
+  }
+  assert.deepEqual(workingShelf.cards.map((card) => card.id), [live.id]);
+});

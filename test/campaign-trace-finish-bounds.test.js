@@ -77,7 +77,7 @@ test('trace finish flags follow real scoring boundaries across empty, early and 
     const h = history(true);
     h.add('stopped');
     h.add('ask_opened', { ask_id: 'a', question: 'private question' });
-    h.add('budget_added', { amount_usd: 1 });
+    h.add('budget_added', { amount_usd: 1 }, 'human:operator');
     h.add('resumed');
     h.add('judge_set', { judge: 'node private-replacement.js' });
     h.add('mission_proposed', { mission_id: 'later', member: 'worker' });
@@ -119,7 +119,7 @@ test('trace finish flags follow real scoring boundaries across empty, early and 
   {
     const h = history(true, { budget: 0.1 });
     h.add('mission_ended', { mission_id: 'spent', outcome: 'kept', cost_usd: 0.1 });
-    h.add('budget_added', { amount_usd: 1 });
+    h.add('budget_added', { amount_usd: 1 }, 'human:operator');
     h.add('done', {}, 'worker');
     check(h, { state: 'resting', reason: null, done: [false] });
   }

@@ -776,6 +776,7 @@ function showHelpAll() {
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
   console.log('  soul       - Show, snapshot, or fork workspace identity');
   console.log('  fleet      - Inspect local fleet status');
+  console.log('  swarm      - Run 1 lead + N workers over Git, Swarlo, and atris/team/ (start, expand, freeze, watch)');
   console.log('  loops      - Self-improving loop audit/scaffold (`init`, `audit`, `tick`, `board`)');
   console.log('  self-improve - Alias for `atris loops init`');
   console.log('  agent      - Select cloud agent, spawn worker requests, or run `agent doctor`');
@@ -1331,10 +1332,29 @@ if (!command || !knownCommands.includes(command)) {
 if (!command || !knownCommands.includes(command)) {
   const rawNaturalArgs = process.argv.slice(2);
   const natural = parseNaturalEntryArgs(rawNaturalArgs);
-  if (command && isBareAtrisFlag(command)) {
-    command = '';
+  const leadingBareFlag = Boolean(command && isBareAtrisFlag(command));
+  if (leadingBareFlag) {
+    command = (natural.positionals && natural.positionals[0]) || '';
   }
   const userInput = natural.input;
+
+  if (leadingBareFlag && command && knownCommands.includes(command)) {
+    const leadingFlags = rawNaturalArgs.filter((arg) => isBareAtrisFlag(arg));
+    const suggestion = `atris ${command} ${leadingFlags.join(' ')}`.trim();
+    const message = `place flags after the command: ${suggestion}`;
+    if (natural.asJson) {
+      console.log(JSON.stringify({
+        ok: false,
+        error: message,
+        command,
+        input: rawNaturalArgs.join(' '),
+        usage: suggestion,
+      }, null, 2));
+    } else {
+      console.error(message);
+    }
+    process.exit(2);
+  }
 
   // An unmatched first token that looks like a command (or a typo of one)
   // is not a request to create work, even when extra args follow
@@ -1447,6 +1467,25 @@ function printFirstMinuteScreen(options) {
 async function interactiveEntry(userInput, options = {}) {
   const workspaceDir = process.cwd();
   const state = detectWorkspaceState(workspaceDir);
+  const trimmedInput = String(userInput || '').trim();
+
+  if (trimmedInput && isFlagLikeAnswer(trimmedInput)) {
+    if (options.asJson) {
+      console.log(JSON.stringify({
+        ok: false,
+        error: `unknown option: ${trimmedInput}`,
+        command: trimmedInput,
+        usage: 'atris help',
+      }, null, 2));
+      return 2;
+    }
+    if (state.state === 'fresh') {
+      printFirstMinuteScreen({ root: workspaceDir, fresh: true });
+      return 0;
+    }
+    console.error(`Unknown option: "${trimmedInput}". Run "atris help" for available commands.`);
+    return 2;
+  }
 
   // Fresh folder is a conversation, not a scaffold form.
   if (state.state === 'fresh') {
@@ -1482,10 +1521,6 @@ async function interactiveEntry(userInput, options = {}) {
         return 0;
       }
       printAtrisOverview();
-      return 0;
-    }
-    if (isFlagLikeAnswer(request)) {
-      printFirstMinuteScreen({ root: workspaceDir, fresh: true });
       return 0;
     }
     const initStatus = runMinimalInit({ silent: true });
@@ -2018,8 +2053,8 @@ if (command === 'guide') {
 } else if (command === 'init') {
   // Help flag must short-circuit before initCmd() (which scaffolds files)
   // and before interactiveEntry (which loads workspace context).
-  const initArg = process.argv[3];
-  if (initArg === '-h' || initArg === '--help' || initArg === 'help') {
+  const initArgs = process.argv.slice(3);
+  if (initArgs.includes('-h') || initArgs.includes('--help') || initArgs[0] === 'help') {
     initCmd();
     process.exit(0);
   }
@@ -3365,6 +3400,11 @@ if (command === 'guide') {
   const args = process.argv.slice(3);
   require('../commands/fleet').fleet(args)
     .then(() => exitAfterStdoutDrain(process.exitCode || 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'swarm') {
+  const args = process.argv.slice(3);
+  Promise.resolve().then(() => require('../commands/swarm').swarmCommand(args))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : (process.exitCode || 0)))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'loops' || command === 'self-improve') {
   try {

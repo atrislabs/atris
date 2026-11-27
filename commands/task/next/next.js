@@ -1,5 +1,7 @@
 'use strict';
 
+const { heldForPerson } = require('../../../lib/member-task-pick');
+
 // commands/task/next/next.js: Choosing what to work on: the queue and its scopes, the current task,
 // next, endgame seed tasks and continue-work.
 // Owner: task-planner. Moved out of commands/task.js on 2026-11-16 by lib/split-file.js; read
@@ -923,8 +925,8 @@ function cmdNext(args) {
     status: 'open',
     limit: scoped ? null : 50,
   }), scope);
-  const open = openAll.filter((task) => !isDecisionTask(task));
-  const skippedDecisions = openAll.length - open.length;
+  const open = openAll.filter((task) => !isDecisionTask(task) && !heldForPerson(task));
+  const skippedDecisions = openAll.filter((task) => isDecisionTask(task)).length;
   if (!open.length) {
     const { projection, outPath } = reviewProjection;
     if (skippedDecisions > 0 && !reviewTasks.length) {

@@ -1,5 +1,8 @@
 'use strict';
 
+const { isPlanAwaitingApproval } = require('../../../lib/member-task-pick');
+const { workerEnvMarker } = require('../../../lib/task-core');
+
 // commands/task/api/api.js: The local task API server behind atris task serve: its routes, reads
 // and writes.
 // Owner: unassigned. Moved out of commands/task.js on 2026-11-16 by lib/split-file.js; read
@@ -194,6 +197,13 @@ async function postTaskCreate({ req, res, taskDb, db }) {
 }
 
 async function postTaskClearPlan({ req, res, taskDb, db }) {
+  if (Boolean(workerEnvMarker())) {
+    return sendJson(res, 403, {
+      ok: false,
+      reason: 'agent_proof_only_plan_approval_blocked',
+      detail: 'only a person can clear plans waiting on approval',
+    });
+  }
   const body = await readJsonBody(req);
   if (!body.confirm && !body.yes) {
     return sendJson(res, 400, { ok: false, reason: 'confirm_required', detail: stageErrorDetail('task clear-plan', 'confirm_required') });
@@ -269,6 +279,16 @@ function postTaskApiContinueWork({ res, taskDb, db, taskId, body }) {
 }
 
 function postTaskApiClaim({ res, taskDb, db, taskId, body }) {
+  if (Boolean(workerEnvMarker())) {
+    const existingTask = taskDb.getTask(db, taskId);
+    if (isPlanAwaitingApproval(existingTask)) {
+      return sendJson(res, 403, {
+        ok: false,
+        reason: 'plan_awaiting_approval',
+        detail: 'plan is waiting on a person to approve before claiming',
+      });
+    }
+  }
   const owner = String(body.owner || body.actor || DEFAULT_OWNER);
   const result = taskDb.claimTask(db, { id: taskId, claimedBy: owner });
   if (!result.claimed) return sendJson(res, 409, { ok: false, reason: result.reason, claimed_by: result.claimed_by || null });
@@ -346,6 +366,13 @@ function postTaskApiPlan({ res, taskDb, db, taskId, body }) {
 }
 
 function postTaskApiDo({ res, taskDb, db, taskId, body }) {
+  if (Boolean(workerEnvMarker())) {
+    return sendJson(res, 403, {
+      ok: false,
+      reason: 'agent_proof_only_plan_approval_blocked',
+      detail: 'only a person can approve a plan',
+    });
+  }
   const firstMove = String(body.first_move || body.firstMove || body.first || '').trim();
   if (!firstMove) return sendJson(res, 400, { ok: false, reason: 'first_move_required', detail: 'task do: first_move required' });
   const result = taskDb.stageTask(db, {
@@ -367,6 +394,16 @@ function postTaskApiDo({ res, taskDb, db, taskId, body }) {
 }
 
 function postTaskApiBacklog({ res, taskDb, db, taskId, body }) {
+  if (Boolean(workerEnvMarker())) {
+    const existingTask = taskDb.getTask(db, taskId);
+    if (isPlanAwaitingApproval(existingTask)) {
+      return sendJson(res, 403, {
+        ok: false,
+        reason: 'agent_proof_only_plan_approval_blocked',
+        detail: 'only a person can backlog or clear a plan waiting on approval',
+      });
+    }
+  }
   const result = taskDb.backlogTask(db, {
     id: taskId,
     actor: String(body.actor || DEFAULT_OWNER),
@@ -450,6 +487,16 @@ function postTaskApiFinish({ res, taskDb, db, taskId, body }) {
 }
 
 function postTaskApiReady({ res, taskDb, db, taskId, body }) {
+  if (Boolean(workerEnvMarker())) {
+    const existingTask = taskDb.getTask(db, taskId);
+    if (isPlanAwaitingApproval(existingTask)) {
+      return sendJson(res, 403, {
+        ok: false,
+        reason: 'plan_awaiting_approval',
+        detail: 'plan is waiting on a person to approve before marking ready',
+      });
+    }
+  }
   const proof = String(body.proof || '').trim();
   const proofIssue = meaningfulTaskProofIssue(proof);
   if (proofIssue) return sendProofIssue(res, proof, proofIssue);

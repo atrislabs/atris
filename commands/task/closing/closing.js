@@ -22,7 +22,7 @@ function bindMain(deps) {
 }
 
 function cmdDone(args) {
-  const pos = positional(args);
+  const pos = positional(args, { booleanFlags: ['--failed'] });
   const id = pos[0];
   if (!id) {
     failTask('atris task done', 'missing_id', 'id required');
@@ -103,7 +103,7 @@ function cmdDone(args) {
 }
 
 function cmdFinish(args) {
-  const pos = positional(args);
+  const pos = positional(args, { booleanFlags: ['--failed'] });
   const id = pos[0];
   if (!id) {
     failTask('atris task finish', 'missing_id', 'id required');

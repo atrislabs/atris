@@ -12,7 +12,8 @@ const { readJson, writeJson } = require('../lib/json-file');
 const { sleepSync } = require('../lib/sleep-sync');
 const { hasFlag, readFlag, readNumberFlag } = require('../lib/arg-parser');
 const { ensureMemberBundle, memberBundlePresent, updateMemberSkills } = require('../lib/member-scaffold');
-const { memberProcessPrompt, MEMBER_PROCESS_PATH } = require('../lib/member-context');
+const { memberProcessPrompt, memoryCorePrompt, MEMBER_PROCESS_PATH } = require('../lib/member-context');
+const { isPlanAwaitingApproval } = require('../lib/member-task-pick');
 
 // Runtime aliases: problem-finder, info-organizer, coordinator, task-planner, improver, problem-solver
 // memberPaths resolves steeringJsonl: path.join(workspaceRoot, '.atris', 'state', 'steering.jsonl')
@@ -25,7 +26,7 @@ const {
   memberRefusalFor, requireRunnableMember, requireMemberDir, loadMemberGoals,
   activeGoal, allExperiments, findExperiment, latestByTime, recentLogLines,
   extractMarkdownSection, firstUsefulLine, compactSentence, activeRuntimeMissionFromNow, missionPurpose,
-  MEMBER_RUN_RUNNABLE_STATUSES, MISSION_TERMINAL_STATUSES, memberRunMissionMap,
+  MEMBER_RUN_RUNNABLE_STATUSES, MISSION_TERMINAL_STATUSES, memberRunMissionMap, memberRuntimeMissionLost,
   memberRunRunnableMissionId, memberRunOwnedActiveMissionId, MEMBER_LIVE_MISSION_STATUSES,
   MEMBER_ACTIVE_ACTIVITY_MS, MEMBER_RECENT_ACTIVITY_MS, memberSlugFromRecord, isFleetMember,
   missionTimeMs, memberOwnedMissions, memberLatestMission, memberLiveMission, missionShortName,
@@ -1160,6 +1161,7 @@ function taskIsTaggedNeedsHuman(task) {
 
 function taskCandidateFromSource(task, source, sourcePath = '') {
   if (taskIsTaggedNeedsHuman(task)) return null;
+  if (isPlanAwaitingApproval(task)) return null;
   const ref = taskRef(task);
   if (!ref) return null;
   const status = lowerCompact(task.status || task.state || 'open');
@@ -4547,6 +4549,52 @@ function memberGoalFromMission(name, ...args) {
     );
     return;
   }
+  const lostMission = memberRuntimeMissionLost(paths, runtime);
+  if (lostMission) {
+    const staleGoals = state.goals.filter((goal) => (
+      goal.source === 'mission' && goal.status === 'active'
+      && goal.mission_id === lostMission.id
+    ));
+    const staleList = staleGoals.map((goal) => goal.title || goal.id).join('; ');
+    const ask = staleGoals.length
+      ? `Mission ${lostMission.id} is not in missions.jsonl and now.md has been idle for ${lostMission.idle_days} days, so its active goal is stale. Retire ${compactSentence(staleList, 140)} by setting its status in goals.json, or start a living mission and run: atris member goal-from-mission ${name}`
+      : `Mission ${lostMission.id} is not in missions.jsonl and now.md has been idle for ${lostMission.idle_days} days. Start a living mission, then run: atris member goal-from-mission ${name}`;
+    const logPath = appendMemberGoalLog(paths.memberDir, name, 'Member goal-from-mission blocked', {
+      ask,
+      reason: 'mission_record_missing',
+      mission_id: lostMission.id,
+      mission_status: lostMission.status,
+      page_idle_days: lostMission.idle_days,
+      stale_goals: staleGoals.map((goal) => goal.id),
+    });
+    printJsonOrText(
+      {
+        ok: true,
+        action: 'needs_user',
+        member: name,
+        needs_user: true,
+        reason: 'mission_record_missing',
+        ask,
+        stale_goals: staleGoals,
+        mission: {
+          north_star: purpose.northStar,
+          runtime_id: runtime.id || null,
+          runtime_status: runtime.status || null,
+          runtime_next: runtime.next || null,
+          record_found: false,
+          page_idle_days: lostMission.idle_days,
+        },
+        mission_file: paths.missionFile,
+        log_path: logPath,
+      },
+      [
+        `Blocked for ${name}: mission ${lostMission.id} is missing from missions.jsonl and now.md has been idle for ${lostMission.idle_days} days.`,
+        `Ask: ${ask}`,
+      ],
+      asJson,
+    );
+    return;
+  }
   // The title IS the mission focus, no boilerplate prefix; the acceptance list already
   // says "one bounded step" and the why carries the full sentence.
   const title = compactSentence(runtimeFocus, 96);
@@ -4819,6 +4867,7 @@ function fallbackProposalForGoal(goal, context = {}) {
 
 function proposalPromptForGoal(goal, context = {}, cwd = process.cwd()) {
   const sharedProcess = memberProcessPrompt(cwd);
+  const memoryCore = memoryCorePrompt(cwd);
   const files = (context?.evidence?.goal_files?.files || [])
     .filter((file) => file.exists && file.excerpt)
     .slice(0, 4)
@@ -4847,6 +4896,7 @@ function proposalPromptForGoal(goal, context = {}, cwd = process.cwd()) {
   };
   return [
     ...(sharedProcess ? [sharedProcess, ''] : []),
+    ...(memoryCore ? [memoryCore, ''] : []),
     'You generate the next bounded Atris member experiment.',
     'Read the JSON context and return only JSON with keys: title, proof_target, next_step, verifier, stop_rule.',
     'The next_step must be adaptive to the goal/evidence, concrete, receipt-backed, and safe for one bounded tick.',
@@ -7429,6 +7479,22 @@ function wakeRuleTerminalMissionGoal(ctx) {
   };
 }
 
+// Rule: a goal pinned to a mission that vanished from missions.jsonl while now.md
+// sat idle past the lost-record window must ask a person instead of burning ticks.
+function wakeRuleLostMissionGoal(ctx) {
+  const lost = ctx.goalLostMission;
+  if (!ctx.goal || !lost) return null;
+  return {
+    decision: 'ask',
+    reason: 'mission_record_missing',
+    needs_user: true,
+    ask: `Goal "${ctx.goal.title}" is pinned to mission ${lost.id}, which is missing from missions.jsonl and idle for ${lost.idle_days} days. Retire the goal or start a living mission, then wake again.`,
+    next_command: `atris member goal-from-mission ${ctx.name}`,
+    goal: ctx.goal,
+    current_experiment: ctx.current || null,
+  };
+}
+
 // Rule: nothing blocks the member, so take the safe next bounded step.
 function wakeRuleSafeBoundedTick(ctx) {
   return {
@@ -7450,6 +7516,7 @@ const WAKE_DECISION_RULES = [
   wakeRuleScoredNonTickCandidate,
   wakeRuleDirtyMemberScope,
   wakeRuleTerminalMissionGoal,
+  wakeRuleLostMissionGoal,
   wakeRuleSafeBoundedTick,
 ];
 
@@ -7465,6 +7532,18 @@ function wakeDecision(name, paths, { force = false, runtimeKind = memberRuntimeK
   const goal = activeGoal(state);
   const pinnedMission = goal?.mission_id ? memberRunMissionMap().get(String(goal.mission_id).trim()) || null : null;
   const goalTerminalMission = pinnedMission && MISSION_TERMINAL_STATUSES.has(lowerCompact(pinnedMission.status || '')) ? pinnedMission : null;
+  const runtimeMission = purpose.runtimeMission || {};
+  const lostRuntimeMission = memberRuntimeMissionLost(paths, runtimeMission);
+  const goalMissionId = String(goal?.mission_id || '').trim();
+  const runtimeMissionId = String(runtimeMission.id || '').trim();
+  const goalLostMission = goal && goalMissionId && !pinnedMission
+    ? (lostRuntimeMission && lostRuntimeMission.id === goalMissionId
+      ? lostRuntimeMission
+      : memberRuntimeMissionLost(paths, {
+        id: goalMissionId,
+        status: goalMissionId === runtimeMissionId ? (runtimeMission.status || 'running') : 'running',
+      }))
+    : null;
   const current = memberOpenExperiment(state);
   const generalistDecision = wakeRuleGeneralistDomainFile(name, { purpose, steering, state, goal, current });
   if (generalistDecision) return generalistDecision;
@@ -7510,7 +7589,7 @@ function wakeDecision(name, paths, { force = false, runtimeKind = memberRuntimeK
     next_command: wakeScores.selected.next_command,
   } : null;
 
-  const ctx = { name, force, purpose, nowFile, steering, state, goal, goalTerminalMission, current, blocked, evidence, workspace, checks, wakeScores };
+  const ctx = { name, force, purpose, nowFile, steering, state, goal, goalTerminalMission, goalLostMission, current, blocked, evidence, workspace, checks, wakeScores };
   for (const rule of WAKE_DECISION_RULES) {
     const verdict = rule(ctx);
     if (verdict) return composeWakeDecision(ctx, verdict);
@@ -8237,7 +8316,7 @@ function memberLoopAliveTick(name, run, index, tickStartedAt) {
     ok: alive.ok !== false,
     decision: alive.status || 'alive_tick',
     reason: alive.reason || null,
-    executed: options.execute && alive.operate?.payload?.executed !== false,
+    executed: Boolean(options.execute && !alive.operate?.skipped && alive.operate?.payload?.executed !== false),
     needs_user: alive.needs_user === true,
     next_command: alive.next_command || null,
     has_mission: alive.has_mission === true,
@@ -10119,7 +10198,7 @@ async function memberSteerOrDispatch(...rawArgs) {
   return memberSteerOrDispatchWith({}, rawArgs);
 }
 
-async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []) {
+async function memberSteerOrDispatchWith({ pullTask = false, wakeIfAsleep = false } = {}, rawArgs = []) {
   if (hasFlag(rawArgs, '--help') || hasFlag(rawArgs, '-h')) {
     console.log('Usage: atris member steer [member] [--no-ignite] [--detach] [--dry-run] [--json] [--] "<direction>"');
     console.log('       atris member "<direction>" [--dry-run] [--json]');
@@ -10205,7 +10284,17 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   }
   // A human or odd-typed member never takes a task: it would be claimed and
   // then stranded when the run refuses the member.
-  const pulled = pullTask && !prompt && !missionSummary.live_mission && !memberRefusalFor(targetMember, paths.memberFile)
+  const memberRefusal = memberRefusalFor(targetMember, paths.memberFile);
+  if (wakeIfAsleep && !dryRun && !needsCheck && !memberRefusal) {
+    const { loadMemberSwitches, setMemberAwake } = require('../lib/member-switches');
+    const switches = loadMemberSwitches(root).members || {};
+    const switchKey = Object.keys(switches).find((key) => lowerCompact(key) === lowerCompact(owner)) || owner;
+    const entry = switches[switchKey];
+    if (entry && typeof entry === 'object' && entry.awake === false) {
+      setMemberAwake(switchKey, true, root);
+    }
+  }
+  const pulled = pullTask && !prompt && !missionSummary.live_mission && !memberRefusal
     ? memberGoTask(owner, root, { claim: !dryRun, requireCheck: needsCheck })
     : null;
   if (needsCheck && !pulled) {
@@ -10377,7 +10466,7 @@ async function memberGo(...rawArgs) {
   }
   const nonFlags = rawArgs.filter((a) => a && !String(a).startsWith('-'));
   if (nonFlags.length > 0) {
-    return memberSteerOrDispatchWith({ pullTask: true }, rawArgs);
+    return memberSteerOrDispatchWith({ pullTask: true, wakeIfAsleep: true }, rawArgs);
   }
   const root = process.cwd();
   const teamDir = path.join(root, 'atris', 'team');
@@ -10397,7 +10486,7 @@ async function memberGo(...rawArgs) {
     const fallback = findAllMembers(teamDir).filter(isFleetMember)[0];
     if (fallback) chosen = memberSlugFromRecord(fallback);
   }
-  return memberSteerOrDispatchWith({ pullTask: true }, [chosen, ...rawArgs]);
+  return memberSteerOrDispatchWith({ pullTask: true, wakeIfAsleep: true }, [chosen, ...rawArgs]);
 }
 
 // Where a running `atris member up` leaves its pid, so a whole-team sleep
@@ -10415,15 +10504,20 @@ function memberSleepingByChoice(latest) {
 
 function memberUpTeam(root) {
   const { isMemberParked } = require('../lib/member-park');
+  const { loadMemberSwitches } = require('../lib/member-switches');
+  const switches = loadMemberSwitches(root).members || {};
   const missionMap = memberRunMissionMap(root);
   return findAllMembers(path.join(root, 'atris', 'team')).filter(isFleetMember).map((record) => {
     const name = memberSlugFromRecord(record);
     const summary = memberMissionSummary(name, missionMap, root);
+    const switchEntry = switches[name];
+    const switchAsleep = Boolean(switchEntry && typeof switchEntry === 'object' && switchEntry.awake === false);
+    const switchExplicitlyAwake = Boolean(switchEntry && typeof switchEntry === 'object' && switchEntry.awake === true);
     return {
       name,
       parked: isMemberParked(root, name),
       human: Boolean(memberRefusalFor(name, path.join(root, 'atris', 'team', name, 'MEMBER.md'))),
-      sleeping: memberSleepingByChoice(summary.latest),
+      sleeping: switchAsleep || (!switchExplicitlyAwake && memberSleepingByChoice(summary.latest)),
       live: Boolean(summary.live_mission),
     };
   });
@@ -10583,11 +10677,31 @@ async function memberUp(...args) {
   console.log(working.length ? `team is down; still finishing: ${working.join(', ')}` : 'team is down');
 }
 
+// Verifies a PID on disk still belongs to an Atris mission/member process
+// before signaling it, so a recycled or spoofed PID cannot terminate an
+// unrelated process.
+function isAtrisDriverProcess(pid) {
+  const numeric = Number(pid);
+  if (!Number.isInteger(numeric) || numeric <= 1) return false;
+  if (numeric === process.pid || numeric === process.ppid) return false;
+  try {
+    const cmdline = String(execFileSync('ps', ['-o', 'command=', '-p', String(numeric)], {
+      encoding: 'utf8',
+      timeout: 1000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }) || '').trim();
+    if (!cmdline) return false;
+    return /\batris\b|atris[-_./]|bin\/atris\.js|\bmission\b/i.test(cmdline);
+  } catch {
+    return false;
+  }
+}
+
 // Ends a running `atris member up`. Returns true when one was told to stop.
 function stopMemberUp(root) {
   try {
     const { pid } = JSON.parse(fs.readFileSync(memberUpPidFile(root), 'utf8'));
-    if (!Number.isInteger(pid) || pid === process.pid) return false;
+    if (!isAtrisDriverProcess(pid)) return false;
     process.kill(pid, 'SIGTERM');
     return true;
   } catch {
@@ -10604,8 +10718,37 @@ function memberSleep(target, ...args) {
   const root = process.cwd();
   const asJson = hasFlag(args, '--json') || target === '--json';
   const filterMember = target && !target.startsWith('-') && target !== 'all' ? target.trim().toLowerCase() : '';
-  const { loadMissionMap } = require('./mission');
-  const missions = loadMissionMap(root);
+  const { setMemberAwake } = require('../lib/member-switches');
+  const { loadMissionMap, missionDriverHealth } = require('./mission');
+  const fleetMembers = findAllMembers(path.join(root, 'atris', 'team')).filter(isFleetMember);
+  const nonHumanSlugs = [];
+  const humanSlugs = new Set();
+  for (const record of fleetMembers) {
+    const slug = memberSlugFromRecord(record);
+    if (!slug) continue;
+    if (memberRefusalFor(slug, path.join(root, 'atris', 'team', slug, 'MEMBER.md'))) {
+      humanSlugs.add(lowerCompact(slug));
+    } else {
+      nonHumanSlugs.push(slug);
+    }
+  }
+  const switchedOff = new Set();
+  const markAsleep = (slug) => {
+    const clean = String(slug || '').trim();
+    if (!clean || humanSlugs.has(lowerCompact(clean))) return;
+    const matched = nonHumanSlugs.find((candidate) => lowerCompact(candidate) === lowerCompact(clean)) || clean;
+    if (switchedOff.has(matched)) return;
+    setMemberAwake(matched, false, root);
+    switchedOff.add(matched);
+  };
+  if (filterMember) {
+    markAsleep(filterMember);
+  } else {
+    for (const slug of nonHumanSlugs) markAsleep(slug);
+  }
+
+  const localMissions = loadMissionMap(root);
+  const missions = memberRunMissionMap(root);
   const activeStatuses = new Set(['running', 'planning', 'ready']);
   const slept = [];
 
@@ -10613,18 +10756,46 @@ function memberSleep(target, ...args) {
     if (!m || !activeStatuses.has(String(m.status || '').toLowerCase())) continue;
     const owner = String(m.owner || '').trim();
     if (filterMember && owner.toLowerCase() !== filterMember) continue;
+    if (owner) markAsleep(owner);
+    const missionRoot = m.worktree_root || m.worktree?.path || root;
+    const nowIso = new Date().toISOString();
     const updated = {
       ...m,
       status: 'paused',
-      paused_at: new Date().toISOString(),
+      paused_at: nowIso,
       stop_reason: 'member-sleep',
       sleep_target: filterMember ? 'member' : 'all',
       next_action: `sleeping; wake with: atris member go ${owner || ''}`.trim(),
-      updated_at: new Date().toISOString(),
+      updated_at: nowIso,
     };
-    const missionsFile = path.join(root, '.atris', 'state', 'missions.jsonl');
-    fs.mkdirSync(path.dirname(missionsFile), { recursive: true });
-    fs.appendFileSync(missionsFile, `${JSON.stringify(updated)}\n`, 'utf8');
+    const missionRootExists = fs.existsSync(missionRoot);
+    if (missionRootExists) {
+      const homeMissionsFile = path.join(missionRoot, '.atris', 'state', 'missions.jsonl');
+      fs.mkdirSync(path.dirname(homeMissionsFile), { recursive: true });
+      fs.appendFileSync(homeMissionsFile, `${JSON.stringify(updated)}\n`, 'utf8');
+    }
+    if (path.resolve(missionRoot) !== path.resolve(root) && localMissions.has(m.id)) {
+      const rootMissionsFile = path.join(root, '.atris', 'state', 'missions.jsonl');
+      fs.mkdirSync(path.dirname(rootMissionsFile), { recursive: true });
+      fs.appendFileSync(rootMissionsFile, `${JSON.stringify(updated)}\n`, 'utf8');
+    }
+    const candidatePids = new Set();
+    if (missionRootExists) {
+      try {
+        const driver = missionDriverHealth(m, missionRoot);
+        if (driver?.alive && Number.isInteger(driver.pid) && driver.pid > 1) candidatePids.add(driver.pid);
+      } catch { /* ignore unreadable driver state */ }
+    }
+    const directPid = Number(m.driver_pid || m.driver?.pid || 0);
+    if (Number.isInteger(directPid) && directPid > 1 && isPidAlive(directPid)) candidatePids.add(directPid);
+    for (const pid of candidatePids) {
+      if (!isAtrisDriverProcess(pid)) continue;
+      try {
+        process.kill(pid, 'SIGTERM');
+      } catch (error) {
+        if (error?.code !== 'ESRCH') { /* ignore permission or already-exited race */ }
+      }
+    }
     slept.push({ mission_id: m.id, member: owner || 'mission-lead', objective: m.objective });
   }
 

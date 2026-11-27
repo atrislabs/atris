@@ -53,7 +53,7 @@ function history() {
   add('judge_set', { judge: 'ignored-check' }, 'outsider');
   add('bet_set', { bet: 'later bet', wrong_if: 'the real check fails' });
   add('ask_answered', { ask_id: 'a1', answer: 'yes' }, 'human:operator');
-  add('budget_added', { amount_usd: 0.35 });
+  add('budget_added', { amount_usd: 0.35 }, 'human:operator');
   add('mission_claimed', { mission_id: 'm1', claim_key: 'one' });
   add('mission_started', { mission_id: 'm1', member: 'worker' });
   add('step', { mission_id: 'm1', engine: 'codex', cost_usd: 0.1 });

@@ -567,7 +567,7 @@ async function run(args = [], context = {}) {
       const card = positional[1];
       const text = flags.text || positional.slice(2).join(' ');
       if (!card || !text) throw new feed.FeedError(400, 'usage: atris feed reply <card> "<text>" [--as <member>]');
-      out = room().reply(root, card, text, { as: flags.as, env, deps });
+      out = await room().replySynced(root, card, text, { as: flags.as, env, deps });
     } else if (sub === 'replies') {
       if (!positional[1]) throw new feed.FeedError(400, 'usage: atris feed replies <card> [--limit N]');
       out = room().replies(root, positional[1], { limit: flags.limit, env });

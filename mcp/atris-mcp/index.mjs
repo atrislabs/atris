@@ -272,7 +272,9 @@ export function campaignArgs(name, args = {}) {
 
 // Every write from here is an agent's: the CLI never records it as a person.
 function runCli(argv, cwd) {
-  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_NONINTERACTIVE: '1', ATRIS_AGENT_ID: process.env.ATRIS_AGENT_ID || 'mcp-agent' };
+  const rawAgentId = text(process.env.ATRIS_AGENT_ID);
+  const agentId = rawAgentId && !/^human:/i.test(rawAgentId) ? rawAgentId : 'mcp-agent';
+  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_NONINTERACTIVE: '1', ATRIS_AGENT_ID: agentId };
   delete env.ATRIS_HUMAN;
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [CLI, ...argv], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });

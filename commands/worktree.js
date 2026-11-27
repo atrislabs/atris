@@ -395,15 +395,35 @@ function shipWorktree(args) {
     console.log('verify: skipped (no --verify)');
   }
 
+  let resolvedTargetRef = targetRef;
+  if (baseBranchName(resolvedTargetRef) === 'HEAD') {
+    const primaryBranch = primary ? currentBranch(primary) : '';
+    let resolvedBranch = primaryBranch && primaryBranch !== branch ? primaryBranch : '';
+    if (!resolvedBranch) {
+      for (const candidate of ['main', 'master']) {
+        if (candidate !== branch && runGit(['rev-parse', '--verify', `refs/heads/${candidate}^{commit}`], { cwd: primary || root, check: false }).status === 0) {
+          resolvedBranch = candidate;
+          break;
+        }
+      }
+    }
+    if (!resolvedBranch && primaryBranch) resolvedBranch = primaryBranch;
+    if (resolvedBranch) {
+      resolvedTargetRef = resolvedBranch;
+    } else if (localMode && merge && !dryRun) {
+      throw new Error('primary checkout is on detached HEAD; pass --target <branch>');
+    }
+  }
+
   const mergeCheck = dryRun
     ? { status: 0, stdout: 'dry-run' }
-    : runGit(['merge-tree', '--write-tree', targetRef, 'HEAD'], { cwd: root, check: false });
+    : runGit(['merge-tree', '--write-tree', resolvedTargetRef, 'HEAD'], { cwd: root, check: false });
   if (mergeCheck.status !== 0) {
-    console.error(`blocked: branch does not merge cleanly into ${targetRef}`);
+    console.error(`blocked: branch does not merge cleanly into ${resolvedTargetRef}`);
     console.error((mergeCheck.stderr || mergeCheck.stdout || '').trim());
     return 3;
   }
-  console.log(`merge_check: ${targetRef} clean`);
+  console.log(`merge_check: ${resolvedTargetRef} clean`);
 
   let landedOn = '';
   if (localMode) {
@@ -411,20 +431,23 @@ function shipWorktree(args) {
     if (merge) {
       console.log('merge: requested (local mode)');
       if (!dryRun) {
-        const targetBranch = baseBranchName(targetRef);
-        const primaryBranch = currentBranch(primary);
-        if (primaryBranch !== targetBranch) {
-          const switched = runGit(['switch', targetBranch], { cwd: primary, check: false });
-          if (switched.status !== 0) {
-            throw new Error((switched.stderr || switched.stdout || `git switch ${targetBranch} failed`).trim());
-          }
-        }
         const primaryCounts = statusCounts(primary, { ignoreUntracked: isConductorUntracked }) || { staged: 0, unstaged: 0, untracked: 0 };
         if (primaryCounts.staged || primaryCounts.unstaged || primaryCounts.untracked) {
           throw new Error(
             `primary checkout dirty staged=${primaryCounts.staged} ` +
             `unstaged=${primaryCounts.unstaged} untracked=${primaryCounts.untracked}`
           );
+        }
+        const primaryBranch = currentBranch(primary);
+        const targetBranch = baseBranchName(resolvedTargetRef);
+        if (!targetBranch || targetBranch === 'HEAD') {
+          throw new Error('primary checkout is on detached HEAD; pass --target <branch>');
+        }
+        if (primaryBranch !== targetBranch) {
+          const switched = runGit(['switch', targetBranch], { cwd: primary, check: false });
+          if (switched.status !== 0) {
+            throw new Error((switched.stderr || switched.stdout || `git switch ${targetBranch} failed`).trim());
+          }
         }
         runGit(['merge', '--no-ff', branch, '-m', `Merge ${branch}`], { cwd: primary });
         console.log('merge: merged (local mode)');

@@ -173,8 +173,17 @@ function cmdEvents(args) {
   let taskId = pos[0] || null;
   const all = hasFlag(args, '--all');
   const everywhere = taskScopeEverywhere(args);
+  const hasLimitFlag = hasFlag(args, '--limit') || args.some(a => String(a).startsWith('--limit='));
   const rawLimit = flag(args, '--limit');
-  const explicitLimit = rawLimit && rawLimit !== true ? Number(rawLimit) : null;
+  let explicitLimit = null;
+  if (hasLimitFlag) {
+    const trimmed = typeof rawLimit === 'string' ? rawLimit.trim() : '';
+    const parsed = Number(trimmed);
+    if (!trimmed || !/^\d+$/.test(trimmed) || !Number.isSafeInteger(parsed) || parsed <= 0) {
+      failTask('atris task events', 'invalid_limit', '--limit must be a positive integer');
+    }
+    explicitLimit = parsed;
+  }
   const defaultRecentLimit = 24;
   const limit = explicitLimit || (taskId ? 500 : (all || everywhere ? null : defaultRecentLimit));
   const taskDb = getTaskDb();
@@ -305,7 +314,12 @@ function cmdLineage(args) {
 }
 
 function cmdExport(args) {
-  const out = flag(args, '--out') || path.join('.atris', 'state', 'tasks.projection.json');
+  const hasOutFlag = hasFlag(args, '--out') || args.some(a => String(a).startsWith('--out='));
+  const rawOut = flag(args, '--out');
+  if (hasOutFlag && (typeof rawOut !== 'string' || !rawOut.trim() || rawOut.trim().startsWith('-'))) {
+    failTask('atris task export', 'invalid_out', '--out requires a file path');
+  }
+  const out = rawOut || path.join('.atris', 'state', 'tasks.projection.json');
   const all = hasFlag(args, '--all');
   const everywhere = taskScopeEverywhere(args);
   const taskDb = getTaskDb();
@@ -612,7 +626,12 @@ function completeTodoTaskByTitle(cwd, title, { matches, actor, proof } = {}) {
 }
 
 function cmdRender(args) {
-  const out = flag(args, '--out') || path.join('atris', 'TODO.md');
+  const hasOutFlag = hasFlag(args, '--out') || args.some(a => String(a).startsWith('--out='));
+  const rawOut = flag(args, '--out');
+  if (hasOutFlag && (typeof rawOut !== 'string' || !rawOut.trim() || rawOut.trim().startsWith('-'))) {
+    failTask('atris task render', 'invalid_out', '--out requires a file path');
+  }
+  const out = rawOut || path.join('atris', 'TODO.md');
   const all = hasFlag(args, '--all');
   const everywhere = taskScopeEverywhere(args);
   const doneLimitRaw = flag(args, '--done-limit');

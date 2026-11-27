@@ -562,8 +562,9 @@ async function wikiCommand(subcommand, ...args) {
       break;
     }
     case 'search': {
-      if (mode === 'private') {
-        wikiSearch(mode, null, cleanArgs.join(' '));
+      if (mode !== 'cloud') {
+        const slug = mode === 'private' ? null : autoDetectSlug();
+        wikiSearch(mode, slug, cleanArgs.join(' '));
       } else {
         const [slug, query] = parseCloudArgs(cleanArgs);
         wikiSearch(mode, slug, query);
@@ -573,8 +574,8 @@ async function wikiCommand(subcommand, ...args) {
     case 'log': {
       let slug;
       let limit;
-      if (mode === 'private') {
-        slug = null;
+      if (mode !== 'cloud') {
+        slug = mode === 'private' ? null : autoDetectSlug();
         limit = parseInt(cleanArgs[0], 10) || 20;
       } else if (cleanArgs.length === 0) {
         slug = autoDetectSlug();
@@ -599,7 +600,9 @@ async function wikiCommand(subcommand, ...args) {
         console.error('Cloud loop is not implemented yet. Run local `atris loop` first.');
         process.exit(1);
       }
-      console.log('ACTION TAKEN');
+      if (!hasFlag(cleanArgs, '--json') && !hasFlag(cleanArgs, '--dry-run')) {
+        console.log('ACTION TAKEN');
+      }
       const { loopAtris } = require('./loop');
       await loopAtris(cleanArgs);
       break;

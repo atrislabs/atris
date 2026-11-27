@@ -87,7 +87,7 @@ test('summary prefixes retain lifecycle precedence, detached counts and strict t
   add('mission_ended', { mission_id: 'dropped', outcome: 'failed', cost_usd: 1.25 });
   add('mission_ended', { mission_id: 'vetoed', outcome: 'fault', cost_usd: 0.1, reason: 'owned setup fault' });
   const exhausted = add('mission_ended', { mission_id: 'first', outcome: 'kept', cost_usd: 1.65 });
-  const recovered = add('budget_added', { amount_usd: 0.4 });
+  const recovered = add('budget_added', { amount_usd: 0.4 }, 'human:operator');
   add('resumed');
   add('ask_answered', { ask_id: 'question', answer: 'yes' }, 'human:operator');
   add('budget_released', { mission_id: 'ghost' });

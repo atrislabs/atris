@@ -28,6 +28,8 @@ const OPTIONAL_LOAD_ORDER_FILES = [
   'atris/wiki/concepts/agent-activation-contract.md',
   'atris/skills/atris/SKILL.md',
   'atris/PERSONA.md',
+  // Top verified invariants distilled by offline dreaming (`atris dream consolidate`).
+  'atris/MEMORY_CORE.md',
   // A few lines an agent wrote about its own nights (`atris morning` saves
   // them). Tiny on purpose: at most 12 short lines.
   'atris/learned.md',
@@ -75,6 +77,7 @@ function parseArgs(args) {
   const options = {
     root: process.cwd(),
     verify: false,
+    depoison: false,
     json: false,
     yes: false,
     rating: null,
@@ -93,6 +96,8 @@ function parseArgs(args) {
       options.root = arg.slice('--root='.length);
     } else if (arg === '--verify') {
       options.verify = true;
+    } else if (arg === '--depoison') {
+      options.depoison = true;
     } else if (arg === '--json') {
       options.json = true;
     } else if (arg === '--yes' || arg === '-y') {
@@ -1561,15 +1566,23 @@ function brainCommand(args = process.argv.slice(3)) {
     }
     return error ? 1 : 0;
   }
+  let dreamConsolidation = null;
+  if (options.depoison) {
+    const { runDreamConsolidate } = require('../lib/dream-consolidate');
+    dreamConsolidation = runDreamConsolidate(options.root, { apply: Boolean(options.yes) });
+  }
   const state = options.yes ? prepareBrainState(options.root) : collectState(options.root);
   if (!options.yes) { refuseBrainWriteWithoutYes(state, options); return 0; }
   const written = writeBrain(state);
   if (options.verify) verifyBrain(options.root);
-  if (options.json) { console.log(JSON.stringify({ ok: true, state, written }, null, 2)); return 0; }
+  if (options.json) { console.log(JSON.stringify({ ok: true, state, written, ...(dreamConsolidation ? { dream_consolidation: dreamConsolidation } : {}) }, null, 2)); return 0; }
   console.log(`start-up notes saved for ${shownName(state)}.`);
   console.log(`  status: ${path.relative(options.root, written.statusPath)}`);
   console.log(`  history: ${state.totalRows} records read, ${state.validRows} usable`);
   console.log(`  history file: ${path.relative(options.root, written.ledgerPath)}`);
+  if (dreamConsolidation) {
+    console.log(`  dream: ${dreamConsolidation.memory_core.count} core rules -> ${dreamConsolidation.memory_core.path}`);
+  }
   console.log(`  next: ${nextMove(state)}`);
   if (options.verify) console.log('  checked: the saved notes are in place.');
   return 0;

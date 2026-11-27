@@ -343,3 +343,45 @@ test('with a remote, a merge that only moved the local branch is not landed', ()
     fs.rmSync(bare, { recursive: true, force: true });
   }
 });
+
+test('linked worktrees with only untracked .atris/ files still land, while real untracked files hold as checkout_dirty', () => {
+  const root = makeRepo();
+  const sideAtris = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-green-atris-'));
+  const sideDirty = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-green-dirty-'));
+  fs.rmSync(sideAtris, { recursive: true, force: true });
+  fs.rmSync(sideDirty, { recursive: true, force: true });
+  try {
+    branchWith(root, 'member/atris-only', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    branchWith(root, 'member/real-dirty', (dir) => fs.writeFileSync(path.join(dir, 'other.txt'), 'pending\n'));
+
+    git(root, ['worktree', 'add', '-q', sideAtris, 'member/atris-only']);
+    fs.mkdirSync(path.join(sideAtris, '.atris', 'state', 'feed'), { recursive: true });
+    fs.writeFileSync(path.join(sideAtris, '.atris', 'state', 'feed', 'waiting.json'), '{"entries":[]}\n');
+
+    git(root, ['worktree', 'add', '-q', sideDirty, 'member/real-dirty']);
+    fs.writeFileSync(path.join(sideDirty, 'notes.txt'), 'uncommitted\n');
+
+    const old = new Date(Date.now() - 3 * 24 * 3600 * 1000);
+    fs.utimesSync(sideAtris, old, old);
+    fs.utimesSync(sideDirty, old, old);
+
+    const result = landStaleGreenBranches(root, {
+      push: false,
+      limit: 5,
+      localSuites: 2,
+      runCli: () => ({ status: 0, stdout: '' }),
+    });
+
+    const byBranch = Object.fromEntries(result.verdicts.map((v) => [v.branch, v]));
+    assert.deepEqual(result.landed, ['member/atris-only'], JSON.stringify(result.verdicts));
+    assert.equal(byBranch['member/real-dirty'].action, 'skipped');
+    assert.equal(byBranch['member/real-dirty'].reason, 'checkout_dirty');
+
+    git(root, ['worktree', 'remove', '--force', sideAtris]);
+    git(root, ['worktree', 'remove', '--force', sideDirty]);
+  } finally {
+    fs.rmSync(sideAtris, { recursive: true, force: true });
+    fs.rmSync(sideDirty, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
