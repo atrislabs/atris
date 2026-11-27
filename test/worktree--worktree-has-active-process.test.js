@@ -72,3 +72,16 @@ test('a symlinked path to the work folder matches the folder it points at', () =
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('resolves a repeated path once when checking a process scan', (t) => {
+  const root = makeTempRoot();
+  try {
+    const inside = path.join(root, 'src');
+    fs.mkdirSync(inside);
+    const resolve = t.mock.method(fs, 'realpathSync');
+    assert.strictEqual(worktreeHasActiveProcess(root, [inside, inside]), true);
+    assert.strictEqual(resolve.mock.calls.filter(({ arguments: args }) => args[0] === inside).length, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
