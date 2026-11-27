@@ -13,6 +13,7 @@ atris/business/
 # Dependencies
 atris/perf/runs.jsonl
 atris/perf/report.html
+atris/perf/routes.jsonl
 node_modules/
 
 # Build outputs

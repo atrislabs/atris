@@ -13,5 +13,10 @@
     "name": "backend",
     "url": "https://atrisos.onrender.com/health",
     "weight": 1
+  },
+  {
+    "name": "routes",
+    "type": "routes",
+    "url": "https://atrisos.onrender.com/internal/perf/routes"
   }
 ]

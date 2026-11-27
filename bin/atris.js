@@ -641,7 +641,7 @@ function showHelpAll() {
   console.log('  report     - Weekly block: landings, journal completions, and Career XP');
   console.log('  xp         - Show Career XP and contribution graph');
   console.log('  analytics  - Show recent productivity from journals');
-  console.log('  perf       - measure endpoint speed and open a ranked report');
+  console.log('  perf       - measure endpoint speed, rank backend routes and open a report');
   console.log('  revisions  - show possible human revisions after atris-assisted landings');
   console.log('  tree hash  - hash the live agent text tree (--json for manifest)');
   console.log('  search     - Search workspace memory (atris search <keyword>)');
