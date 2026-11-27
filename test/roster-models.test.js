@@ -32,7 +32,7 @@ const SCRATCH_ENV = ['ATRIS_MACHINE_ROSTER_PATH', 'ATRIS_MACHINE_ROSTER_MD_PATH'
 const OWNER_ROSTER = `search: claude haiku
 build: claude opus 5.5
 review: codex, backup claude opus 5.5
-small build: devin swe-2-max, backup grok, until 2026-10-24
+small build: devin swe-2-1-max, backup grok, until 2026-10-24
 ## team
 researcher: claude opus 5.5
 codex-executor: codex
@@ -119,7 +119,7 @@ function warningsOf(root) {
 
 // --- launch commands ------------------------------------------------------
 
-test('each engine gets its model and effort flags only when they are pinned', () => {
+test('each engine gets its model and effort flags when they are pinned or pinned by default', () => {
   const cases = [
     ['codex', 'gpt-6-astra', 'medium', /codex exec --model gpt-6-astra -c model_reasoning_effort=medium "\$\(cat/, /codex exec "\$\(cat/],
     ['cursor', 'gpt-5', '', /^cursor-agent --trust --model gpt-5 -p /, /^cursor-agent --trust -p /],
@@ -127,7 +127,7 @@ test('each engine gets its model and effort flags only when they are pinned', ()
     ['opencode', 'anthropic/claude-opus-5-5', 'max', /^opencode run --model anthropic\/claude-opus-5-5 --variant max "\$\(cat/, /^opencode run "\$\(cat/],
     ['claude', 'claude-opus-5-5', 'xhigh', /^claude -p .* --model claude-opus-5-5 --effort xhigh --allowedTools /, /^claude -p .* --model claude-haiku-5-5 --allowedTools /],
     ['grok', 'grok-4.7', 'low', /^grok --always-approve --model grok-4\.7 --reasoning-effort low -p /, /^grok --always-approve -p /],
-    ['devin', 'swe-2-max', '', /^devin -p --permission-mode dangerous --model swe-2-max -- /, /^devin -p --permission-mode dangerous -- /],
+    ['devin', 'swe-2-1-max', '', /^devin -p --permission-mode dangerous --model swe-2-1-max -- /, /^devin -p --permission-mode dangerous --model swe-2-1-high -- /],
   ];
   for (const [engine, model, effort, pinned, bare] of cases) {
     // A pinned opus launches as named, with no yes in the env.
@@ -136,7 +136,7 @@ test('each engine gets its model and effort flags only when they are pinned', ()
     assert.match(withPin, pinned, engine);
     assert.match(without, bare, engine);
     assert.doesNotMatch(without, /--effort|--variant|--reasoning-effort|model_reasoning_effort/, engine);
-    if (engine !== 'claude') assert.doesNotMatch(without, /--model/, engine);
+    if (engine !== 'claude' && engine !== 'devin') assert.doesNotMatch(without, /--model/, engine);
   }
   // agy no longer forces a model of its own: it rides the agy CLI default.
   process.env.ATRIS_RUNNER_PROFILE = 'agy';
@@ -161,7 +161,7 @@ test('effort words follow the model, and an engine that cannot take one is a bad
     '# roster',
     'review: codex gpt-6-astra medium',
     'build: codex high',
-    'small build: devin swe-2-max high, backup grok',
+    'small build: devin swe-2-1-max high, backup grok',
     'deep build: codex gpt-6-astra max',
     'quick build: cursor gpt-5 high',
     'search: claude haiku low',
@@ -182,7 +182,7 @@ test('effort words follow the model, and an engine that cannot take one is a bad
   ]);
   const view = command(root, ['roster']);
   assert.equal(view.exit, 0, view.err);
-  assert.match(view.out, /warning: atris\/ROSTER\.md line 4 "small build: devin swe-2-max high, backup grok" devin cannot take an effort level/);
+  assert.match(view.out, /warning: atris\/ROSTER\.md line 4 "small build: devin swe-2-1-max high, backup grok" devin cannot take an effort level/);
   // assign refuses the same way, with a plain sentence and no crash.
   const refused = command(root, ['assign', 'small build', 'devin', '--effort', 'high']);
   assert.equal(refused.exit, 2);
@@ -233,7 +233,7 @@ test('the owner\'s roster shows the real model and its source on every line, in 
   assert.match(view.out, /^build +claude · opus 5\.5 +none +- +- +-$/m);
   // The model codex settings pick shows like a pinned one, effort underneath.
   assert.match(view.out, /^review +codex · gpt-6-sol +claude · opus 5\.5 +- +- +-\n +\(xhigh effort\)$/m);
-  assert.match(view.out, /^small build +devin · swe-2-max +grok · own default +- +2026-10-24 +-$/m);
+  assert.match(view.out, /^small build +devin · swe-2-1-max +grok · own default +- +2026-10-24 +-$/m);
   assert.match(view.out, /^researcher +search +claude · opus 5\.5 +atris\/ROSTER\.md\b/m);
   assert.match(view.out, /^codex-executor +build +codex · gpt-6-sol +atris\/ROSTER\.md\b/m);
   // Never a bare engine name and never an empty model: every job and member

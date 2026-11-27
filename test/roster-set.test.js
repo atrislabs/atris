@@ -193,16 +193,16 @@ test('a member swap changes only the lead: backups, limits, until, and notes sta
   assert.equal(section(text(), 'team')[0], '- builder: codex, model: gpt-6-astra, backup codex gpt-6.1-sol, backup claude code opus 5.5, max 20 min, until 2027-01-31 <!-- keep -->');
 }));
 
-test('a label that is not a real model (devin\'s built-in router) saves no model pin', () => withRoom(({ root, cli, text }) => {
-  const res = cli('build', 'devin', 'built-in', 'router');
+test('devin\'s free model saves as a pin', () => withRoom(({ root, cli, text }) => {
+  const res = cli('build', 'devin', 'swe-2-1-high');
   assert.equal(res.exit, 0, res.err);
-  assert.equal(res.out, 'build now runs on devin. claude opus 5.5 is the backup.');
-  assert.deepEqual(section(text(), 'build'), ['- devin, max: 45 min', '- claude code, model: opus 5.5, max: 45 min']);
+  assert.equal(res.out, 'build now runs on devin swe-2-1-high. claude opus 5.5 is the backup.');
+  assert.deepEqual(section(text(), 'build'), ['- devin, model: swe-2-1-high, max: 45 min', '- claude code, model: opus 5.5, max: 45 min']);
   const { readRosterState } = require('../lib/engine-registry');
-  assert.equal(readRosterState(root).machine.picks.executor.workers[0].model, '');
-  // the member line is written the same way: the tool alone
-  assert.equal(cli('--member', 'builder', 'devin', 'built-in', 'router').exit, 0);
-  assert.ok(section(text(), 'team').includes('- builder: devin'), text());
+  assert.equal(readRosterState(root).machine.picks.executor.workers[0].model, 'swe-2-1-high');
+  // the member line is written the same way: the tool and the pinned model
+  assert.equal(cli('--member', 'builder', 'devin', 'swe-2-1-high').exit, 0);
+  assert.ok(section(text(), 'team').includes('- builder: devin, model: swe-2-1-high'), text());
 }, { ready: ['claude', 'codex', 'devin'] }));
 
 // --- the orb's swap card, over real http with the page's token check ----------
@@ -363,20 +363,27 @@ test('orb swap: one tap on the swap card, through the token-checked route, swaps
   }
 }));
 
-test('orb: tapping devin\'s built-in router writes devin with no model, and the swap card shows it in use after', () => withRoom(async ({ root, text }) => {
+test('orb: tapping devin\'s free model writes devin with that pin, and the swap card shows it in use after', () => withRoom(async ({ root, text }) => {
   const h = await startPhone(root);
   try {
     let card = await h.swapCard('builder');
     card = (await h.act({ card_id: card.id, option_id: 'scope:job' })).json.card;
     card = await h.fullList(card);
     const devin = h.models(card).filter((o) => o.binds.engine === 'devin');
-    assert.deepEqual(devin.map((o) => [o.label, o.binds.model, o.action]), [['built-in router', '', 'swap_to']]);
+    assert.deepEqual(devin.map((o) => [o.label, o.binds.model, o.action]), [
+      ['swe-2-1-high', 'swe-2-1-high', 'swap_to'],
+      ['swe-2-1-max', 'swe-2-1-max', 'swap_to'],
+      ['swe-2-1-xhigh', 'swe-2-1-xhigh', 'swap_to'],
+      ['swe-2-1', 'swe-2-1', 'swap_to'],
+      ['swe-2-1-medium', 'swe-2-1-medium', 'swap_to'],
+      ['swe-2-1-low', 'swe-2-1-low', 'swap_to'],
+    ]);
     const out = await h.act({ card_id: card.id, option_id: devin[0].id });
     assert.equal(out.status, 200, out.text);
-    assert.equal(section(text(), 'build')[0], '- devin, max: 45 min');
+    assert.equal(section(text(), 'build')[0], '- devin, model: swe-2-1-high, max: 45 min');
     // the one in use is devin now: on top, and not a tap
     const after = h.models(await h.swapCard('builder'))[0];
-    assert.deepEqual([after.binds.engine, after.label, after.detail, after.action], ['devin', 'built-in router', 'now', 'none']);
+    assert.deepEqual([after.binds.engine, after.label, after.detail, after.action], ['devin', 'swe-2-1-high', 'now', 'none']);
   } finally {
     await h.close();
   }

@@ -1092,6 +1092,7 @@ const AGENT_TRAILER_MARKERS = [
   'atris-builder[bot]',
   'night@atris.ai',
   'devin',
+  'droid',
   'claude',
   'cursor',
   'codex',
@@ -1124,7 +1125,7 @@ function isAgentCommitBody(body) {
 // Branch name prefixes only agents use. fix/, feat/, release/ and the like
 // are left out on purpose: a person may use them too.
 const AGENT_BRANCH_PREFIXES = new Set([
-  'codex', 'claude', 'cursor', 'devin', 'orb', 'atris', 'member', 'member-lab',
+  'codex', 'claude', 'cursor', 'devin', 'droid', 'orb', 'atris', 'member', 'member-lab',
   'campaign', 'builder', 'night', 'sentinel-exam', 'grok', 'fable', 'opencode',
   'composer', 'agy', 'antigravity', 'gemini', 'haiku', 'copilot',
 ]);

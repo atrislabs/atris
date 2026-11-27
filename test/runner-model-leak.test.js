@@ -66,11 +66,10 @@ test('an unpinned grok mission tick carries no --model flag', () => {
   });
 });
 
-test('an unpinned devin mission tick carries no --model flag', () => {
+test('an unpinned devin mission tick carries the free model flag', () => {
   withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'devin' }, () => {
     const command = tickCommand({ runner: 'devin' });
-    assert.doesNotMatch(command, /--model/);
-    assert.equal(command, 'devin -p -- "$(cat /tmp/p.tmp)"');
+    assert.equal(command, 'devin -p --model swe-2-1-high -- "$(cat /tmp/p.tmp)"');
   });
 });
 

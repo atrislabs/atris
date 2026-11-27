@@ -234,10 +234,10 @@ test('grok runner profile uses grok --always-approve and rides the grok cli defa
   });
 });
 
-test('devin runner profile takes --model only when a model is pinned', () => {
+test('devin runner profile pins the free default and honors an explicit free model', () => {
   withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'devin', ATRIS_RUNNER_MODEL: 'claude-opus-5-5' }, () => {
-    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'devin -p -- "$(cat /tmp/p.tmp)"');
-    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'swe-2-max' }), 'devin -p --model swe-2-max -- "$(cat /tmp/p.tmp)"');
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'devin -p --model swe-2-1-high -- "$(cat /tmp/p.tmp)"');
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'swe-2-1-max' }), 'devin -p --model swe-2-1-max -- "$(cat /tmp/p.tmp)"');
   });
 });
 

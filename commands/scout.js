@@ -9,6 +9,7 @@
 //   atris scout --engine fast "..."      # glm-5.2 fast lane, ~1% frontier cost
 //   atris scout --engine cursor "..."    # cursor-agent headless
 //   atris scout --engine devin "..."     # devin -p (read-only by default)
+//   atris scout --engine droid "..."     # droid exec without --auto (read-only)
 
 const path = require('path');
 
@@ -35,6 +36,10 @@ const ENGINES = {
   },
   devin: {
     argv: (prompt) => ['devin', ['-p', '--', prompt]],
+    parse: (out) => out.trim(),
+  },
+  droid: {
+    argv: (prompt) => ['droid', ['exec', '-m', 'glm-5.3', prompt]],
     parse: (out) => out.trim(),
   },
   fast: {
@@ -107,7 +112,7 @@ async function scoutCommand(argv) {
     else if (a === '--model') model = MODELS[args.shift()] || MODELS.haiku;
     else if (a === '--engine') {
       engine = args.shift() || 'claude';
-      if (!ENGINES[engine]) { console.error(`✗ unknown engine "${engine}" (claude|cursor|devin|fast)`); return 1; }
+      if (!ENGINES[engine]) { console.error(`✗ unknown engine "${engine}" (claude|cursor|devin|droid|fast)`); return 1; }
     }
     else if (a === '--timeout') timeoutMs = (parseInt(args.shift(), 10) || 180) * 1000;
     else if (a === '--help' || a === '-h' || a === '--yes' || a === '-y') { /* handled above / proceed flag */ }

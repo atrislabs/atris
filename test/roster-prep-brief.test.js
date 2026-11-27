@@ -200,7 +200,7 @@ const PREP_ROSTER = `# roster
 
 ## build
 - cursor, max: 20 min, prep: search
-- devin, model: swe-2-max
+- devin, model: swe-2-1-max
 `;
 
 test('a worker line reads "prep: search" and the roster view notes "prep: search"', async () => {
@@ -454,7 +454,7 @@ test('a worker without prep runs exactly as before', async () => {
 
 test('a handover backup preps only when its own line asks', async () => {
   // a 3s budget, not 1s: under a loaded machine the stand-in can take over a second just to start
-  const roster = '# roster\n\n## search\n- claude, model: haiku\n\n## build\n- devin, model: swe-2-max, max: 3s\n- cursor, prep: search\n';
+  const roster = '# roster\n\n## search\n- claude, model: haiku\n\n## build\n- devin, model: swe-2-1-max, max: 3s\n- cursor, prep: search\n';
   await withRoom(async ({ root, bin, wt }) => {
     fakeEngine(bin, 'claude', { stdout: BRIEF });
     fakeEngine(bin, 'devin', { stdout: 'never', sleep: 30 });
@@ -465,7 +465,7 @@ test('a handover backup preps only when its own line asks', async () => {
       taskIds: ['CLI-900'],
       engine: 'devin',
       installedEngines: [],
-      model: 'swe-2-max',
+      model: 'swe-2-1-max',
       maxSeconds: 3,
       ownCli: ownCli(wt),
       rebase: () => ({ ok: true, stage: 'rebased' }),

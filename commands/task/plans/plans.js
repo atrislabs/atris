@@ -140,6 +140,7 @@ function isGenericPlanActor(value) {
     'claude-code',
     'cursor',
     'devin',
+    'droid',
   ]).has(actor);
 }
 

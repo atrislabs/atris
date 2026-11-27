@@ -41,11 +41,11 @@ const EXAMPLE = `# roster
 
 ## search
 - claude code, model: haiku 5.5
-- devin, model: swe-1.7-lightning
+- devin, model: swe-2-1-low
 - atris fast
 
 ## small build
-- devin, model: swe-2-max, until 2026-10-24
+- devin, model: swe-2-1-max, until 2026-10-24
 - grok, model: grok 4.7 fast, max: 20 min
 
 ## team
@@ -55,7 +55,7 @@ const EXAMPLE = `# roster
 const OLD_EXAMPLE = `# roster
 
 build: opus 5.5
-small build: devin swe-2-max, backup grok, max 20 min, until 2026-10-24
+small build: devin swe-2-1-max, backup grok, max 20 min, until 2026-10-24
 review: codex gpt-6-astra medium, backup opus 5.5
 search: haiku
 
@@ -174,11 +174,11 @@ test('the example roster parses exactly: every worker names its tool and model, 
   ]);
   assert.deepEqual(layer.picks.navigator.workers.map(bare), [
     { engine: 'claude', model: 'claude-haiku-5-5', until: '', never_expires: true },
-    { engine: 'devin', model: 'swe-1.7-lightning', until: '', never_expires: true },
+    { engine: 'devin', model: 'swe-2-1-low', until: '', never_expires: true },
     { engine: 'atris-fast', model: '', until: '', never_expires: true },
   ]);
   assert.deepEqual(layer.picks['small-build'].workers.map(bare), [
-    { engine: 'devin', model: 'swe-2-max', until: '2026-10-24' },
+    { engine: 'devin', model: 'swe-2-1-max', until: '2026-10-24' },
     { engine: 'grok', model: 'grok-4.7-build-fast', max_seconds: 1200, until: '', never_expires: true },
   ]);
   assert.equal(layer.picks['small-build'].like, 'build');
@@ -228,7 +228,7 @@ test('the one-line shape still parses exactly as before, with no worker list', (
   const { file, line, ...build } = layer.picks.executor;
   assert.deepEqual(build, { engine: 'claude', model: 'claude-opus-5-5', backup: '', until: '', never_expires: true });
   const { file: f2, line: l2, ...small } = layer.picks['small-build'];
-  assert.deepEqual(small, { engine: 'devin', model: 'swe-2-max', backup: 'grok', max_seconds: 1200, until: '2026-10-24', like: 'build' });
+  assert.deepEqual(small, { engine: 'devin', model: 'swe-2-1-max', backup: 'grok', max_seconds: 1200, until: '2026-10-24', like: 'build' });
   assert.equal(layer.picks.validator.workers, undefined);
   assert.deepEqual(layer.team.map((entry) => entry.value), ['search']);
 }));
@@ -241,7 +241,7 @@ test('the first assign turns the one-line shape into sections with the same mean
     '> my own note',
     '<!-- builds moved to opus in june -->',
     'build: opus 5.5',
-    'small build: devin swe-2-max, backup grok, max 20 min, until 2026-10-24 <!-- trial -->',
+    'small build: devin swe-2-1-max, backup grok, max 20 min, until 2026-10-24 <!-- trial -->',
     'review: codex gpt-6-astra medium, backup opus 5.5',
     'search: haiku',
     'review: claude',
@@ -271,7 +271,7 @@ test('the first assign turns the one-line shape into sections with the same mean
     '- claude code, model: opus 5.5',
     '',
     '## small build <!-- trial -->',
-    '- devin, model: swe-2-max, max: 20 min, until 2026-10-24',
+    '- devin, model: swe-2-1-max, max: 20 min, until 2026-10-24',
     '- grok, max: 20 min',
     '',
     '## review',
@@ -307,7 +307,7 @@ test('the lead falls to the next worker when it is down, expired, or a bad line'
     '- claude code, model: opus 5.5',
     '- codex, until 2026-09-01',
     '- cursor, model: nonsense words, effort: loud',
-    '- devin, model: swe-2-max',
+    '- devin, model: swe-2-1-max',
     '',
   ].join('\n'));
   const layer = project(root);
@@ -321,7 +321,7 @@ test('the lead falls to the next worker when it is down, expired, or a bad line'
   setEngineHealth('claude', 'credit_out', root);
   const fallen = resolveEngineForRoleRanked('executor', root, { now: NOW });
   assert.equal(fallen.engine.id, 'devin');
-  assert.equal(fallen.engine.roster_model, 'swe-2-max');
+  assert.equal(fallen.engine.roster_model, 'swe-2-1-max');
   assert.equal(fallen.reason, 'roster pick for build is not ready, using backup: devin');
   assert.equal(fallen.source, 'project');
   setEngineHealth('devin', 'credit_out', root);
@@ -336,7 +336,7 @@ test('the view shows every worker in order with who leads and why others are ski
     '## search',
     '- claude code, model: haiku 5.5',
     '- atris fast, until 2026-09-01',
-    '- devin, model: swe-1.7-lightning',
+    '- devin, model: swe-2-1-low',
     '- pizza oven',
     '',
   ].join('\n'));
@@ -346,8 +346,8 @@ test('the view shows every worker in order with who leads and why others are ski
   // skipped one says why; the note says who really runs.
   const lines = view.out.split('\n');
   const at = lines.findIndex((line) => line.startsWith('search '));
-  assert.match(lines[at], /^search +claude · haiku 5\.5 +atris-fast · atris:fast \(ended sep 1\) +- +- +not ready, using devin · swe-1\.7-lightning$/);
-  assert.match(lines[at + 1], /^ +devin · swe-1\.7-lightning$/);
+  assert.match(lines[at], /^search +claude · haiku 5\.5 +atris-fast · atris:fast \(ended sep 1\) +- +- +not ready, using devin · swe-2-1-low$/);
+  assert.match(lines[at + 1], /^ +devin · swe-2-1-low$/);
   assert.match(view.out, /^warning: atris\/ROSTER\.md line 6 "- pizza oven" "pizza oven" is not an engine or a model atris knows, so search skips this worker\.$/m);
   assert.match(view.out, /^change who does a job: atris engine assign <job> <tool> --model <model>$/m);
   const row = JSON.parse(command(root, ['roster', '--json']).out).jobs.find((entry) => entry.job === 'search');
@@ -361,14 +361,14 @@ test('the view shows every worker in order with who leads and why others are ski
   assert.equal(row.lead, 'later');
   const team = resolveJobTeam('search', root, { now: NOW });
   assert.deepEqual(team.team.map((engine) => engine.id), ['devin']);
-  assert.equal(team.lead.roster_model, 'swe-1.7-lightning');
+  assert.equal(team.lead.roster_model, 'swe-2-1-low');
 }));
 
 test('assign sets the lead and keeps the rest; --add, --remove, --backup, and --clear edit the list', () => withRoom((root) => {
   ready(root, 'codex', 'claude', 'devin', 'atris-fast', 'haiku');
   writeRoster(root, EXAMPLE);
   assert.equal(command(root, ['assign', 'search', 'haiku']).exit, 0);
-  assert.match(readRoster(root), /^## search\n- haiku\n- devin, model: swe-1\.7-lightning\n- atris fast\n\n## small build/m);
+  assert.match(readRoster(root), /^## search\n- haiku\n- devin, model: swe-2-1-low\n- atris fast\n\n## small build/m);
   assert.equal(command(root, ['assign', 'search', 'claude', '--model', 'haiku 5.5', '--add']).exit, 0);
   assert.match(readRoster(root), /^- atris fast\n- claude code, model: haiku 5\.5\n\n## small build/m);
   assert.deepEqual(resolveJobTeam('search', root, { now: NOW }).team.map((engine) => engine.id), ['haiku', 'devin', 'atris-fast', 'claude']);
