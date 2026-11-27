@@ -74,20 +74,35 @@ test('a speculative queue entry covers both its own files and an unmerged predec
   assert.throws(() => compare({ ...group, base_ref: 'refs/heads/missing' }));
 });
 
-test('a pull request comparison starts at the actual base of the tested merge commit', t => {
+test('a pull request comparison starts at its matching base', t => {
   const { root, firstQueued, second } = queueFixture(t);
   const event = { pull_request: { base: { sha: firstQueued, ref: 'main' }, head: { sha: second } } };
   assert.equal(comparisonBase(root, 'pull_request', event), firstQueued);
   assert.throws(() => comparisonBase(root, 'pull_request', { pull_request: { ...event.pull_request, head: { sha: firstQueued } } }));
 });
 
+test('a pull request on a verified newer target compares only its own changes', t => {
+  const { git, root, base, firstQueued, second, head } = queueFixture(t);
+  const event = { number: 42, pull_request: { base: { sha: base }, head: { sha: second } } };
+  const context = { GITHUB_REF: 'refs/pull/42/merge', GITHUB_SHA: head };
+  const compare = (payload, env) => comparisonBase(root, 'pull_request', payload, env);
+  assert.equal(compare(event, context), firstQueued);
+  assert.equal(git('diff', '--name-only', compare(event, context), head), 'second-file');
+  assert.throws(() => compare(event, { ...context, GITHUB_SHA: firstQueued }), /verify the GitHub/);
+  assert.throws(() => compare(event, { ...context, GITHUB_REF: 'refs/pull/41/merge' }), /verify the GitHub/);
+  assert.throws(() => compare(event, {}), /verify the GitHub/);
+  const unrelated = { ...event, pull_request: { ...event.pull_request, base: { sha: second } } };
+  assert.throws(() => compare(unrelated, context), /not a proven ancestor/);
+});
+
 test('the command writes a complete fallback plan when a pull request comparison cannot be verified', t => {
-  const { root, base, second } = queueFixture(t);
+  const { root, head, second } = queueFixture(t);
   const eventPath = path.join(root, 'event.json');
   const output = path.join(root, 'outputs');
-  fs.writeFileSync(eventPath, JSON.stringify({ pull_request: { base: { sha: base }, head: { sha: second } } }));
+  fs.writeFileSync(eventPath, JSON.stringify({ number: 42, pull_request: { base: { sha: second }, head: { sha: second } } }));
   execFileSync(process.execPath, [require.resolve('../scripts/ci-test-plan')], {
-    cwd: root, env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: eventPath, GITHUB_OUTPUT: output },
+    cwd: root,
+    env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: eventPath, GITHUB_OUTPUT: output, GITHUB_REF: 'refs/pull/42/merge', GITHUB_SHA: head },
   });
   const lines = fs.readFileSync(output, 'utf8').trim().split('\n');
   assert.ok(lines.includes('mode=full'));
