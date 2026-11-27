@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { discover, assign, main } = require('../scripts/ci-test-shard');
+const { discover, assign } = require('../scripts/ci-test-shard');
 
 function fixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-test-groups-'));
@@ -17,6 +17,16 @@ function fixture(t) {
 function write(root, file, content) {
   fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
   fs.writeFileSync(path.join(root, file), content);
+}
+
+function runGroup(root, ...args) {
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  delete env.ATRIS_TEST_SPLIT;
+  return spawnSync(process.execPath, ['-e',
+    'process.exitCode = require(process.argv[1]).main(process.argv.slice(3), process.argv[2])',
+    path.join(__dirname, '../scripts/ci-test-shard.js'), root, ...args],
+  { encoding: 'utf8', timeout: 30000, env });
 }
 
 test('eight groups preserve native discovery, new tests, helpers, and split test parts', (t) => {
@@ -50,10 +60,7 @@ for (let i = 0; i < 12; i++) test('case ' + i, () => console.log('case-ran ' + i
   assert.deepEqual(shards.flatMap(s => s.files).sort(), discovered);
   const output = [];
   for (let i = 1; i <= 8; i++) {
-    const run = spawnSync(process.execPath, ['-e',
-      'process.exitCode = require(process.argv[1]).main([process.argv[2]], process.argv[3])',
-      path.join(__dirname, '../scripts/ci-test-shard.js'), `${i}/8`, root],
-    { encoding: 'utf8', timeout: 30000, env });
+    const run = runGroup(root, `${i}/8`);
     assert.equal(run.status, 0, run.stdout + run.stderr);
     output.push(run.stdout);
   }
@@ -78,12 +85,23 @@ test('recorded GitHub costs are balanced without losing a discovered file', () =
   assert.equal(new Set(expensive.map(f => shards.findIndex(s => s.files.includes(f)))).size, expensive.length, expensive.join(', '));
 });
 
+test('the real runner queues the expensive file before the alphabetically first file', (t) => {
+  const root = fixture(t);
+  write(root, 'test/a.test.js', "require('node:test')('light fixture', () => {});");
+  write(root, 'test/gm-phone-health.test.js', "require('node:test')('heavy fixture', () => {});");
+  const run = runGroup(root, '1/1');
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.deepEqual(run.stdout.match(/(?:heavy|light) fixture/g), ['heavy fixture', 'light fixture']);
+});
+
 test('a failing real test returns failure and an empty group runs nothing', (t) => {
   const root = fixture(t);
   write(root, 'test/fail.test.js', "require('node:test')('fails', () => { throw Error('expected failure'); });");
-  assert.equal(main(['1/8'], root), 1);
-  assert.equal(main(['8/8'], root), 0);
-  assert.equal(main(['0/8'], root), 1);
-  assert.equal(main(['1/0'], root), 1);
-  assert.equal(main(['1/8', 'extra'], root), 1);
+  const failure = runGroup(root, '1/8');
+  assert.equal(failure.status, 1, failure.stdout + failure.stderr);
+  assert.match(failure.stdout, /expected failure/);
+  assert.equal(runGroup(root, '8/8').status, 0);
+  assert.equal(runGroup(root, '0/8').status, 1);
+  assert.equal(runGroup(root, '1/0').status, 1);
+  assert.equal(runGroup(root, '1/8', 'extra').status, 1);
 });
