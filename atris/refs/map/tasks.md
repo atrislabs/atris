@@ -6,6 +6,8 @@ Current next-work evidence: `lib/next-work-context.js:117` assembles bounded goa
 
 Task references use the complete workspace history before the reader clips its visible rows. This keeps `now`, `next`, and exact bound jobs aligned with `task show`; real CLI and out-of-window regressions live in `test/first-minute--load-local-tasks.test.js:72` and `test/first-minute--load-local-tasks.test.js:106`.
 
+`lib/task-db.js` (`withTaskDisplayRefs`) finds the shortest unique legacy task links using neighboring IDs in sorted order. `test/task-db--normalize-task-ref.test.js` checks collisions, full history and workspace boundaries.
+
 The task database, claims, the task plane, task production readiness and returned jobs. Code refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
 
 ## Quick Reference Index
