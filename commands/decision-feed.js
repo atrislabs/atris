@@ -186,6 +186,10 @@ function printText(command, out, { streamed = false } = {}) {
     return;
   }
   if (command === 'waiting') {
+    if (out.skipped) {
+      console.log('skipped: background member run.');
+      return;
+    }
     if (Array.isArray(out.waiting)) {
       for (const entry of out.waiting) console.log(`${entry.title || 'Chat window'} (${entry.session}): ${entry.ask}`);
       if (!out.waiting.length) console.log('no chats waiting');
@@ -419,7 +423,9 @@ async function run(args = [], context = {}) {
       out = feed.listCards(root, { filter: flags.filter || 'all', limit: flags.limit, cursor: flags.cursor, since: flags.since, env });
     } else if (sub === 'waiting') {
       const action = positional[1];
-      if (action === 'set') out = feed.setWaiting(root, { session: flags.session, ask: flags.ask, title: flags.title, engine: flags.engine });
+      if ((action === 'set' || action === 'clear') && env.ATRIS_AGENT_PROOF_ONLY === '1') {
+        out = { version: feed.FEED_VERSION, skipped: true, reason: 'background_member_run' };
+      } else if (action === 'set') out = feed.setWaiting(root, { session: flags.session, ask: flags.ask, title: flags.title, engine: flags.engine });
       else if (action === 'clear') out = feed.clearWaiting(root, flags.session);
       else if (action === 'list') out = feed.listWaiting(root);
       else throw new feed.FeedError(400, 'usage: atris feed waiting set|clear|list');
