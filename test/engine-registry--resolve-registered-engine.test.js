@@ -96,7 +96,7 @@ test('owner-set models win over the seed list, unmarked saved models do not', ()
     devin: { models: ['stale-model'] },
   });
   assert.deepStrictEqual(resolveRegisteredEngine('cursor', root).models, ['custom-a', 'custom-b']);
-  assert.deepStrictEqual(resolveRegisteredEngine('devin', root).models, ['built-in router']);
+  assert.deepStrictEqual(resolveRegisteredEngine('devin', root).models, ['swe-2-1-high', 'swe-2-1-max', 'swe-2-1-xhigh', 'swe-2-1', 'swe-2-1-medium', 'swe-2-1-low']);
 });
 
 test('throws an unknown-engine error that lists every registered id', () => {

@@ -27,7 +27,8 @@ const PROFILES = [
   { id: 'fable', bin: 'claude', tier: 'max', roles: ['validator', 'executor'], models: ['opus 5.5', 'opus 5', 'fable', 'haiku'], duty: 'leader', fallback_order: 50 },
   { id: 'composer', bin: 'ax', tier: 'fast', roles: ['navigator', 'executor'], models: ['composer 2.5'], duty: '', fallback_order: 60 },
   { id: 'haiku', bin: 'claude', tier: 'fast', roles: ['validator', 'navigator'], models: ['haiku'], duty: '', fallback_order: 70 },
-  { id: 'devin', bin: 'devin', tier: 'max', roles: ['executor'], models: ['built-in router'], duty: 'errands', fallback_order: 40 },
+  { id: 'devin', bin: 'devin', tier: 'max', roles: ['executor'], models: ['swe-2-1-high', 'swe-2-1-max', 'swe-2-1-xhigh', 'swe-2-1', 'swe-2-1-medium', 'swe-2-1-low'], duty: 'errands', fallback_order: 40 },
+  { id: 'droid', bin: 'droid', tier: 'pro', roles: ['executor'], models: ['glm-5.3', 'kimi-k3', 'minimax-m3', 'gpt-6.1-terra'], duty: 'errands', fallback_order: 41 },
   { id: 'grok', bin: 'grok', tier: 'pro', roles: ['executor'], models: ['grok 4.7 fast', 'grok 4.7'], duty: '', fallback_order: 45 },
   { id: 'muse', bin: 'muse', tier: 'pro', roles: ['executor'], models: ['muse-wonder-1.0', 'muse-spark-1.3'], duty: '', fallback_order: 97 },
   {

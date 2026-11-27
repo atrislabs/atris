@@ -82,7 +82,7 @@ function installWarnings(packageRoot) {
 
 // Outside coding tools a member can run on. The built-in tool (ax) ships
 // with atris and only needs a sign-in, so it is counted through auth.
-const MEMBER_TOOL_BINS = ['claude', 'codex', 'cursor-agent', 'opencode', 'devin', 'grok', 'agy'];
+const MEMBER_TOOL_BINS = ['claude', 'codex', 'cursor-agent', 'opencode', 'devin', 'droid', 'grok', 'agy'];
 
 function teamMembers(workspaceRoot) {
   const teamDir = path.join(workspaceRoot, 'atris', 'team');

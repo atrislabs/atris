@@ -29,7 +29,7 @@ test('engine roster lists every profile with detection state', () => {
     assert.equal(res.status, 0, res.stderr);
     const parsed = JSON.parse(res.stdout);
     const names = parsed.engines.map((e) => e.name);
-    assert.deepEqual(names, ['atris-fast', 'mercury', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'muse', 'agy', 'opencode']);
+    assert.deepEqual(names, ['atris-fast', 'mercury', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'droid', 'grok', 'muse', 'agy', 'opencode']);
     assert.ok(fs.existsSync(path.join(dir, '.atris', 'state', 'engines.json')));
     const codex = parsed.engines.find((e) => e.id === 'codex');
     assert.equal(codex.tier, 'pro');
@@ -42,7 +42,7 @@ test('engine roster lists every profile with detection state', () => {
     assert.deepEqual(parsed.engines.find((e) => e.id === 'cursor').models, ['composer 2.5', 'grok 4.6', 'kimi 3']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'composer').models, ['composer 2.5']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'grok').models, ['grok 4.7 fast', 'grok 4.7']);
-    assert.deepEqual(parsed.engines.find((e) => e.id === 'devin').models, ['built-in router']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'devin').models, ['swe-2-1-high', 'swe-2-1-max', 'swe-2-1-xhigh', 'swe-2-1', 'swe-2-1-medium', 'swe-2-1-low']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'agy').models, [
       'gemini-3.8-flash',
       'gemini-4-argon-high',
@@ -129,7 +129,7 @@ test('--engine flag rides a loop for one run and validates at the boundary', () 
     const bad = runCli(['run', '--legacy', '--dry-run', '--engine', 'gpt-11'], dir);
     assert.equal(bad.status, 1);
     assert.match(bad.stderr, /Unknown --engine "gpt-11"/);
-    assert.match(bad.stderr, /atris-fast, mercury, claude, codex, cursor, fable, composer, haiku, devin, grok, muse, agy, opencode/);
+    assert.match(bad.stderr, /atris-fast, mercury, claude, codex, cursor, fable, composer, haiku, devin, droid, grok, muse, agy, opencode/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -293,7 +293,7 @@ test('engines list renders models and errand duty', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     assert.match(res.stdout, /models: opus 5\.5, opus 5, fable, haiku/);
     assert.match(res.stdout, /models: composer 2\.5, grok 4\.6, kimi 3/);
-    assert.match(res.stdout, /models: built-in router\s+duty: errands/);
+    assert.match(res.stdout, /models: swe-2-1-high, swe-2-1-max, swe-2-1-xhigh, swe-2-1, swe-2-1-medium, swe-2-1-low\s+duty: errands/);
     assert.doesNotMatch(res.stdout, /—/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

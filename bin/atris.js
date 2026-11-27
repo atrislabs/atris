@@ -3848,7 +3848,7 @@ function inspectAgentCliWiring() {
     },
   ];
 
-  const binaries = ['atris', 'ax', 'claude', 'codex', 'cursor-agent', 'devin', 'agy'].map((name) => ({
+  const binaries = ['atris', 'ax', 'claude', 'codex', 'cursor-agent', 'devin', 'droid', 'agy'].map((name) => ({
     name,
     path: commandOnPath(name),
   }));

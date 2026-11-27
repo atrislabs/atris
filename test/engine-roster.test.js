@@ -610,10 +610,10 @@ test('with no roster, review routing is unchanged and codex stays out, fresh or 
 
 test('any job name can be assigned: the name says its kind or --like does, and clear, view, json, and confirm cover it', () => withRoom((root, machineFile) => {
   ready(root, 'codex', 'claude', 'devin', 'grok', 'haiku');
-  const small = command(root, ['assign', 'small build', 'devin', '--model', 'swe-2-max', '--backup', 'grok', '--days', '30', '--everywhere']);
+  const small = command(root, ['assign', 'small build', 'devin', '--model', 'swe-2-1-max', '--backup', 'grok', '--days', '30', '--everywhere']);
   assert.equal(small.exit, 0, small.err);
   const smallPick = machinePicks(root)['small-build'];
-  assert.deepEqual([smallPick.engine, smallPick.model, smallPick.backup, smallPick.until, smallPick.like], ['devin', 'swe-2-max', 'grok', '2026-10-24', 'build']);
+  assert.deepEqual([smallPick.engine, smallPick.model, smallPick.backup, smallPick.until, smallPick.like], ['devin', 'swe-2-1-max', 'grok', '2026-10-24', 'build']);
   const quick = command(root, ['assign', 'Quick Fixes', 'codex', '--like', 'build']);
   assert.equal(quick.exit, 0, quick.err);
   assert.equal(projectPicks(root)['quick-fixes'].like, 'build');
@@ -640,7 +640,7 @@ test('any job name can be assigned: the name says its kind or --like does, and c
   const order = ['search', 'build', 'review', 'quick fixes', 'deep search', 'small build'];
   assert.equal(lines.length, order.length);
   order.forEach((label, index) => assert.ok(lines[index].startsWith(`${label} `), lines[index]));
-  assert.match(view.out, /^small build +devin · swe-2-max +grok · own default +- +2026-10-24 +from all projects$/m);
+  assert.match(view.out, /^small build +devin · swe-2-1-max +grok · own default +- +2026-10-24 +from all projects$/m);
   assert.match(view.out, /^quick fixes +claude · haiku 5\.5 +none +- +- +-$/m);
   const json = JSON.parse(command(root, ['roster', '--json']).out).jobs;
   assert.equal(json.length, 6);
@@ -649,7 +649,7 @@ test('any job name can be assigned: the name says its kind or --like does, and c
   assert.equal(row.like, 'build');
   assert.equal(row.role, 'executor');
   assert.equal(row.engine, 'devin');
-  assert.equal(row.model, 'swe-2-max');
+  assert.equal(row.model, 'swe-2-1-max');
   assert.equal(row.status, 'picked');
   assert.equal(row.from, 'all projects');
   assert.equal(json.find((entry) => entry.job === 'build').like, undefined);
@@ -669,11 +669,11 @@ test('any job name can be assigned: the name says its kind or --like does, and c
 test('the job option asks for a job by name, then falls back to its kind, then the router', () => withRoom((root) => {
   ready(root, 'codex', 'claude', 'devin', 'haiku');
   setRosterPick('build', 'claude', { model: 'opus 5.5', now: NOW }, root);
-  setRosterPick('small build', 'devin', { model: 'swe-2-max', now: NOW }, root);
+  setRosterPick('small build', 'devin', { model: 'swe-2-1-max', now: NOW }, root);
   setRosterPick('deep review', 'haiku', { now: NOW }, root);
   const picked = resolveEngineForRoleRanked('executor', root, { now: NOW, job: 'small build' });
   assert.equal(picked.engine.id, 'devin');
-  assert.equal(picked.engine.roster_model, 'swe-2-max');
+  assert.equal(picked.engine.roster_model, 'swe-2-1-max');
   assert.equal(picked.job, 'small build');
   assert.equal(picked.reason, 'roster pick for small build: devin');
   assert.equal(picked.ranked[0].id, 'devin');
@@ -693,7 +693,7 @@ test('the job option asks for a job by name, then falls back to its kind, then t
   assert.equal(kind.reason, 'roster pick for build: claude');
   const view = JSON.parse(command(root, ['roster', '--json']).out).jobs.find((entry) => entry.job === 'small build');
   assert.equal(view.status, 'not ready');
-  assert.match(command(root, ['roster']).out, /^small build +devin · swe-2-max +none +- +- +not ready, falls back to build$/m);
+  assert.match(command(root, ['roster']).out, /^small build +devin · swe-2-1-max +none +- +- +not ready, falls back to build$/m);
 
   assert.equal(command(root, ['assign', 'build', '--clear']).exit, 0);
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW, job: 'small build' }).source, 'router');
@@ -702,10 +702,10 @@ test('the job option asks for a job by name, then falls back to its kind, then t
 test('a low-stakes build prefers the small build pick and a normal build ignores it', () => withRoom((root) => {
   ready(root, 'codex', 'claude', 'devin', 'grok');
   setRosterPick('build', 'claude', { model: 'opus 5.5', now: NOW }, root);
-  setRosterPick('small build', 'devin', { model: 'swe-2-max', backup: 'grok', now: NOW, everywhere: true }, root);
+  setRosterPick('small build', 'devin', { model: 'swe-2-1-max', backup: 'grok', now: NOW, everywhere: true }, root);
   const small = resolveEngineForRoleRanked('executor', root, { now: NOW, lowStakes: true });
   assert.equal(small.engine.id, 'devin');
-  assert.equal(small.engine.roster_model, 'swe-2-max');
+  assert.equal(small.engine.roster_model, 'swe-2-1-max');
   assert.equal(small.reason, 'roster pick for small build (all projects): devin');
   const big = resolveEngineForRoleRanked('executor', root, { now: NOW });
   assert.equal(big.engine.id, 'claude');
@@ -713,12 +713,12 @@ test('a low-stakes build prefers the small build pick and a normal build ignores
   // Only builds read the small build pick.
   assert.notEqual(resolveEngineForRoleRanked('validator', root, { now: NOW, lowStakes: true }).engine.id, 'devin');
   // A caller that already named devin still gets the small build model.
-  assert.equal(resolveEngineForRoleWithPreference('executor', root, 'devin', { now: NOW, lowStakes: true }).engine.roster_model, 'swe-2-max');
+  assert.equal(resolveEngineForRoleWithPreference('executor', root, 'devin', { now: NOW, lowStakes: true }).engine.roster_model, 'swe-2-1-max');
   assert.equal(resolveEngineForRoleWithPreference('executor', root, 'devin', { now: NOW }).engine.roster_model, undefined);
   // A quick wish asks for the small build pick; a bigger one does not.
   assert.equal(inferBudgetTier('quick fix the typo in the readme'), 'quick');
   assert.equal(auditWish('quick fix the typo in the readme', root).executor.id, 'devin');
-  assert.equal(auditWish('quick fix the typo in the readme', root).executor.roster_model, 'swe-2-max');
+  assert.equal(auditWish('quick fix the typo in the readme', root).executor.roster_model, 'swe-2-1-max');
   assert.notEqual(inferBudgetTier('rewrite the whole router architecture'), 'quick');
   assert.equal(auditWish('rewrite the whole router architecture', root).executor.id, 'claude');
   // The backup never inherits the pick's model.
@@ -729,10 +729,10 @@ test('a low-stakes build prefers the small build pick and a normal build ignores
   assert.match(backup.reason, /small build \(all projects\) is not ready, using backup: grok/);
 }));
 
-test('devin and grok launch with the pinned model, and without --model when nothing is pinned', () => {
-  assert.match(buildEngineCommand('devin', '/tmp/prompt.md', { model: 'swe-2-max' }), /^devin -p --permission-mode dangerous --model swe-2-max -- /);
-  assert.match(buildEngineCommand('devin', '/tmp/prompt.md', { sealed: true, model: 'swe-2-max' }), /^devin -p --sandbox --permission-mode accept-edits --model swe-2-max -- /);
-  assert.doesNotMatch(buildEngineCommand('devin', '/tmp/prompt.md'), /--model/);
+test('devin and grok launch with their pinned or default models', () => {
+  assert.match(buildEngineCommand('devin', '/tmp/prompt.md', { model: 'swe-2-1-max' }), /^devin -p --permission-mode dangerous --model swe-2-1-max -- /);
+  assert.match(buildEngineCommand('devin', '/tmp/prompt.md', { sealed: true, model: 'swe-2-1-max' }), /^devin -p --sandbox --permission-mode accept-edits --model swe-2-1-max -- /);
+  assert.match(buildEngineCommand('devin', '/tmp/prompt.md'), /--model swe-2-1-high/);
   assert.match(buildEngineCommand('grok', '/tmp/prompt.md', { model: 'grok-4.7-build-fast' }), /^grok --always-approve --model grok-4\.7-build-fast -p /);
   assert.match(buildEngineCommand('grok', '/tmp/prompt.md', { sealed: true, model: 'grok-4.7' }), /^grok --model grok-4\.7 -p .*--sandbox enabled/);
   assert.doesNotMatch(buildEngineCommand('grok', '/tmp/prompt.md'), /--model|grok-4\.6/);

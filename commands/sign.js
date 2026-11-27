@@ -30,7 +30,7 @@ const PERSON_TRAILER = 'Atris-Made-By: person';
 // started this save is a helper (one ps call, parents walked from git). Helpers the tool starts
 // carry no sign of their own (seen 2026-11-17), so the starters are what is trusted. A blind
 // look (no process list) says agent, never person.
-const HELPER_PROGRAMS = '(claude|codex|cursor-agent|devin|grok|agy|opencode|muse|[\\/]atris( |$)|atris[.]js|bin[\\/]ax( |$))';
+const HELPER_PROGRAMS = '(claude|codex|cursor-agent|devin|droid|grok|agy|opencode|muse|[\\/]atris( |$)|atris[.]js|bin[\\/]ax( |$))';
 const PERSON_BLOCK = [
   '  if [ -n "${TERM_PROGRAM}${SSH_TTY}" ] && [ -z "' + AGENT_ENV.map((v) => '${' + v + '}').join('') + '" ] && ! grep -qi "^atris-made-by:" "$1" \\',
   '    && ${ATRIS_SIGN_PS:-ps -axo pid=,ppid=,args=} 2>/dev/null | awk -v p="$PPID" \'{ id = $1; pp[id] = $2; $1 = ""; $2 = ""; args[id] = tolower($0) } END { if (NR == 0) exit 1; for (i = 0; i < 40 && p > 1; i++) { if (args[p] ~ /' + HELPER_PROGRAMS + '/) exit 1; p = pp[p] } exit 0 }\'; then',
