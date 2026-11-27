@@ -19,12 +19,11 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-(Empty)
+- **[DFS-1]** Keep checkout sync moving when a file is only marked for adding · devin · verify: node --test test/sync-checkout.test.js t
 
 ## Review
 
-- **[FFC-1]** Feed: any member can answer on any card, read all comments, longer comments, members answer people's comments when they think · unassigned
-  **Done looks like:** People can now pull any awake team member into the talk on any card and read the whole talk, which saves time because answers land where everyone reads them.
+(Empty)
 
 ## Blocked
 
