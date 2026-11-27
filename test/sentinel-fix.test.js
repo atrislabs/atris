@@ -103,9 +103,9 @@ function makeRepo({ branch = 'main', remote = null } = {}) {
   sh(root, 'commit', '-q', '-m', 'init');
   fs.rmSync(hookLog, { force: true });
   if (remote) sh(root, 'remote', 'add', 'origin', remote);
-  const dir = path.join(auditHome, audit.repoName(root), 'run-1');
+  const dir = path.join(auditHome, audit.historyFolder(root), 'run-1');
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'run-metadata.json'), JSON.stringify({ profile: 'quick' }));
+  fs.writeFileSync(path.join(dir, 'run-metadata.json'), JSON.stringify({ profile: 'quick', run_status: 'complete', finished_at: '2026-11-24T00:00:00.000Z' }));
   fs.writeFileSync(path.join(dir, 'findings.json'), JSON.stringify([RECORD, { verdict: 'rejected', fingerprint: 'other/x', title: 'not real', reason: 'no' }]));
   return { root, hookLog };
 }
@@ -186,7 +186,7 @@ test('happy path: real codex and claude processes, commit on the new branch with
   const srv = await fakeEventsServer();
   try {
     const deps = baseDeps(root, { token: 'test-token', base: srv.base });
-    deps.env = { ...deps.env, PATH: `${engines.bin}${path.delimiter}${process.env.PATH}`, FAKE_FIX_PLAN: engines.plan };
+    deps.env = { ...deps.env, PATH: `${engines.bin}${path.delimiter}${process.env.PATH}`, FAKE_FIX_PLAN: engines.plan, ATRIS_SENTINEL_UPLOAD: "1" };
     delete deps.available;
     const r = await capture(() => auditCommand(['fix', short], deps));
     assert.strictEqual(r.code, 0, r.out + r.err);
@@ -208,7 +208,8 @@ test('happy path: real codex and claude processes, commit on the new branch with
     assert.ok(msg.trim().endsWith('Co-authored-by: Atris <299057014+atris-builder[bot]@users.noreply.github.com>'));
     assert.ok(fs.existsSync(hookLog), 'the pre-commit hook ran');
     // Builder ran with write access limited to the repo, checker read-only.
-    const calls = fs.readFileSync(engines.argLog, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    // The free sign-in checks (codex login status, claude auth status) come first; skip them.
+    const calls = fs.readFileSync(engines.argLog, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((c) => !/^(login|auth) status/.test(c.args.join(' ')));
     const codex = calls.find((c) => c.engine === 'codex');
     const claude = calls.find((c) => c.engine === 'claude');
     assert.notStrictEqual(codex.cwd, root, 'the builder runs in a temp worktree, not your checkout');
@@ -527,4 +528,280 @@ test('a push from a generated test fails and the test sees no credentials', asyn
   assert.strictEqual(spawnGit(bare, ['rev-parse', '--verify', '--quiet', 'refs/heads/leak']).status, 1);
   assert.strictEqual(spawnGit(bare, ['rev-parse', '--verify', '--quiet', 'refs/heads/leak2']).status, 1);
   assert.strictEqual(spawnGit(root, ['config', '--get', 'remote.origin.pushurl']).status, 1, 'your own push settings are unchanged');
+});
+
+// ---------------------------------------------------------------- first real fixes
+
+// Whether this disk can make a copy-on-write clone (APFS on a Mac, btrfs or
+// xfs on Linux). Where it cannot, the clone tests are skipped and the
+// fallback tests below still run.
+function canClone() {
+  const dir = tmp('sentinel-fix-canclone-');
+  write(dir, 'src/a.txt', 'a');
+  const cmd = fix.cloneCommand(path.join(dir, 'src'), path.join(dir, 'dst'));
+  return Boolean(cmd) && spawnSync(cmd[0], cmd[1]).status === 0;
+}
+const CLONE = canClone();
+
+function repoWithPackages() {
+  const { root } = makeRepo();
+  write(root, '.gitignore', 'node_modules/\n.venv/\n');
+  sh(root, 'add', '.gitignore');
+  sh(root, 'commit', '-q', '-m', 'ignore');
+  write(root, 'node_modules/name-rules/index.js', "module.exports = { separators: [';', '|', '&'] };\n");
+  write(root, 'node_modules/left-pad/index.js', 'module.exports = 1;\n');
+  write(root, '.venv/bin/pip', '#!/bin/sh\n');
+  return root;
+}
+
+// Every file under a folder with its content, to compare before and after.
+function tree(dir) {
+  const out = {};
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const full = path.join(d, e.name);
+      if (e.isDirectory()) walk(full);
+      else out[path.relative(dir, full)] = fs.readFileSync(full, 'utf8');
+    }
+  };
+  walk(dir);
+  return out;
+}
+
+test('the temp copy gets a private clone of your packages; an install there never reaches yours', { skip: !CLONE && 'this disk cannot make a copy-on-write clone' }, async () => {
+  const root = repoWithPackages();
+  const before = tree(path.join(root, 'node_modules'));
+  const needsPackage = "const test = require('node:test');\nconst assert = require('node:assert');\nconst { separators } = require('name-rules');\nconst { safeName } = require('../lib/run');\ntest('every separator is refused', () => { for (const s of separators) assert.strictEqual(safeName(`x${s}rm`), false); });\n";
+  let sawPackage = null;
+  let wasLink = null;
+  const runBuilder = async (job) => {
+    const nm = path.join(job.root, 'node_modules');
+    sawPackage = fs.existsSync(path.join(nm, 'name-rules', 'index.js'));
+    wasLink = fs.lstatSync(nm).isSymbolicLink();
+    // What an npm install or npm ci in the temp copy does: remove, rewrite, add.
+    fs.rmSync(path.join(nm, 'left-pad'), { recursive: true, force: true });
+    fs.writeFileSync(path.join(nm, 'name-rules', 'index.js'), "module.exports = { separators: [';'] };\n");
+    write(job.root, 'node_modules/new-pkg/index.js', 'module.exports = 2;\n');
+    write(job.root, 'lib/run.js', FIXED);
+    write(job.root, 'test/fix.test.js', needsPackage);
+    return { ok: true, stdout: JSON.stringify({ summary: 'Allow only plain characters', test_files: ['test/fix.test.js'] }) };
+  };
+  const r = await capture(() => fixCommand([short], baseDeps(root, { runBuilder, runChecker: checkerSaying('fixed') })));
+  assert.strictEqual(r.code, 0, r.out + r.err);
+  assert.strictEqual(sawPackage, true, 'the fix writer can run tests that use installed packages');
+  assert.strictEqual(wasLink, false, 'the temp copy gets a clone, never a link to your folder');
+  assert.deepStrictEqual(tree(path.join(root, 'node_modules')), before, 'your node_modules is exactly as it was');
+  const files = sh(root, 'diff', '--name-only', `main...${BRANCH}`).split('\n').sort();
+  assert.deepStrictEqual(files, ['lib/run.js', 'test/fix.test.js'], 'the packages are not part of the fix');
+  assert.strictEqual(sh(root, 'status', '--porcelain'), '');
+});
+
+test('package clone: an npm ci style wipe in the copy leaves yours alone, and the clone is removed after', { skip: !CLONE && 'this disk cannot make a copy-on-write clone' }, () => {
+  const root = repoWithPackages();
+  const before = tree(path.join(root, 'node_modules'));
+  const wt = path.join(tmp('sentinel-fix-clone-'), 'repo');
+  sh(root, 'worktree', 'add', '-q', '--detach', wt, 'HEAD');
+  try {
+    const res = fix.copyDependencies(root, wt);
+    assert.deepStrictEqual(res.copied, ['node_modules']);
+    assert.ok(!fs.existsSync(path.join(wt, '.venv')), 'a virtual environment is never copied: its scripts point back at yours');
+    assert.ok(!fs.lstatSync(path.join(wt, 'node_modules')).isSymbolicLink());
+    assert.deepStrictEqual(fix.changedPaths(wt), [], 'the clone does not show up as a change');
+    // npm ci: delete the whole folder, then write a fresh one.
+    fs.rmSync(path.join(wt, 'node_modules'), { recursive: true, force: true });
+    write(wt, 'node_modules/fresh/index.js', 'module.exports = 3;\n');
+    assert.deepStrictEqual(tree(path.join(root, 'node_modules')), before, 'your node_modules is untouched');
+    fix.dropDependencies(wt);
+    assert.ok(!fs.existsSync(path.join(wt, 'node_modules')));
+    assert.deepStrictEqual(tree(path.join(root, 'node_modules')), before);
+  } finally {
+    sh(root, 'worktree', 'remove', '--force', wt);
+  }
+});
+
+test('package clone: no clone means no packages and a plain note, never a link', async () => {
+  const root = repoWithPackages();
+  const wt = path.join(tmp('sentinel-fix-noclone-'), 'repo');
+  sh(root, 'worktree', 'add', '-q', '--detach', wt, 'HEAD');
+  try {
+    const failed = fix.copyDependencies(root, wt, { clone: () => ({ ok: false, why: 'this disk cannot make a copy-on-write copy' }) });
+    assert.deepStrictEqual(failed.copied, []);
+    assert.deepStrictEqual(failed.skipped, [{ name: 'node_modules', why: 'this disk cannot make a copy-on-write copy' }]);
+    assert.ok(!fs.existsSync(path.join(wt, 'node_modules')));
+    // A clone step that leaves a link behind is refused and the link removed.
+    const sneaky = fix.copyDependencies(root, wt, { clone: (src, dest) => { fs.symlinkSync(src, dest, 'dir'); return { ok: true }; } });
+    assert.deepStrictEqual(sneaky.copied, []);
+    assert.ok(!fs.existsSync(path.join(wt, 'node_modules')), 'the link was removed');
+    assert.ok(fs.existsSync(path.join(root, 'node_modules', 'left-pad', 'index.js')), 'removing the link kept your packages');
+  } finally {
+    sh(root, 'worktree', 'remove', '--force', wt);
+  }
+  // The run says so in plain words and still goes on.
+  const logs = [];
+  const runBuilder = builderWriting({ 'lib/run.js': FIXED, 'test/fix.test.js': REGRESSION });
+  const r = await capture(() => fixCommand([short], baseDeps(root, { runBuilder, runChecker: checkerSaying('fixed'), log: (m) => logs.push(m), copyDependencies: (a, b) => fix.copyDependencies(a, b, { clone: () => ({ ok: false, why: 'this disk cannot make a copy-on-write copy' }) }) })));
+  assert.strictEqual(r.code, 0, r.out + r.err);
+  assert.ok(logs.some((l) => /your node_modules is not used for this fix: this disk cannot make a copy-on-write copy, and sharing your own folder could change it/.test(l)), logs.join('\n'));
+});
+
+test('clone commands: copy-on-write on a Mac and on Linux, none elsewhere', () => {
+  assert.deepStrictEqual(fix.cloneCommand('/a', '/b', 'darwin'), ['cp', ['-c', '-R', '/a', '/b']]);
+  assert.deepStrictEqual(fix.cloneCommand('/a', '/b', 'linux'), ['cp', ['-R', '--reflink=always', '/a', '/b']], 'always, not auto: auto quietly makes a full copy');
+  assert.strictEqual(fix.cloneCommand('/a', '/b', 'win32'), null);
+});
+
+test('the fix writer is told never to install, update or remove packages', () => {
+  for (const canRun of [true, false]) {
+    const p = fix.builderPrompt(RECORD, { testCommand: 'npm test', canRun });
+    assert.match(p, /Never install, update or remove packages: no npm install, npm ci/);
+    assert.match(p, /If the test needs a package that is missing, do not add it: say which one in your summary/);
+  }
+});
+
+test('a refused fix keeps what the tests printed, so the reason can be read', async () => {
+  const { root } = makeRepo();
+  const deps = baseDeps(root, { runBuilder: builderWriting({ 'lib/run.js': FIXED, 'test/fix.test.js': WEAK_TEST }), runChecker: checkerSaying('fixed') });
+  const r = await capture(() => fixCommand([short], deps));
+  assert.strictEqual(r.code, 1);
+  assert.match(r.out, /what the tests printed: /);
+  const saved = path.join(deps.env.HOME, '.atris', 'sentinel', 'fixes');
+  const outFile = fs.readdirSync(saved).map((d) => path.join(saved, d, 'test-output.txt')).find((f) => fs.existsSync(f));
+  assert.ok(outFile, 'the test output is saved next to the attempt');
+  assert.match(fs.readFileSync(outFile, 'utf8'), /^\$ node --test/);
+});
+
+test('the fix writer is told how it is judged and to write the attack test first', () => {
+  const others = [RECORD, { verdict: 'confirmed', fingerprint: 'path-traversal/x', title: 'Any file can be downloaded', trace: [{ file: 'server.js', line: 49 }] }];
+  const local = fix.builderPrompt(RECORD, { testCommand: 'npm test', others, canRun: true });
+  assert.match(local, /Write the regression test first, before touching the code/);
+  assert.match(local, /Run only that test and see it fail on an assertion/);
+  // Claude Code builds with file tools only, so it is told to trace the test by hand.
+  const noShell = fix.builderPrompt(RECORD, { testCommand: 'npm test', others });
+  assert.match(noShell, /You cannot run commands in this session/);
+  assert.ok(!/Run only that test/.test(noShell));
+  assert.match(local, /fails on an assertion\. A crash, an import error, a missing file or a timeout does not count/);
+  assert.match(local, /from the side of the person who should be stopped/);
+  // Written in defensive words: a tool safety filter refused "attack" wording.
+  assert.ok(!/attacker|the attack|attack test/i.test(local.split("## Confirmed finding")[0]), "the instructions avoid attack words");
+  assert.match(local, /Any file can be downloaded \(server\.js:49\)/);
+  assert.ok(!local.split('## Other confirmed problems')[1].includes(RECORD.title), 'the problem being fixed is not listed as another one');
+  const hosted = fix.builderPrompt(RECORD, { testCommand: 'npm test', hosted: true, others });
+  assert.ok(!/Order of work/.test(hosted), 'a hosted builder cannot run tests, so it gets no run steps');
+  assert.match(hosted, /How your work is judged/);
+  const checker = fix.checkerPrompt(RECORD, { diff: '', others });
+  assert.match(checker, /Judge this problem only/);
+  assert.match(checker, /Any file can be downloaded/);
+  assert.ok(!/Judge this problem only/.test(fix.checkerPrompt(RECORD, { diff: '' })), 'no scope line when there is nothing else to point at');
+});
+
+test('the fix run hands the other confirmed problems to the writer and the checker', async () => {
+  const { root } = makeRepo();
+  const other = { ...RECORD, fingerprint: 'path-traversal/lib/files.js/read', title: 'Any file can be read' };
+  const dir = path.join(auditHome, audit.historyFolder(root), 'run-1');
+  fs.writeFileSync(path.join(dir, 'findings.json'), JSON.stringify([RECORD, other]));
+  const runBuilder = builderWriting({ 'lib/run.js': FIXED, 'test/fix.test.js': REGRESSION });
+  const runChecker = checkerSaying('fixed');
+  const r = await capture(() => fixCommand([short], baseDeps(root, { runBuilder, runChecker })));
+  assert.strictEqual(r.code, 0, r.out + r.err);
+  assert.match(runBuilder.calls[0].prompt, /Any file can be read/);
+  assert.match(runChecker.calls[0].prompt, /Any file can be read/);
+});
+
+test('every place sentinel names the tools that work says Claude Code or Codex', () => {
+  const files = ['commands/security-review.js', 'commands/sentinel-fix.js', 'lib/sentinel-fix.js', 'lib/sentinel-cloud.js', 'bin/atris.js'];
+  for (const rel of files) {
+    const text = fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+    for (const bad of [/\bno codex or claude\b/i, /\bonly codex and claude\b/i, /\buse codex or claude\b/i, /\bcodex or claude is installed\b/i, /Claude Code, Codex,? and so on/i]) {
+      assert.ok(!bad.test(text), `${rel} names the tools another way: ${bad}`);
+    }
+  }
+  const { printAuditHelp } = require('../commands/security-review');
+  const lines = [];
+  const orig = console.log;
+  console.log = (...a) => lines.push(a.join(' '));
+  try { printAuditHelp(); } finally { console.log = orig; }
+  assert.match(lines.join('\n'), /Claude Code or Codex/);
+});
+
+test('a refused first try gets one more round with the reason and the test output, then lands', async () => {
+  const { root } = makeRepo();
+  const prompts = [];
+  let round = 0;
+  const runBuilder = async (job) => {
+    prompts.push(job.prompt);
+    round += 1;
+    write(job.root, 'lib/run.js', FIXED);
+    // First try: a test that does not drive the attack. Second: the real one.
+    write(job.root, 'test/fix.test.js', round === 1 ? WEAK_TEST : REGRESSION);
+    return { ok: true, stdout: JSON.stringify({ summary: 'Allow only plain characters', test_files: ['test/fix.test.js'] }) };
+  };
+  const logs = [];
+  const runChecker = checkerSaying('fixed');
+  const r = await capture(() => fixCommand([short], baseDeps(root, { runBuilder, runChecker, log: (m) => logs.push(m) })));
+  assert.strictEqual(r.code, 0, r.out + r.err);
+  assert.strictEqual(prompts.length, 2);
+  assert.ok(!/Your last try was refused/.test(prompts[0]));
+  assert.match(prompts[1], /Your last try was refused/);
+  assert.match(prompts[1], /the new test also passes on the original code and does not catch this problem/);
+  assert.match(prompts[1], /What the tests printed/);
+  assert.ok(logs.some((l) => /giving codex one more try/.test(l)), logs.join('\n'));
+  assert.strictEqual(runChecker.calls.length, 1, 'the checker sees only the try that passed the tests');
+  const files = sh(root, 'diff', '--name-only', `main...${BRANCH}`).split('\n').sort();
+  assert.deepStrictEqual(files, ['lib/run.js', 'test/fix.test.js']);
+  assert.match(sh(root, 'show', `${BRANCH}:test/fix.test.js`), /a shell separator in the name is refused/);
+});
+
+test('a second miss stops: two rounds at most, nothing committed', async () => {
+  const { root } = makeRepo();
+  const runBuilder = builderWriting({ 'lib/run.js': FIXED });
+  const r = await capture(() => fixCommand([short], baseDeps(root, { runBuilder, runChecker: checkerSaying('fixed') })));
+  assert.strictEqual(r.code, 1);
+  assert.strictEqual(runBuilder.calls.length, 2);
+  assert.match(r.out, /no fix was committed: the builder added no regression test/);
+  assert.strictEqual(fix.branchExists(root, BRANCH), false);
+});
+
+test('the checker saying the attack still works also earns one more round, with its reason', async () => {
+  const { root } = makeRepo();
+  const runBuilder = builderWriting({ 'lib/run.js': FIXED, 'test/fix.test.js': REGRESSION });
+  let n = 0;
+  const runChecker = async (job) => {
+    n += 1;
+    return { ok: true, stdout: JSON.stringify(n === 1 ? { verdict: 'not_fixed', reason: 'a second route skips the check' } : { verdict: 'fixed', reason: 'both routes check now' }) };
+  };
+  const r = await capture(() => fixCommand([short], baseDeps(root, { runBuilder, runChecker })));
+  assert.strictEqual(r.code, 0, r.out + r.err);
+  assert.strictEqual(runBuilder.calls.length, 2);
+  assert.match(runBuilder.calls[1].prompt, /a second route skips the check/);
+});
+
+test('a builder that stops with an error gets one more try, and the refusal quotes what it said', async () => {
+  const { root } = makeRepo();
+  let n = 0;
+  const flaky = async (job) => {
+    n += 1;
+    if (n === 1) return { ok: false, reason: 'exit_1', stdout: '', stderr: 'thinking...\nERROR: usage limit reached, try again in 2 minutes\n' };
+    write(job.root, 'lib/run.js', FIXED);
+    write(job.root, 'test/fix.test.js', REGRESSION);
+    return { ok: true, stdout: JSON.stringify({ summary: 's', test_files: ['test/fix.test.js'] }) };
+  };
+  const r = await capture(() => fixCommand([short], baseDeps(root, { runBuilder: flaky, runChecker: checkerSaying('fixed') })));
+  assert.strictEqual(r.code, 0, r.out + r.err);
+  assert.strictEqual(n, 2);
+
+  const { root: root2 } = makeRepo();
+  const alwaysDown = async () => ({ ok: false, reason: 'exit_1', stdout: '', stderr: 'ERROR: usage limit reached, try again in 2 minutes\n' });
+  const r2 = await capture(() => fixCommand([short], baseDeps(root2, { runBuilder: alwaysDown, runChecker: checkerSaying('fixed') })));
+  assert.strictEqual(r2.code, 1);
+  assert.match(r2.out, /the builder stopped before it finished \(exit_1\)\. it said: ERROR: usage limit reached/);
+  assert.match(r2.out, new RegExp(`or let the other tool write it: atris sentinel fix ${short} --builder claude --verifier codex`));
+
+  const { root: root3 } = makeRepo();
+  const idle = async () => ({ ok: true, stdout: 'I could not find the route this finding names.\n{"summary":"nothing"}', stderr: '' });
+  const r3 = await capture(() => fixCommand([short], baseDeps(root3, { runBuilder: idle, runChecker: checkerSaying('fixed') })));
+  assert.match(r3.out, /the builder changed nothing\. it said: I could not find the route this finding names\./);
+
+  // A line of code the tool quoted is not what it said, even if it reads like an error.
+  assert.strictEqual(fix.toolSaid({ stdout: '    raise HTTPException(status_code=401, detail="sign in first")\nNo change was needed.\ntokens used\n11,484\n', stderr: '' }), 'No change was needed.');
+  assert.strictEqual(fix.toolSaid({ stdout: 'raise HTTPException(401, "sign in first")', stderr: 'ERROR: This content was flagged for possible cybersecurity risk.' }), 'ERROR: This content was flagged for possible cybersecurity risk.');
 });

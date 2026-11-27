@@ -28,6 +28,11 @@ if (process.argv[2] === 'memory'
 // The desktop app keeps the decision feed open all day and asks often, so
 // atris feed answers before the rest of the CLI loads too. `feed list` and
 // `feed post` (the business group feed) fall through to the normal dispatch.
+if (process.argv[2] === 'element') {
+  require('../commands/element').runFromCli(process.argv.slice(3));
+  return;
+}
+
 if (process.argv[2] === 'feed') {
   const decisionFeed = require('../commands/decision-feed');
   const feedRoute = decisionFeed.route(process.argv.slice(3), { isTTY: Boolean(process.stdout.isTTY) });
@@ -40,10 +45,8 @@ if (process.argv[2] === 'feed') {
 
 const fs = require('fs');
 const path = require('path');
-const { exec, spawnSync } = require('child_process');
+const { spawnSync } = require('child_process');
 const readline = require('readline');
-const os = require('os');
-const crypto = require('crypto');
 const PACKAGE_JSON_PATH = path.join(__dirname, '..', 'package.json');
 
 // Exit without truncating piped stdout: process.exit() drops whatever is still
@@ -119,36 +122,23 @@ const {
 
 // Journal & config utilities (canonical modules)
 const { getLogPath, ensureLogDirectory, createLogFile } = require('../lib/file-ops');
-const { getConfigPath, loadConfig, saveConfig, loadLogSyncState, saveLogSyncState } = require('../utils/config');
+const { loadConfig, saveConfig } = require('../utils/config');
 
 // Auth & API (canonical modules, eliminates duplicate inline code)
 const {
-  decodeJwtClaims, getTokenExpiryEpochSeconds, shouldRefreshToken,
-  getCredentialsPath, saveCredentials, loadCredentials, deleteCredentials,
-  validateAccessToken: _validateAccessToken,
-  refreshAccessToken: _refreshAccessToken,
-  performTokenRefresh: _performTokenRefresh,
   ensureValidCredentials: _ensureValidCredentials,
-  fetchMyAgents: _fetchMyAgents,
-  displayAccountSummary: _displayAccountSummary,
-  openBrowser, promptUser,
+  promptUser,
 } = require('../utils/auth');
 const {
-  getApiBaseUrl, getAppBaseUrl, buildApiUrl, httpRequest,
-  apiRequestJson, streamProChat, spawnClaudeCodeSession,
-  DEFAULT_CLIENT_ID, DEFAULT_USER_AGENT,
+  getApiBaseUrl,
+  apiRequestJson, streamProChat,
 } = require('../utils/api');
 const missionRuntime = require('../lib/mission-runtime-loop');
-const { knownCommands, suggestCommand, suggestCommands } = require('../lib/known-commands');
+const { knownCommands, suggestCommands } = require('../lib/known-commands');
 const { recordUsage } = require('../lib/usage');
 
 // Bind DI wrappers (utils/auth uses dependency injection for apiRequestJson)
-const validateAccessToken = (token) => _validateAccessToken(token, apiRequestJson);
-const refreshAccessToken = (rt, p) => _refreshAccessToken(rt, p, apiRequestJson);
-const performTokenRefresh = (creds) => _performTokenRefresh(creds, apiRequestJson);
 const ensureValidCredentials = (opts) => _ensureValidCredentials(apiRequestJson, opts);
-const fetchMyAgents = (token) => _fetchMyAgents(token, apiRequestJson);
-const displayAccountSummary = () => _displayAccountSummary(apiRequestJson);
 
 // Run update check in background (non-blocking).
 // Skip for machine-readable JSON and help commands to avoid corrupting stdout.
@@ -579,6 +569,7 @@ function helpCatalog() {
     { name: 'activate', summary: 'load atris context for this session', json: false, interactive_risk: 'low' },
     { name: 'status', summary: 'local work and completions', json: true, interactive_risk: 'low' },
     { name: 'engine', summary: 'engine roster, ask, validate, dispatch', json: true, interactive_risk: 'low' },
+    { name: 'tell', summary: 'send one note or task to one team member; status shows seen, picked up, finished', json: true, interactive_risk: 'low' },
     { name: 'help', summary: 'this help (default short; --all full)', json: true, interactive_risk: 'none' },
   ];
 }
@@ -626,7 +617,7 @@ function showHelpAll() {
   console.log('  log        - Add ideas to inbox (`atris log "note"`; `log --repl` for the editor; see also `wish`)');
   console.log('  wish       - Say one plain sentence, then Atris asks only for gaps or delegates it');
   console.log('  now        - Show atris/now.md, the current operating truth');
-  console.log('  99         - focus, meditation, health, and optional sync');
+  console.log('  99         - focus, meditation, health, friends and the board, and optional sync');
   console.log('  goal       - goal, distance, and what moved today (alias: wtf)');
   console.log('  script     - Start something from zero with a guide: list, start newsletter or service, status, next, done, card');
   console.log('  founder    - show weekly commit and completed-task improvement from receipts');
@@ -638,7 +629,7 @@ function showHelpAll() {
   console.log('  team       - One team view: members, roles, engine assignments (presence for live)');
   console.log('  gm         - Play your team as a front office: ratings, stuck jobs, league, replay, phone, walk');
   console.log('  host       - The Host: gets to know people, makes two-yes introductions (atris member install host)');
-  console.log('  nexus      - Your people from the shared store: today, card, list, search, count, note, stage, add, due, paid, wall, goal, city, bring-over, mail, reply, pull, local, push-notes (--json for agents)');
+  console.log('  nexus      - Your people from the shared store: today, card, list, search, count, note, stage, add, due, paid, wall, goal, city, bring-over, mail, reply, pull, local, push-notes, rank, window, decides (--json for agents)');
   console.log('  watch      - Turn one sentence into an always-on background watcher');
   console.log('  ctop       - Show a process-first live agent CPU/memory view');
   console.log('  doctor     - Node/task/auth/workspace readiness (--json for agents)');
@@ -660,12 +651,8 @@ function showHelpAll() {
   console.log('  harvest    - Find bugs and next actions from receipts, run logs, and thinking');
   console.log('  verify     - Validate work is done (tests, MAP.md, changes)');
   console.log('  slop       - Deterministic slop detector: frontend/prose tells, dead code (slop dead --exports)');
-  console.log('  sentinel   - Security audit: engines hunt for holes, a different model verifies each one');
-  console.log('               free checks: sentinel agents, sentinel watch, sentinel guard install');
-  console.log('               exam and self-improvement: sentinel bench, sentinel improve');
-  console.log('               fix a confirmed finding on its own branch: sentinel fix <id>');
-  console.log('               re-check old findings against today\'s code: sentinel recheck');
-  console.log('               signed security record for reviewers: sentinel record, sentinel record export');
+  console.log('  sentinel   - Find ways a stranger could break into your app, and write the fix');
+  console.log('               uses Claude Code or Codex on this computer. start: atris sentinel --help');
   console.log('  voice      - Scan binary voice tells or judge reply shape and plainness');
   console.log('  recover    - Explain stopped missions; --apply performs safe recovery only');
   console.log('  task       - Local agent task plane (atomic claims, TODO import)');
@@ -677,6 +664,7 @@ function showHelpAll() {
   console.log('    atris autoland tick   # second check runs, task lands');
   console.log('  mission    - Goal + loop + member owner + verifier + receipt; --budget quick|long|deep sets bounded tiers');
   console.log('  decide     - Answer open mission asks and send the decision to the next tick');
+  console.log('  timestone  - Compare the paths of a hard decision, choose one, record what happened (scout, run, choose, result, outcome)');
   console.log('  campaign   - Long-running goals with a judge, a budget, and members in seats');
   console.log('  release    - Tag release, bump version, create GitHub release, draft /launch; atris release preflight before a v* tag');
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
@@ -774,14 +762,15 @@ function showHelpAll() {
   console.log('  business deploy <slug> - Push local business to cloud');
   console.log('');
   console.log('Code Review:');
-  console.log('  code-review <file>     - Run 6-specialist code review (alias: cr)');
-  console.log('  cr --all               - Audit all backend services');
+  console.log('  code-review            - Check this change against the project wall of shame (alias: cr)');
+  console.log('  code-review init       - Write a starter atris/SPEC.md');
   console.log('');
   console.log('Cloud & agents:');
   console.log('  computer   - Open a scoped AI computer (cloud/local, personal/business)');
   console.log('  night      - Give your agent a goal for tonight with a dollar cap (atris night "<goal>" --cap 1)');
   console.log('  morning    - How last night went: score, what it learned (saved to your atris/ folder), spend');
   console.log('  town       - Walk the Atris town from here: look, go, map, who, night, grow (atris town --help)');
+  console.log('  element    - Headless single-focus swarm feed: next, yes, no, pass, talk, say, more (atris element --help)');
   console.log('  join       - Join a computer as a named agent (--name), or accept an invite (<code>)');
   console.log('  receipt    - Save evidence from an agent run');
   console.log('  console    - Start/attach always-on coding console (tmux daemon)');
@@ -816,6 +805,7 @@ function showHelpAll() {
   console.log('  hires      - Morning check-in: one line per hire (mail, spend, last run)');
   console.log('  mail       - Your agents\' own inboxes: list, read, send (not Gmail)');
   console.log('  channel    - The team\'s shared channels: read, post, claim, done (atris channel <name>)');
+  console.log('  tell       - Send one note or task to one team member and get a receipt (atris tell <member> "..."); hear notes live with atris tell listen --as <member>');
   console.log('  listen     - A team member\'s inbox: what was sent to it, then mark it handled (atris listen --as <member>)');
   console.log('  design     - Extract a site design system, check brand adherence, search brands');
   console.log('  mcp        - Run the atris MCP server (stdio) for Claude Desktop and Cursor');
@@ -846,7 +836,7 @@ function showHelpAll() {
   console.log('Team:');
   console.log('  member create <name> - Scaffold a new team member (MEMBER.md)');
   console.log('  member list          - Show all team members');
-  console.log('  member install <n>   - Add a ready-made member: host, designer-1');
+  console.log('  member install <n>   - Add a ready-made member: host, designer-1, writer-1');
   console.log('  member activate <n>  - Activate a member (link skills, show context)');
   console.log('  member upgrade <n>   - Convert flat file to directory format');
   console.log('  member result <n>    - Newest run of a member: run record, receipt, artifacts, result number');
@@ -1434,34 +1424,6 @@ function initNonInteractiveFlag() {
 
 function shouldSkipContextGatherer() {
   return !useInteractiveAtrisUi() || initNonInteractiveFlag();
-}
-
-function firstUseCommand() {
-  return 'atris "help me choose the first useful step for this project"';
-}
-
-function firstMissionObjective() {
-  return 'Verify this Atris workspace is ready';
-}
-
-function localOwnerName() {
-  return process.env.USER || os.userInfo?.().username || 'operator';
-}
-
-function firstMissionOwner(root = process.cwd()) {
-  const defaultOwner = path.join(root, 'atris', 'team', 'validator', 'MEMBER.md');
-  return fs.existsSync(defaultOwner) ? 'validator' : localOwnerName();
-}
-
-function firstMissionCommand() {
-  return `atris mission start "${firstMissionObjective()}" --owner ${firstMissionOwner()} --runner manual --lane workspace --verify "node -e \\"require('fs').accessSync('atris/atris.md')\\"" --stop "workspace readiness is verified"`;
-}
-
-function printFirstUseNext() {
-  const row = (label, value) => `  ${label.padEnd(9)}${value}`;
-  console.log(row('next', 'run `atris` and describe what you want in plain words.'));
-  console.log(`agents: ${firstMissionCommand()}`);
-  console.log(`Then: ${firstUseCommand()}`);
 }
 
 function runMinimalInit({ silent = false } = {}) {
@@ -2589,6 +2551,11 @@ if (command === 'guide') {
   Promise.resolve().then(() => require('../commands/film').filmCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'timestone') {
+  // Compare the paths of a hard decision; v1 runs the engine in the local Atris backend.
+  Promise.resolve().then(() => require('../commands/timestone').timestoneCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'balance') {
   Promise.resolve().then(() => require('../commands/balance').balanceCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
@@ -2641,6 +2608,11 @@ if (command === 'guide') {
 } else if (command === 'channel') {
   // The team's shared channels on the hosted server: read, post, claim, report by name.
   Promise.resolve().then(() => require('../commands/channel').channelCommand(process.argv.slice(3)))
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'tell') {
+  // One note or task to one team member, with a receipt: saved, delivered, wakes, check.
+  Promise.resolve().then(() => require('../commands/tell').tellCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'listen') {
@@ -3418,7 +3390,9 @@ if (command === 'guide') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'code-review' || command === 'cr') {
   const args = process.argv.slice(3);
-  require('../commands/review').reviewCommand(...args)
+  require('../commands/review').reviewCommand(args)
+    .then((code) => exitAfterStdoutDrain(code))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'wiki') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
@@ -3530,6 +3504,8 @@ if (command === 'guide') {
   Promise.resolve().then(() => require('../commands/unknowns').unknownsCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'element') {
+  require('../commands/element').runFromCli(process.argv.slice(3));
 } else if (command === 'feed') {
   // Feed: read and post the business group feed, receipts and state changes only.
   // Sets exitCode instead of process.exit() so large --json output flushes fully.
@@ -3770,16 +3746,6 @@ async function upgradeAtris() {
     console.log('If you see permission errors, try:');
     console.log('  sudo npm install -g atris@latest');
     console.log('');
-  }
-}
-
-function showVersion() {
-  try {
-    const packageJson = JSON.parse(fs.readFileSync(PACKAGE_JSON_PATH, 'utf8'));
-    console.log(`atris v${packageJson.version}`);
-  } catch (error) {
-    console.error('✗ Error: Could not read package.json');
-    process.exit(1);
   }
 }
 
@@ -4260,63 +4226,8 @@ function atrisFastMessageFromArgs() {
   return process.argv.slice(offset).join(' ').trim();
 }
 
-function stripFastMissionQuotes(value) {
-  const text = String(value || '').trim();
-  if (text.length >= 2) {
-    const first = text[0];
-    const last = text[text.length - 1];
-    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-      return text.slice(1, -1).trim();
-    }
-  }
-  return text;
-}
-
-function extractFastMissionFlag(text, flagName) {
-  const source = String(text || '');
-  const inline = new RegExp(`(^|\\s)${flagName}=([^\\s]+)(?=\\s|$)`).exec(source);
-  if (inline) {
-    return {
-      value: inline[2],
-      text: `${source.slice(0, inline.index)}${inline[1] || ''}${source.slice(inline.index + inline[0].length)}`.replace(/\s+/g, ' ').trim(),
-    };
-  }
-  const split = new RegExp(`(^|\\s)${flagName}\\s+([^\\s]+)(?=\\s|$)`).exec(source);
-  if (split) {
-    return {
-      value: split[2],
-      text: `${source.slice(0, split.index)}${split[1] || ''}${source.slice(split.index + split[0].length)}`.replace(/\s+/g, ' ').trim(),
-    };
-  }
-  return { value: null, text: source.trim() };
-}
-
 function missionRunIntentFromFastMessage(message) {
   return missionRuntime.missionRunIntentFromMessage(message);
-}
-
-function printFastMissionStartReceipt(payload) {
-  const mission = payload?.mission || {};
-  const goal = payload?.atris_goal_state?.goal || {};
-  const receiptGoal = {
-    ...goal,
-    objective: goal.objective || mission.objective,
-    mission_id: goal.mission_id || mission.id,
-    mission_status: goal.mission_status || mission.status,
-    runner: goal.runner || mission.runner,
-    created_at: goal.created_at || mission.created_at,
-    updated_at: goal.updated_at || mission.updated_at,
-    completed_at: goal.completed_at || mission.completed_at,
-    next_command: goal.next_command || payload?.next_command || mission.next_action,
-  };
-  const elapsed = formatGoalDuration(goalElapsedSeconds(receiptGoal)) || '0s';
-
-  console.log('Atris mission started');
-  console.log(`Goal: ${receiptGoal.objective || '?'}`);
-  console.log(`Mission: ${receiptGoal.mission_id || '?'} · ${receiptGoal.mission_status || '?'} · ${receiptGoal.runner || 'atris2'}`);
-  console.log(`Elapsed: ${elapsed}`);
-  console.log(`Achieved: ${goalAchieved(receiptGoal) ? 'yes' : 'no'}`);
-  if (receiptGoal.next_command) console.log(`Next: ${receiptGoal.next_command}`);
 }
 
 async function runLocalFastMission(intent) {

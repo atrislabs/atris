@@ -464,6 +464,9 @@ test('the rules block is short, plain and written idempotently between its marke
     assert.ok(block.includes(needed), needed);
   }
   assert.match(live.rulesBlock(''), /--as <your-name>/);
+  assert.ok(block.indexOf('atris memory search') < block.indexOf('`atris memory read <path>`'), 'search comes before reading the source from the start');
+  assert.ok(block.indexOf('atris memory read') < block.indexOf('atris memory show'), 'the overview comes last, as an option');
+  assert.doesNotMatch(block, /Start each task with|atris memory ask/, 'no overview required at startup and no extra model call');
 
   const dir = tmp();
   const file = path.join(dir, 'AGENTS.md');
@@ -694,4 +697,21 @@ test('search and ask leave out raw data files unless asked with --all-files', as
   const ask = await run(['ask', 'who is busy'], server);
   assert.equal(ask.code, 0);
   assert.doesNotMatch(ask.text, /left out/, 'a clean answer says nothing extra');
+});
+
+// Seen 2026-11-23: lines saved with `atris memory remember` land on day pages under logs/,
+// and search hid them as raw data. Day pages at the top of the folder are memory.
+test('day pages at the top of the folder are kept; other logs, lists and archives stay out', async () => {
+  for (const p of ['logs/2026/2026-11-11.md', 'logs/2026-11-11.md']) {
+    assert.equal(live.isRawData(p), false, `${p} is a day page`);
+  }
+  for (const p of ['files/people.json', 'files/logs/x.md', 'team/a/logs/2026-11-11.md', 'raw/x.md', 'archive/x.md', 'logs/2026/notes.md', 'logs/2026/2026-11-11.jsonl']) {
+    assert.equal(live.isRawData(p), true, `${p} is raw data`);
+  }
+  const server = fakeServer({ files: { ...FILES, 'logs/2026/2026-11-11.md': 'rent is due friday\n', 'team/a/logs/2026-11-11.md': 'rent check\n' } });
+  const r = await run(['search', 'rent'], server);
+  assert.equal(r.code, 0);
+  assert.match(r.text, /^logs\/2026\/2026-11-11\.md:1: /m);
+  assert.doesNotMatch(r.text, /team\/a\/logs/);
+  assert.match(r.text, /1 line from raw data files left out\./);
 });

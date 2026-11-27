@@ -15,7 +15,7 @@ const { spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const LIST = path.join(ROOT, 'test', 'feed-behaviours.md');
-const FILES = ['decision-feed', 'feed-team', 'feed-recovery', 'feed-soak', 'feed-visual-kinds', 'feed-stream', 'feed-grounding', 'feed-scroll', 'feed-keep'].map((name) => path.join('test', `${name}.test.js`));
+const FILES = ['decision-feed', 'feed-team', 'feed-recovery', 'feed-soak', 'feed-visual-kinds', 'feed-stream', 'feed-grounding', 'feed-scroll', 'feed-keep', 'feed-host', 'feed-sign-in', 'feed-turns'].map((name) => path.join('test', `${name}.test.js`));
 
 function readRows(text) {
   const rows = [];

@@ -127,7 +127,7 @@ rg "workspace-free help smoke|showSearchHelp|showLearnHelp|showSoulHelp|showHelp
 
 **Purpose:** Store and inspect reusable project patterns, pitfalls, preferences, architecture notes, and tool lessons.
 
-- **Entry point:** `bin/atris.js:1581-1577` routes to `commands/learn.js`
+- **Entry point:** `bin/atris.js:1536-1540` routes to `commands/learn.js`
 - **Handler:** `commands/learn.js` (`learnAtris`)
 - **Help:** `showLearnHelp` short-circuits help before workspace checks
 - **Rich log mint:** `commands/learn.js` `mintRichLearn` / `saveRichLearn` / `ensureLearnApply` / `commitAddedLearning` / `commitReviewLearning` / `harvestFromJournals`. A rich `atris learn log`, `learn add`, `learn harvest`, or review insight (number-with-units or named mechanism) mints `atris/experiments/learn-<key>/` plus `atris/wiki/briefs/learn-<key>.apply.md`, prints `next: atris experiments keep learn-<key>`, then `proveSavedLearnerBaseline` prints `score: 0` only when that sidecar starts failing. Thin log/add/harvest/review stays jsonl or prose only, prints `check: fill this` through `printLearnerCheckGate`, and does not invent a question or a thin next-step. `commands/workflow.js` `appendReviewLearningToJournal` folds CRLF then writes the review note under `## Notes`, then `commitReviewLearning`. `harvestFromJournals` folds `\r\n` to `\n` before the `## Notes` match so a Windows-round-tripped journal still harvests, same bar as analytics inbox CRLF. A leftover `[claimable]` receipt line that lands under Notes (apply after a mint, or leftover watched/taught/digest/searched) is not invent-keep: `leftoverClaimableInsight` skips it so harvest stays on a real insight.
@@ -140,7 +140,7 @@ rg "workspace-free help smoke|showSearchHelp|showLearnHelp|showSoulHelp|showHelp
 
 **Purpose:** Inspect, snapshot, distill, or fork workspace persona, policies, lessons, team, and knowledge context.
 
-- **Entry point:** `bin/atris.js:1644-1641` routes to `commands/soul.js`
+- **Entry point:** `bin/atris.js:1600-1603` routes to `commands/soul.js`
 - **Handler:** `commands/soul.js` (`soul`)
 - **Help:** `commands/soul.js` (`showSoulHelp`) and `commands/soul.js:316-319` short-circuit before `findAtrisDir`
 - **Regression:** `test/commands-2.test.js:937-951` covers `soul --help`, `soul -h`, and `soul help` without temp workspace state

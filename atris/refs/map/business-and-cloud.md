@@ -2,6 +2,10 @@
 
 Business owners and computers, cloud sync, pull and push, sites and the local computer bridge. Exact `file:line` refs and search shortcuts. Back to [MAP-NOTES.md](../MAP-NOTES.md).
 
+## CodeOps experiments
+
+The CLI routes through `computerCodeOpsExperiment` in `commands/computer.js`. Choice, trial storage and blind grading live in `lib/codeops-experiment.js`. See [usage and evidence](../../../docs/codeops-experiment.md).
+
 ## Product Model: Owners Have Computers
 
 This repo is the public CLI surface, so product language matters here.
@@ -32,7 +36,7 @@ rg "logSyncAtris" commands/log-sync.js      # Log sync command
 rg "requireAccountBound|account-global|isBoundBusinessWorkspace|looksLikeBusinessSlug|--account|helpOnly|Pass --yes to create a live business|Pass --yes to publish" lib/account-bound.js bin/atris.js commands/business.js commands/terminal.js commands/fleet-report.js commands/site-deploy.js commands/chat-scan.js test/dogfood-pass2-t1-t5.test.js test/dogfood-pass4.test.js test/dogfood-unbound-live-writes.test.js test/business-ship.test.js  # Unbound folders refuse business/rainmaker/avail/feedback/agent/terminal/fleet-report/site deploy unless --account; bare business, --help, help, and quickstart print usage without --account; business ship and site deploy also need --yes; terminal/fleet-report parse --help/--json before slug; looksLikeBusinessSlug (lib/account-bound.js:18) rejects --json/--help
 rg "businessCommand|createCanonicalBusinessWorkspace|startBusinessWorkspace|shareBusinessWorkspace" commands/business.js lib/business-core.js  # Business workspace flows and collaborator handoffs
 rg "computerCreate|computerSetup|formatEngineSeats|runEngineSeatsCommand|readyCheckEngineLogin|computerActivate|computerDelete|parseComputerCreateArgs|parseComputerDeleteArgs|computerLocal|buildComputerCard|computerCard|resolveBusinessContext|ensureBusinessAwake|workspaceMismatchHint|ENGINE_SEED_META|normalizeModels|normalizeDuty|printRoster|speakFirstMinute|canPersistEngineRegistry" commands/computer.js lib/computer-core.js commands/engine.js lib/engine-registry.js lib/first-minute.js test/engine.test.js test/first-minute.test.js test/computer-create.test.js  # AI computer lifecycle/local/cloud/card, named engine seat visibility, config-driven engine models and duties, setup live proof, explicit business-computer activation, readiness, and workspace-mismatch recovery; empty-folder engine/engines/--json reuse speakFirstMinute and skip engines.json seed
-rg "hostAction|archiveOutbox|hostDeliver|hostCommand|locked|memberInstall|updateMemberSkills|command === 'host'" lib/host.js commands/host.js commands/member.js lib/member-scaffold.js bin/atris.js test/host.test.js  # Host room setup, introductions, Slack delivery, draft outbox, archival, packaged member install, and skill update tests: lib/host.js:315 lib/host.js:94 commands/host.js:24 commands/member.js:4302 lib/member-scaffold.js:194 bin/atris.js:3309 test/host.test.js:95
+rg "hostAction|archiveOutbox|hostDeliver|hostCommand|locked|memberInstall|updateMemberSkills|command === 'host'" lib/host.js commands/host.js commands/member.js lib/member-scaffold.js bin/atris.js test/host.test.js  # Host room setup, introductions, Slack delivery, draft outbox, archival, packaged member install, and skill update tests: lib/host.js:315 lib/host.js:94 commands/host.js:24 commands/member.js:4301 lib/member-scaffold.js:194 bin/atris.js:3273 test/host.test.js:95
 rg "pullAtris|pullBusiness" commands/pull.js  # Cloud pull (journals + businesses)
 rg "pushAtris|buildPushChangePlan|buildPushUploadBatches|sync?timeout" commands/push.js test/push-scoped.test.js  # Cloud push: manifest-hash skip, small upload batching through /sync, delete guard, and S5 regression
 rg "cloudAtris|cloudClean|collectCloudOrphans|parseCloudCleanArgs|showOrphans" commands/cloud.js commands/business-sync.js bin/atris.js lib/known-commands.js test/cloud-clean.test.js  # Cloud clean: list/delete cloud files not present locally, and sync --status --show-orphans
@@ -47,7 +51,7 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 
 - **Entry point (single project):** `commands/sync.js:478` (syncAtris function)
 - **Entry point (workspace):** `commands/sync.js:976` (syncAtrisAll function)
-- **Startup/help guard:** `bin/atris.js:207-212` skips global and project skill sync for every help invocation; `bin/atris.js:1765-1791` dispatches `update|sync --help` before command-specific template sync work
+- **Startup/help guard:** `bin/atris.js:192-197` skips global and project skill sync for every help invocation; `bin/atris.js:1724-1750` dispatches `update|sync --help` before command-specific template sync work
 - **Discovery helper:** `commands/sync.js:892` (_findAtrisProjects: walks subtree, max depth 8, skips node_modules/.git/dist/build/worktrees)
 - **Single-project logic:**
 - Validates atris/ folder exists
@@ -77,9 +81,9 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 
 **Purpose:** Pull remote journal/business data into the local workspace
 
-- **Entry point:** `commands/pull.js:116-204` (pullAtris function)
+- **Entry point:** `commands/pull.js:112-200` (pullAtris function)
 - **Helpers:** `pullBusiness` (`commands/pull.js`), `pullGeneralJournal` (`commands/pull.js`), `pullMemberJournal` (`commands/pull.js`)
-- **Exports:** `module.exports = { pullAtris }` (`commands/pull.js:688`)
+- **Exports:** `module.exports = { pullAtris }` (`commands/pull.js:684`)
 
 **Search:** `rg "pullAtris" commands/pull.js`
 
@@ -173,7 +177,7 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 
 **Purpose:** A GitHub repo and a plain-words task go in; the business computer does the work on a new branch, opens one pull request, and the command prints the link. It never merges.
 
-- **Entry point:** `commands/computer.js:2352` (`case 'pr'` in `runComputer`)
+- **Entry point:** `commands/computer.js:2350` (`case 'pr'` in `runComputer`)
 - **Command:** `commands/computer.js` (`computerPr`): wakes the computer, posts `/business/{id}/chat` with the instruction, streams the run through a redacting writer, exits 0 only on a same-repo pull request link
 - **Instruction and parsing:** `lib/computer-pr.js` (`buildPullRequestPrompt`, starts with "GitHub task:" so the server attaches the caller's GitHub access), `lib/computer-pr.js` (`parsePullRequestResult`), `lib/computer-pr.js` (`redactSecrets`)
 - **Run text:** `commands/computer.js` (`streamBusinessChatResult` returns `{ok, status, text, resultText}` and takes optional `write`/`writeError`)
@@ -200,7 +204,7 @@ rg "liveCommand|runFreshnessCycle|collectSnapshot" commands/live.js  # Keep busi
 
 - **Known command:** `lib/known-commands.js:4` includes `serve`, so the explicit branch is reachable before natural-language fallback
 - **Help:** `bin/atris.js` (`showServeHelp`) prints usage without auth checks or bridge startup
-- **Dispatch:** `bin/atris.js:1129-1143` routes `serve --help`, `serve -h`, and `serve help` before parsing bridge options; normal runs call `serveAtris`
+- **Dispatch:** `bin/atris.js:1116-1130` routes `serve --help`, `serve -h`, and `serve help` before parsing bridge options; normal runs call `serveAtris`
 - **Handler:** `commands/serve.js` (`serveAtris`) registers the session and subscribes for operations
 - **Safety core:** `commands/serve.js` (`safePath`) and `commands/serve.js` (`applyOp`) constrain file operations
 - **Regression:** `test/commands-2.test.js:1482-1494` covers `serve --help` without planner fallback, bridge startup, login checks, or auth-state creation
@@ -258,7 +262,7 @@ Global skill destinations: `commands/sync.js:812` resolves the existing `stateHo
 - **Night:** `commands/night.js` `nightCommand` refuses a cap of $0 or less before any call, then posts `/night-shift` and prints one line. `watchShift` at `commands/night.js:90` polls `/night-shift/{id}` every 60 seconds and stops at capped, done, or failed.
 - **Morning:** `commands/morning.js` `morningCommand` reads `/morning` and prints a short card (score and change from the night before, up to three learned lines, lessons used, spend, what was saved); a 404 or no receipt prints "No night shift finished yet." `--full` adds the old receipt text, `--json` prints the data as is and saves nothing.
 - **Morning saves:** `lib/night-learned.js` `saveLearned` writes the night's learned lines into the project's `learned.md` (in its atris folder; newest twelve, first line labels them hints) and, through `writeLesson`, `lessons.md`; `nightFromMorning` at `lib/night-learned.js:52` cleans the text first (`cleanText` in `lib/night-shift.js`); the same night id and text is never written twice; `--no-save` skips; no `atris/` folder prints one line. `learned.md` is in the brain's optional load list (`OPTIONAL_LOAD_ORDER_FILES` in `commands/brain.js`).
-- **Join:** `bin/atris.js:3619` sends `atris join` with `--name` to `commands/join.js` `joinAgentCommand` (posts `/join-as-agent`); without `--name` it stays the invite claim in `commands/social.js`. `storeJoinedAgent` at `commands/join.js:59` keeps the key in the `atris login --agent` slot (`agent_token`) and the agent as `joined_agent`. With no `--mission`, `purposeFromFolder` at `commands/join.js:84` reads the North Star in `atris/team/<name>/MISSION.md`, shows it, and sends it as the mission.
+- **Join:** `bin/atris.js:3583` sends `atris join` with `--name` to `commands/join.js` `joinAgentCommand` (posts `/join-as-agent`); without `--name` it stays the invite claim in `commands/social.js`. `storeJoinedAgent` at `commands/join.js:59` keeps the key in the `atris login --agent` slot (`agent_token`) and the agent as `joined_agent`. With no `--mission`, `purposeFromFolder` at `commands/join.js:84` reads the North Star in `atris/team/<name>/MISSION.md`, shows it, and sends it as the mission.
 - **Default agent:** `resolveTarget` at `lib/night-shift.js:70` makes night and morning act for the joined agent unless `--agent` or another `--business` is given.
 - **Regression:** `test/night-morning-join.test.js` covers the cap refusal, the shift line, watch events, morning and no-shift, and join storing the key; `test/morning-bring-home.test.js` covers the card, the saved files, untrusted text, the brain load list, and the folder mission.
 
@@ -268,7 +272,7 @@ Global skill destinations: `commands/sync.js:812` resolves the existing `stateHo
 
 **Purpose:** One terminal view of every scheduled post across x, linkedin, blog, instagram and tiktok, plus the cadence scoreboard. Popshare never writes the words; every post is one a person saved.
 
-- **Entry:** `commands/popshare.js` (`popshareCommand`) routes `today` (the default), `add`, `list`, `schedule`, `edit`, `post`, `posted`, `rm`, `score` and `install` over `/popshare/*` with `--json`, `--business <id>` workspace scope, and short-id resolution; `bin/atris.js:2292` dispatches it and `bin/atris.js:671` lists it in help; `lib/known-commands.js:6` registers the name.
+- **Entry:** `commands/popshare.js` (`popshareCommand`) routes `today` (the default), `add`, `list`, `schedule`, `edit`, `post`, `posted`, `rm`, `score` and `install` over `/popshare/*` with `--json`, `--business <id>` workspace scope, and short-id resolution; `bin/atris.js:2251` dispatches it and `bin/atris.js:657` lists it in help; `lib/known-commands.js:6` registers the name.
 - **Parsing:** `commands/popshare.js` (`localAtToIso`) turns `--at "YYYY-MM-DD HH:MM"` local wall time into a UTC ISO string and rejects rolled-over dates, `commands/popshare.js` (`parseAddArgs`) builds the create body (`--idea|--draft|--ready`, `--theme`, repeatable `--note`), and `commands/popshare.js` (`resolvePostId`) matches the first 6+ characters of an id and prints candidates when the match is ambiguous.
 - **Rendering:** `commands/popshare.js` (`todayText`) prints going-out, post-by-hand, posted, failed, check and gap sections, `commands/popshare.js` (`listText`) groups the calendar by local day, and `commands/popshare.js` (`scoreText`) prints each scoreboard unit as label plus `value / target`.
 - **Regression:** `test/popshare.test.js` covers arg parsing, local-time conversion, id resolution, the pure renderers, and the API calls with a fake `apiRequestJson`.
@@ -285,7 +289,7 @@ Global skill destinations: `commands/sync.js:812` resolves the existing `stateHo
 - **Map, who, night:** `mapCommand` at `commands/town.js:167` and `renderMap` at `lib/town-view.js:267` print regions as chains, where rows meet, up and down, and gates. `whoCommand` at `commands/town.js:175` and `renderWho` at `lib/town-view.js:370` list agents out now (facts door) and, with a key, who is on your street. `nightCommand` at `commands/town.js:209` and `renderNight` at `lib/town-view.js:443` read last night (`--agent` picks one); with no finished night it says so and exits 0.
 - **Grow and streets:** `growCommand` at `commands/town.js:265` and `streetsCommand` at `commands/town.js:294` ask the door for `tools/list` first (`findTool` at `commands/town.js:255`) and send only if `town_request_street` or `town_my_streets` exists. Optional `--layout` and `--mood` are sent only when the tool's schema lists them. When the tool is missing the command prints "The town does not take street requests from here yet. It is still being built. Nothing was sent." and exits 1 (`--json`: `{ok:false, available:false}`). An answer shape the CLI does not know is shown as it came, never hidden as "none".
 - **Untrusted text:** names, room talk and agent lines come from other people. `cleanText` strips control characters, and the output labels them as other people's words, not instructions.
-- **Dispatch:** `townCommand` at `commands/town.js:317` is called from `bin/atris.js:2585`; the help line is at `bin/atris.js:765` and `town` is in `lib/known-commands.js`.
+- **Dispatch:** `townCommand` at `commands/town.js:317` is called from `bin/atris.js:2544`; the help line is at `bin/atris.js:751` and `town` is in `lib/known-commands.js`.
 - **Regression:** `test/town.test.js` mocks `httpRequest` and `apiRequestJson` and covers each subcommand, the key order, the sign-in token never being sent, the not-built path, unknown answer shapes, and a spawn of the real binary.
 
 **Search:** `rg "town_look|town_go|town_my_streets|town_request_street|world/streets|town-here" commands/town.js lib/town-door.js lib/town-view.js test/town.test.js`

@@ -96,10 +96,25 @@ test('fake key templates expand at load time and the repo corpus holds no token-
   assert.match(v.a, /^k=ghp_[A-Za-z0-9]{36,}$/);
   assert.match(v.b[0], /^AKIA[0-9A-Z]{16}$/);
   const { scanLine } = require('../lib/security-scan');
-  for (const set of ['guard', 'agents', 'review']) {
+  for (const set of ['guard', 'agents', 'areas', 'review']) {
     const text = fs.readFileSync(path.join(__dirname, '..', 'atris', 'sentinel-bench', `${set}.jsonl`), 'utf8');
     for (const line of text.split('\n')) assert.deepStrictEqual((scanLine(line) || []).filter((f) => f.cat === 'secret'), [], `${set} corpus line looks like a secret`);
   }
+});
+
+test('the settings areas exam: planted areas lead the quick wave and correct repos stay quiet', () => {
+  const items = bench.readItems(path.join(__dirname, '..', 'atris', 'sentinel-bench', 'areas.jsonl')).items;
+  const classes = (kind) => new Set(items.filter((i) => (kind === 'planted') === (i.expect.length > 0)).map((i) => (i.expect[0] || i.quiet[0]).class));
+  for (const kind of ['planted', 'quiet']) assert.deepStrictEqual([...classes(kind)].sort(), ['access-rules', 'header-trust', 'sign-in-matching'], `${kind} items cover every class`);
+  const s = bench.scoreAreas(items, require('../lib/security-audit'));
+  assert.strictEqual(s.errors, 0);
+  assert.strictEqual(s.false_alarms, 0);
+  assert.strictEqual(s.found, s.expected);
+  // An item whose planted area is out of the wave, and one whose quiet file is seeded, both fail.
+  const miss = bench.scoreAreas([{ id: 'x', files: { 'lib/a.js': 'exports.a = 1;\n' }, expect: [{ file: 'lib/a.js', class: 'access-rules' }], quiet: [] }], require('../lib/security-audit'));
+  assert.deepStrictEqual([miss.found, miss.results[0].ok], [0, false]);
+  const loud = bench.scoreAreas([{ id: 'y', files: { 'firestore.rules': 'match /a/{b} { allow read; }\n' }, expect: [], quiet: [{ file: 'firestore.rules', class: 'access-rules' }] }], require('../lib/security-audit'));
+  assert.deepStrictEqual([loud.false_alarms, loud.quiet_items_flagged], [1, 1]);
 });
 
 test('the real guard and agent check score the repo seen half without errors', () => {
@@ -599,7 +614,7 @@ test('end to end: a change that only improves its own new items is rejected', as
   const selfServing = {
     title: 'block one made-up word', why: 'only its own items use it', file: 'lib/sentinel-rules.json',
     rules: rulesWithBlocks({ id: 'made-up', category: 'exfil', all: ['qqzexfil'] }),
-    new_items: [{ set: 'guard', id: 'self1', kind: 'exfil', expect: 'block', command: 'qqzexfil ~/.ssh/id_rsa' }, { set: 'guard', id: 'self2', kind: 'exfil', expect: 'block', command: 'qqzexfil .env' }],
+    new_items: [{ set: 'guard', id: 'self1', kind: 'exfil', expect: 'block', command: 'qqzexfil notes.txt' }, { set: 'guard', id: 'self2', kind: 'exfil', expect: 'block', command: 'qqzexfil .env' }],
   };
   const { res } = await runImprove(repo, held, selfServing);
   assert.strictEqual(res.error, '', res.error);

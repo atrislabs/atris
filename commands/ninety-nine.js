@@ -51,6 +51,11 @@ function usage() {
     '       atris 99 status [--json]',
     '       atris 99 today [--json]',
     '       atris 99 sync [--dry-run]',
+    '       atris 99 invite [--json]         print your invite link',
+    '       atris 99 join <code or link>     accept an invite and become friends',
+    '       atris 99 friends [--json]        your friends and their points today',
+    '       atris 99 unfriend <username>',
+    '       atris 99 board [day|week|all] [--friends] [--json]',
     '       atris 99 help | --help',
     '',
     'a focus block that runs its full time asks "Did you get it done? (yes/partly/no)" in a terminal;',
@@ -64,6 +69,9 @@ function usage() {
     'workspace writes only sessions.<device>.jsonl; its stable device id lives in the local sync state.',
     'personal uses your user login and defaults to app_slug project-99; its records api must be deployed first.',
     'dry-run reads cloud records and shows missing lines without saving logs or the sync cursor.',
+    '',
+    'invite, join, friends, unfriend and board use your signed-in login (atris login).',
+    'board shows today by default; --friends ranks only you and your friends.',
   ].join('\n');
 }
 
@@ -348,6 +356,197 @@ function localEndTime(end) {
   return end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
 }
 
+// Friends: the invite link, the friends list and the friends board. All of it is the
+// signed-in person talking to the 99 server (routes 99/invite, 99/friends, 99/board).
+const FRIEND_ACTIONS = ['invite', 'join', 'friends', 'unfriend', 'board'];
+const BOARD_WINDOWS = { day: 'today', week: 'this week', all: 'all time' };
+const SIGN_IN = 'Sign in first: atris login';
+
+class FriendsError extends Error {}
+
+function plural(count, word) {
+  return `${count} ${word}${count === 1 ? '' : 's'}`;
+}
+
+function personName(person) {
+  return oneLine(person?.display_name || person?.username || 'A friend', 60);
+}
+
+// The server's own words, one line, never headers or tokens.
+function serverMessage(response) {
+  if (!response?.status) return 'Could not reach the 99 server. Try again.';
+  const detail = response.data?.detail;
+  const message = typeof detail === 'string' ? detail : detail?.message;
+  return oneLine(message, 200) || `The 99 server could not do that (http ${response.status}). Try again.`;
+}
+
+// A bare code, https://atris.ai/app/99/join/<code> or project99://join/<code>.
+function inviteCode(text) {
+  const given = String(text ?? '').trim();
+  const link = /^(?:https?:\/\/[^/\s]+\/app\/99\/join\/|project99:\/\/join\/)([A-Za-z0-9]+)\/?(?:[?#]\S*)?$/.exec(given);
+  const code = link ? link[1] : /^[A-Za-z0-9]+$/.test(given) ? given : '';
+  return code.toLowerCase();
+}
+
+function padEnd(text, width) {
+  return text + ' '.repeat(Math.max(0, width - text.length));
+}
+
+function boardRows(data, you) {
+  const top = Array.isArray(data.top) ? data.top : [];
+  const around = Array.isArray(data.around) ? data.around : [];
+  const rows = [...top];
+  let last = rows.length ? Math.max(...rows.map((entry) => entry.rank)) : 0;
+  // The slice around the person only shows what the top does not; a gap gets "...".
+  for (const entry of around) {
+    if (!(entry.rank > last)) continue;
+    if (entry.rank > last + 1) rows.push(null);
+    rows.push(entry);
+    last = entry.rank;
+  }
+  return rows.map((entry) => entry && {
+    entry, mine: Boolean(you) && entry.rank === you.rank && personName(entry) === personName(you),
+  });
+}
+
+function boardLines(data, { friends, window }) {
+  const you = data.you && typeof data.you === 'object' ? data.you : null;
+  const rows = boardRows(data, you);
+  const who = friends ? 'Friends' : 'Everyone';
+  const total = Number.isInteger(data.total) ? data.total : null;
+  const lines = [`${who}, ${BOARD_WINDOWS[window]}${total === null ? '' : ` (${total} ${total === 1 ? 'person' : 'people'})`}`];
+  const real = rows.filter(Boolean);
+  if (!real.length) {
+    lines.push(friends ? 'Nobody here yet.' : 'Nobody on the board yet.');
+  } else {
+    const names = real.map(({ entry, mine }) => `${personName(entry)}${mine ? ' (you)' : ''}`);
+    const nameWidth = Math.max(...names.map((name) => name.length));
+    const rankWidth = String(Math.max(...real.map(({ entry }) => entry.rank))).length;
+    const pointsWidth = String(Math.max(...real.map(({ entry }) => Number(entry.score) || 0))).length;
+    let at = 0;
+    for (const row of rows) {
+      if (!row) { lines.push('  ...'); continue; }
+      const score = Number(row.entry.score) || 0;
+      const streak = Number(row.entry.streak) || 0;
+      lines.push(`  ${String(row.entry.rank).padStart(rankWidth)}  ${padEnd(names[at++], nameWidth)}  `
+        + `${String(score).padStart(pointsWidth)} points  streak ${streak}`);
+    }
+  }
+  if (friends && (total ?? real.length) <= 1) lines.push('No friends yet. Get your link: atris 99 invite');
+  return lines;
+}
+
+function friendsUsage(action) {
+  return {
+    invite: 'usage: atris 99 invite [--json]',
+    join: 'usage: atris 99 join <code or link>',
+    friends: 'usage: atris 99 friends [--json]',
+    unfriend: 'usage: atris 99 unfriend <username>',
+    board: 'usage: atris 99 board [day|week|all] [--friends] [--json]',
+  }[action];
+}
+
+async function friendsAtris(action, rest, { log, request = apiRequestJson, credentials = loadCredentials, now = () => new Date() }) {
+  const json = rest.includes('--json');
+  const friendsOnly = action === 'board' && rest.includes('--friends');
+  const words = rest.filter((word) => word !== '--json' && !(action === 'board' && word === '--friends'));
+  const wordsOk = action === 'join' || action === 'unfriend' ? words.length === 1 && !words[0].startsWith('--')
+    : action === 'board' ? words.length <= 1 && !words.some((word) => word.startsWith('--')) && (!words.length || Object.hasOwn(BOARD_WINDOWS, words[0]))
+      : words.length === 0;
+  if (!wordsOk) {
+    log(friendsUsage(action));
+    return 2;
+  }
+  const code = action === 'join' ? inviteCode(words[0]) : '';
+  if (action === 'join' && !code) {
+    log('That is not an invite link or code. Ask your friend to send it again.');
+    return 1;
+  }
+  let creds;
+  try { creds = await credentials(); } catch { creds = null; }
+  if (!creds?.token) {
+    log(SIGN_IN);
+    return 1;
+  }
+  const tz = String(-now().getTimezoneOffset());
+  const call = async (method, pathname, query) => {
+    let response;
+    try {
+      response = await request(query ? `${pathname}?${new URLSearchParams(query)}` : pathname, {
+        method, token: creds.token, timeoutMs: 15000,
+      });
+    } catch {
+      throw new FriendsError('Could not reach the 99 server. Try again.');
+    }
+    if (response?.status === 401) throw new FriendsError(SIGN_IN);
+    if (!response?.ok) throw new FriendsError(serverMessage(response));
+    if (!response.data || typeof response.data !== 'object') throw new FriendsError('The 99 server sent something unexpected. Try again.');
+    return response.data;
+  };
+  const count = (data) => (Number.isInteger(data.friends) ? data.friends : null);
+  const friendsLine = (data) => (count(data) === null ? [] : [count(data) ? `You have ${plural(count(data), 'friend')}.` : 'No friends yet.']);
+  try {
+    if (action === 'invite') {
+      const data = await call('GET', '/99/invite');
+      if (json) log(JSON.stringify(data));
+      else {
+        if (typeof data.url !== 'string' || !data.url) throw new FriendsError('The 99 server sent something unexpected. Try again.');
+        for (const line of ['Send this link to a friend:', data.url, ...friendsLine(data)]) log(line);
+      }
+    } else if (action === 'join') {
+      const data = await call('POST', `/99/invite/${encodeURIComponent(code)}/accept`);
+      if (json) log(JSON.stringify(data));
+      else {
+        const name = data.friend ? personName(data.friend) : 'your friend';
+        log(data.already ? `You and ${name} are already friends.` : `You and ${name} are friends now.`);
+        for (const line of [...friendsLine(data), 'See the board: atris 99 board --friends']) log(line);
+      }
+    } else if (action === 'friends') {
+      const data = await call('GET', '/99/friends', { tz_offset_minutes: tz });
+      const list = Array.isArray(data.friends) ? data.friends : [];
+      if (json) log(JSON.stringify(data));
+      else if (!list.length) log('No friends yet. Get your link: atris 99 invite');
+      else {
+        const labels = list.map((friend) => personName(friend)
+          + (friend.username && friend.username !== personName(friend) ? ` (@${friend.username})` : ''));
+        const width = Math.max(...labels.map((label) => label.length));
+        log(`Your friends (${Number.isInteger(data.total) ? data.total : list.length}), points today`);
+        const scoreWidth = Math.max(...list.map((friend) => String(Number(friend.score) || 0).length));
+        list.forEach((friend, index) => log(`  ${padEnd(labels[index], width)}  `
+          + `${String(Number(friend.score) || 0).padStart(scoreWidth)} points  streak ${Number(friend.streak) || 0}`));
+      }
+    } else if (action === 'unfriend') {
+      const wanted = words[0].replace(/^@/, '').toLowerCase();
+      const list = (await call('GET', '/99/friends', { tz_offset_minutes: tz })).friends;
+      const matches = (Array.isArray(list) ? list : []).filter((friend) => String(friend.username || '').toLowerCase() === wanted);
+      const named = matches.length ? matches
+        : (Array.isArray(list) ? list : []).filter((friend) => String(friend.display_name || '').toLowerCase() === wanted);
+      if (named.length !== 1) {
+        log(named.length ? `More than one friend matches "${words[0]}". Use their username.` : `No friend named "${words[0]}". See your friends: atris 99 friends`);
+        return 1;
+      }
+      const data = await call('DELETE', `/99/friends/${encodeURIComponent(named[0].id)}`);
+      if (json) log(JSON.stringify(data));
+      else {
+        log(data.removed ? `Removed ${personName(named[0])}.` : `You were not friends with ${personName(named[0])}.`);
+        for (const line of friendsLine(data)) log(line);
+      }
+    } else {
+      const window = words[0] || 'day';
+      const query = { window, tz_offset_minutes: tz, limit: '50' };
+      if (friendsOnly) query.scope = 'friends';
+      const data = await call('GET', '/99/board', query);
+      if (json) log(JSON.stringify(data));
+      else for (const line of boardLines(data, { friends: friendsOnly, window })) log(line);
+    }
+    return 0;
+  } catch (error) {
+    if (!(error instanceof FriendsError)) throw error;
+    log(error.message);
+    return 1;
+  }
+}
+
 function ninetyNineAtris(args = process.argv.slice(3), {
   log = console.log,
   now = () => new Date(),
@@ -367,6 +566,7 @@ function ninetyNineAtris(args = process.argv.slice(3), {
     log(usage());
     return 0;
   }
+  if (FRIEND_ACTIONS.includes(action)) return friendsAtris(action, rest, { log, request, credentials, now });
   if (action === 'sync') return syncNinetyNine(rest, { log, logPath, configPath, statePath, request, credentials, now });
   if (action === 'start' && ['focus', 'meditate', 'f', 'm'].includes(rest[0])) [action, ...rest] = rest;
   if (action === 'f') action = 'focus';

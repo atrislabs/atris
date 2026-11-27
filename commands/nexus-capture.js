@@ -15,6 +15,18 @@
 // The text travels in the request body, never in a web address. Nothing here writes a name,
 // email, company or city anywhere but the screen. The ref is made from the text and the day,
 // so running the same command again the same day never saves it twice.
+//
+// --why "<reason>" [--source-url <page>] saves why you want to reach this person, as the same
+// private note the Chrome extension writes (contract: /tmp/nxm-ext-contract), byte for byte:
+//
+//   Why reach out: <reason, one line, at most 1000 characters>\nSource: <permalink>
+//
+// The Source line is left off when no page is given. The note goes out as `words` with
+// source "command_line", so the store keeps it exactly as one private note touch (kind note) on
+// that card. The page link travels only inside those words: source_url is never sent, so the
+// card is never marked as a public profile and nothing lands on the shared person record. The
+// ref comes from the person, the page without its timestamp and the reason, so a retry or the
+// same video at another second saves once, while a different reason is kept as its own note.
 
 const crypto = require('crypto');
 const readline = require('readline');
@@ -28,9 +40,13 @@ const HELP = [
   '    [--name --company --title --email --linkedin --city --follow-up <date>]  a name is read from the text when --name is not given',
   '    if the name could be someone already on your list it asks which; with --json or no terminal it prints the choices and exits 3',
   '    answer with --person <id> or --new (same text, same command)',
+  '  atris nexus capture --name "<name>" --why "<reason>" [--source-url <page>]    save why you want to reach them, as a private note on their card',
+  '    --why takes at most 1000 characters after spaces and line breaks are collapsed',
+  '    the link is kept clean (YouTube keeps the video and the second); --person <id> instead of --name pins the card',
+  '    e.g. atris nexus capture --name "Rae Sample" --why "her talk on pricing fits our ask" --source-url "https://youtu.be/dQw4w9WgXcQ?t=95"',
 ];
 
-const VALUE = new Set(['name', 'company', 'title', 'email', 'linkedin', 'city', 'follow-up', 'person']);
+const VALUE = new Set(['name', 'company', 'title', 'email', 'linkedin', 'city', 'follow-up', 'person', 'why', 'source-url']);
 const BARE = new Set(['json', 'new']);
 const WORDS_MOST = 20000; // what the store takes in one request
 const NOTE_MOST = 4000; // what the store keeps as the note
@@ -39,6 +55,10 @@ const NAME_MOST = 120;
 const ASK_ROUNDS = 3;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EXIT_NEEDS_CHOICE = 3;
+const WHY_MOST = 1000; // refuse longer reasons rather than discarding their ending
+const URL_MOST = 1000; // the store's source_url ceiling, kept for the Source line too
+const WHY_LEAD = 'Why reach out: ';
+const SOURCE_LEAD = 'Source: ';
 
 // Strip control characters so a stranger's words cannot move the cursor or recolor the terminal.
 const clean = (value) => String(value == null ? '' : value).replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -168,16 +188,109 @@ function guessName(text, emails) {
 const distinct = (list) => [...new Set(list.map((item) => item.toLowerCase()))];
 const found = (text, pattern) => distinct(text.match(pattern) || []);
 
+// ---- a reason and the page it came from ----
+
+const YT_ID = /^[A-Za-z0-9_-]{11}$/;
+const YT_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com']);
+
+/** Seconds from a YouTube t or start value: 95, 95s, 1m35s, 1h2m3s. 0 when it is not one. */
+function secondsOf(value) {
+  const v = String(value || '').trim().toLowerCase();
+  if (/^\d+(?:\.\d+)?s?$/.test(v)) return Math.floor(parseFloat(v));
+  const m = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/.exec(v);
+  if (!m || !v) return 0;
+  return (Number(m[1] || 0) * 3600) + (Number(m[2] || 0) * 60) + Number(m[3] || 0);
+}
+
+/**
+ * The page as the Source line and the ref see it: { url, key } or { error }. Only http and https.
+ * YouTube keeps the video id and the second it was at; every other page keeps scheme, host and
+ * path. Query, fragment, sign-in parts and tracking never survive. `key` is the page without
+ * the second, so the same video at another moment is the same page.
+ */
+function permalinkOf(raw) {
+  const text = String(raw == null ? '' : raw).trim();
+  let u;
+  try { u = new URL(text); } catch { return { error: 'is not a web address' }; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return { error: 'must start with http:// or https://' };
+  if (!u.hostname) return { error: 'has no site in it' };
+  // URL and URLSearchParams tolerate broken escapes. Refuse them before decoding any part.
+  try { decodeURIComponent(text); } catch { return { error: 'has an invalid percent code' }; }
+  const host = u.hostname.toLowerCase();
+  const parts = u.pathname.split('/').filter(Boolean);
+  let video = '';
+  let shorts = false;
+  if (host === 'youtu.be' && parts.length === 1) video = parts[0];
+  else if (YT_HOSTS.has(host)) {
+    if (parts[0] === 'watch' && parts.length === 1) video = u.searchParams.get('v') || '';
+    else if (['live', 'embed'].includes(parts[0]) && parts.length === 2) video = parts[1];
+    else if (parts[0] === 'shorts' && parts.length === 2) { video = parts[1]; shorts = true; }
+    else if (parts[0] && /^@[^/]+$/.test(decodeURIComponent(parts[0]))) {
+      const url = `https://www.youtube.com/${parts[0]}`;
+      return { url, key: url };
+    } else if (['channel', 'c', 'user'].includes(parts[0]) && parts[1]) {
+      const url = `https://www.youtube.com/${parts[0]}/${parts[1]}`;
+      return { url, key: url };
+    }
+  }
+  if (YT_ID.test(video)) {
+    if (shorts) {
+      const url = `https://www.youtube.com/shorts/${video}`;
+      return { url, key: url };
+    }
+    const key = `https://www.youtube.com/watch?v=${video}`;
+    const at = secondsOf(u.searchParams.get('t') || u.searchParams.get('start'));
+    return { url: at > 0 ? `${key}&t=${at}s` : key, key };
+  }
+  if (host === 'youtu.be' || YT_HOSTS.has(host)) {
+    return { error: 'needs a valid YouTube video or channel link; playlists are not supported' };
+  }
+  const url = `${u.protocol}//${u.host.toLowerCase()}${u.pathname}`;
+  if (url.length > URL_MOST) return { error: `is longer than ${URL_MOST} characters` };
+  return { url, key: url };
+}
+
+/** The full reason on one line. The caller refuses it if it exceeds WHY_MOST characters. */
+function reasonOf(raw) {
+  return clean(raw);
+}
+
+/** The exact note words the extension writes. */
+function reasonWords(reason, permalink) {
+  return permalink ? `${WHY_LEAD}${reason}\n${SOURCE_LEAD}${permalink}` : `${WHY_LEAD}${reason}`;
+}
+
+function linkedinHint(raw) {
+  const value = clean(raw).toLowerCase();
+  if (!value) return '';
+  try {
+    const u = new URL(/^https?:\/\//.test(value) ? value : `https://${value}`);
+    if (/^(?:[a-z0-9-]+\.)?linkedin\.com$/.test(u.hostname)) {
+      return `linkedin.com${decodeURIComponent(u.pathname).replace(/\/+$/, '').toLowerCase()}`;
+    }
+  } catch { /* An unrecognized hint still distinguishes the request. */ }
+  return value;
+}
+
+/** A pinned card decides identity; otherwise include every explicit matching hint. */
+function reasonRef(name, reason, pageKey, personId, isNew, hints = {}) {
+  const identity = personId ? ['', personId.toLowerCase()] : [clean(name).toLowerCase(), ''];
+  const strong = personId ? [] : [clean(hints.email).toLowerCase(), linkedinHint(hints.linkedin_url), clean(hints.company).toLowerCase()];
+  const raw = ['cli-why', ...identity, isNew ? 'new' : '', pageKey || '', clean(reason).toLowerCase(), ...strong].join('\u001f');
+  return `cli-why-${crypto.createHash('sha256').update(raw).digest('hex').slice(0, 40)}`;
+}
+
 // ---- the answer, in words ----
 
 const MATCHED = { email: 'same email', linkedin: 'same LinkedIn', name_and_company: 'same name and company', name: 'same name' };
 
-function savedLines(answer, nameFromText) {
+function savedLines(answer, nameFromText, why) {
   const who = clean(answer.name) || 'this person';
   const lines = [answer.made
     ? `Saved a new card for ${who}.`
     : `Added to the card for ${who}${MATCHED[answer.matched_by] ? ` (${MATCHED[answer.matched_by]})` : ''}.`];
-  if (answer.note_saved) lines.push('Their words are kept as a note.');
+  if (answer.note_saved && why) lines.push(why.source ? 'Your reason and the page are kept as a private note.' : 'Your reason is kept as a private note.');
+  else if (answer.note_saved) lines.push('Their words are kept as a note.');
   if (answer.follow_up_on) lines.push(`Follow-up ${clean(answer.follow_up_on)}.`);
   if (nameFromText && answer.made) lines.push('The name was read from your text. If that is wrong, run it again with --name "<name>".');
   return lines;
@@ -247,7 +360,26 @@ async function run(ctx) {
   if (flags.person !== undefined && !UUID.test(String(flags.person).trim())) return refuse('--person takes the id of a card on your list, from the choices this command printed.');
   if (flags.person !== undefined && flags.new) return refuse('Use --person or --new, not both.');
 
-  let text = parsed.words.join(' ').trim();
+  // A reason: the note is built here, never read from the text or standard input.
+  let why = null;
+  if (flags['source-url'] !== undefined && flags.why === undefined) return refuse('--source-url goes with --why "<reason>", so nothing was saved.');
+  if (flags.why !== undefined) {
+    const reason = reasonOf(flags.why);
+    if (!reason) return refuse('--why needs the reason in words, so nothing was saved.');
+    if (Array.from(reason).length > WHY_MOST) return refuse(`--why is too long: use at most ${WHY_MOST} characters after spaces and line breaks are collapsed, so nothing was saved.`);
+    if (parsed.words.join(' ').trim()) return refuse('Give the reason with --why alone, not with other text. Save other text in its own capture, so nothing was saved.');
+    if (!(typeof flags.name === 'string' && flags.name.trim()) && flags.person === undefined) {
+      return refuse('Say who it is for: --name "<name>" or --person <id>, so nothing was saved.');
+    }
+    let page = null;
+    if (flags['source-url'] !== undefined && String(flags['source-url']).trim()) {
+      page = permalinkOf(flags['source-url']);
+      if (page.error) return refuse(`That page link ${page.error}, so nothing was saved. Leave out --source-url to save the reason alone.`);
+    }
+    why = { reason, source: page ? page.url : '', key: page ? page.key : '' };
+  }
+
+  let text = why ? reasonWords(why.reason, why.source) : parsed.words.join(' ').trim();
   if (!text) {
     if (stdinTTY) return refuse('atris nexus capture needs the text. Give it after the word capture, or pipe it in: pbpaste | atris nexus capture');
     text = String(await (ctx.stdin || readStdin)()).trim();
@@ -256,15 +388,16 @@ async function run(ctx) {
   const cut = text.length > NOTE_MOST;
   if (text.length > WORDS_MOST) text = text.slice(0, WORDS_MOST);
 
-  const emails = found(text, EMAIL);
-  const linkedins = found(text, LINKEDIN);
+  // A reason's words never feed name, email or LinkedIn guessing: the page link is not about the person.
+  const emails = why ? [] : found(text, EMAIL);
+  const linkedins = why ? [] : found(text, LINKEDIN);
   const given = (key) => (typeof flags[key] === 'string' ? flags[key].trim() : '');
-  const name = clean(given('name') || guessName(text, emails));
-  const nameFromText = !given('name');
-  if (!name) return refuse('I could not find a name in that text. Add one: atris nexus capture --name "<name>" "<text>"');
+  let name = clean(given('name') || (why ? '' : guessName(text, emails)));
+  const nameFromText = !why && !given('name');
+  if (!name && !why) return refuse('I could not find a name in that text. Add one: atris nexus capture --name "<name>" "<text>"');
   if (name.length > NAME_MOST) return refuse(`That name is too long: ${NAME_MOST} characters at most.`);
 
-  const body = { name, words: text, source: 'command_line' };
+  const body = { words: text, source: 'command_line' };
   for (const [flag, key] of [['company', 'company'], ['title', 'title'], ['city', 'city']]) if (given(flag)) body[key] = given(flag);
   const email = given('email') || (emails.length === 1 ? emails[0] : '');
   const linkedin = given('linkedin') || (linkedins.length === 1 ? linkedins[0] : '');
@@ -287,11 +420,25 @@ async function run(ctx) {
   if (!token) return refuse(ctx.notLoggedIn || 'Sign in first: atris login', 1);
   const client = storeClient(ctx.request, token);
   const out = (data) => log(JSON.stringify(data));
+  const makeRef = () => (why ? reasonRef(name, why.reason, why.key, personId, isNew, body) : refFor(name, text, personId, isNew, now));
 
   try {
+    if (!name) {
+      // --why with --person only: the store needs a name, so take the one on that card.
+      let detail = null;
+      try {
+        detail = await client.get(`/nexus/people/${encodeURIComponent(personId)}`);
+      } catch (error) {
+        if (error instanceof StoreLocked) throw error;
+        detail = null;
+      }
+      name = clean(detail && detail.card && detail.card.name);
+      if (!name) return refuse('There is no card with that id on your list, so nothing was saved. Give --name "<name>" too, or check the id.', 1);
+      if (name.length > NAME_MOST) name = name.slice(0, NAME_MOST).trim();
+    }
     let answer;
     for (let round = 0; round < ASK_ROUNDS; round++) {
-      const sent = { ...body, ref: refFor(name, text, personId, isNew, now) };
+      const sent = { name, ...body, ref: makeRef() };
       if (personId) sent.person_id = personId;
       if (isNew) sent.new = true;
       answer = await client.post('/nexus/capture', sent, { retries: 0 });
@@ -332,10 +479,12 @@ async function run(ctx) {
     }
     const shownCard = detail && detail.card ? detail : null;
     if (json) {
-      out({ ok: true, saved: true, name_from: nameFromText ? 'text' : 'flag', text_cut: cut, ...answer, card: shownCard ? shownCard.card : null });
+      const reasonPart = why ? { why: why.reason, source_url: why.source || null } : {};
+      out({ ok: true, saved: true, name_from: nameFromText ? 'text' : (given('name') ? 'flag' : 'card'), text_cut: cut, ...reasonPart, ...answer, card: shownCard ? shownCard.card : null });
       return 0;
     }
-    for (const line of savedLines(answer, nameFromText)) log(line);
+    for (const line of savedLines(answer, nameFromText, why)) log(line);
+    if (why && why.source) log(`Source: ${why.source}`);
     if (cut) log(`Only the first ${NOTE_MOST} characters are kept as the note.`);
     if (shownCard) {
       log('');
@@ -355,4 +504,4 @@ function oneLine(message) {
   return String(message == null ? '' : message).replace(/\s+/g, ' ').trim();
 }
 
-module.exports = { SUBS, HELP, run, parseFlags, guessName, refFor, clean };
+module.exports = { SUBS, HELP, run, parseFlags, guessName, refFor, clean, permalinkOf, reasonOf, reasonWords, reasonRef };

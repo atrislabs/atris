@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const live = require('../lib/memory-live');
+const { isPlainQuestion, mixHits, rankLocal } = require('../lib/memory-local-rank');
 const { NOT_LOGGED_IN, oneLine, tokenFrom } = require('../lib/developer-api');
 
 const MAX_WRITE_BYTES = 1000000;
@@ -134,8 +135,41 @@ const COMMANDS = {
       return { query, folder: ctx.flags['--in'] || '' };
     },
     async run(ctx, { query, folder }) {
-      const data = await ctx.call(`/memory/grep?q=${enc(query)}${folder ? `&folder=${enc(folder)}` : ''}`);
+      const wantLocal = !ctx.flags['--words-only']
+        && ctx.env.ATRIS_MEMORY_LOCAL !== '0'
+        && isPlainQuestion(query);
+      const localCancel = wantLocal ? new AbortController() : null;
+      const serverPromise = ctx.call(`/memory/grep?q=${enc(query)}${folder ? `&folder=${enc(folder)}` : ''}`);
+      const localPromise = wantLocal
+        ? rankLocal(query, {
+            folder,
+            allFiles: Boolean(ctx.flags['--all-files']),
+            env: ctx.env,
+            embed: ctx.deps.embedLocal,
+            timeoutMs: ctx.deps.localTimeoutMs,
+            signal: localCancel.signal,
+          }).catch(() => null)
+        : Promise.resolve(null);
+      let data;
+      try {
+        data = await serverPromise;
+      } catch (error) {
+        if (localCancel) localCancel.abort();
+        throw error;
+      }
       if (!ctx.flags['--all-files']) live.hideRawData(data);
+      const localHits = await localPromise;
+      if (localHits && localHits.length) {
+        const serverHits = Array.isArray(data.hits) ? data.hits : [];
+        const includeMatch = serverHits.some((h) => h && Object.prototype.hasOwnProperty.call(h, 'match'))
+          || Object.prototype.hasOwnProperty.call(data, 'shown');
+        const blended = mixHits(serverHits, localHits, { includeMatch });
+        if (blended.mixed) {
+          data.hits = blended.hits;
+          if (typeof data.shown === 'number') data.shown = blended.hits.length;
+          data.mixed = true;
+        }
+      }
       return { data: { query, folder, ...data }, lines: live.searchLines(query, data) };
     },
   },

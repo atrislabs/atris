@@ -12,7 +12,7 @@ rg "planChecks|validateMap|lintMap|whereFromMarkers|codeIdentity|matchReceipt|fi
 
 ## By-Feature Map
 
-- **atris scorecard:** `commands/scorecard.js:269` routes find, run and show (no step finds tasks the first time, then shows). `lib/repo-scorecard.js` (`findTasks`) walks first-parent changes and keeps one when its tests fail on the parent with the change's tests put back and pass on the change; the ask is the change's message, plus the merged commits' messages for a pull request merge. `lib/repo-scorecard.js` (`namesFor`) adds the names the hidden tests call that the change added or changed: new files the tests load, new JS exports, new Python functions, classes and top-level names, and functions whose arguments changed, each written the way its definition is called (`lib/repo-scorecard.js:682`). A result counts only for the exact ask it was given (`lib/repo-scorecard.js:770`), so a changed ask is tried again. `lib/repo-scorecard.js:594` makes the throwaway clone (no remote, venv and node_modules linked, `.env` only with `--with-env`). `lib/repo-scorecard.js` (`preflight`) needs the Claude plan login, extra usage off unless `--allow-extra-usage`, and `ATRIS_CLAUDE_SPEND_OK` for any model past haiku. `lib/repo-scorecard.js` (`runTry`) runs the engine with billing keys removed (`lib/repo-scorecard.js:153`) and pushes rewritten (`lib/repo-scorecard.js:182`), stops it when the stream's first line names a billing source other than the plan, then puts the hidden tests back to grade. `lib/repo-scorecard.js:960` resumes missing tries and stops when the plan runs out; `lib/repo-scorecard.js:1000` and `lib/repo-scorecard.js:1065` build and print the scorecard. Test commands per path come from `.atris/scorecard.json` or `--config`. `bin/atris.js:2238` routes it. Regression: `test/repo-scorecard.test.js` (temp repo, fake engine).
+- **atris scorecard:** `commands/scorecard.js:269` routes find, run and show (no step finds tasks the first time, then shows). `lib/repo-scorecard.js` (`findTasks`) walks first-parent changes and keeps one when its tests fail on the parent with the change's tests put back and pass on the change; the ask is the change's message, plus the merged commits' messages for a pull request merge. `lib/repo-scorecard.js` (`namesFor`) adds the names the hidden tests call that the change added or changed: new files the tests load, new JS exports, new Python functions, classes and top-level names, and functions whose arguments changed, each written the way its definition is called (`lib/repo-scorecard.js:682`). A result counts only for the exact ask it was given (`lib/repo-scorecard.js:770`), so a changed ask is tried again. `lib/repo-scorecard.js:594` makes the throwaway clone (no remote, venv and node_modules linked, `.env` only with `--with-env`). `lib/repo-scorecard.js` (`preflight`) needs the Claude plan login, extra usage off unless `--allow-extra-usage`, and `ATRIS_CLAUDE_SPEND_OK` for any model past haiku. `lib/repo-scorecard.js` (`runTry`) runs the engine with billing keys removed (`lib/repo-scorecard.js:153`) and pushes rewritten (`lib/repo-scorecard.js:182`), stops it when the stream's first line names a billing source other than the plan, then puts the hidden tests back to grade. `lib/repo-scorecard.js:960` resumes missing tries and stops when the plan runs out; `lib/repo-scorecard.js:1000` and `lib/repo-scorecard.js:1065` build and print the scorecard. Test commands per path come from `.atris/scorecard.json` or `--config`. `bin/atris.js:2197` routes it. Regression: `test/repo-scorecard.test.js` (temp repo, fake engine).
 
 ## Feature: Receipts (`atris receipt`)
 
@@ -36,7 +36,7 @@ rg "planChecks|validateMap|lintMap|whereFromMarkers|codeIdentity|matchReceipt|fi
 **Purpose:** Validate work is actually done - tests pass, MAP.md updated, changes exist
 
 - **Entry point:** `commands/verify.js:13-35` (verifyAtris function)
-- **Help:** `bin/atris.js:788-799` (showVerifyHelp) and `bin/atris.js:788-799` (showVerifyHelp short-circuit)
+- **Help:** `bin/atris.js:774-785` (showVerifyHelp) and `bin/atris.js:774-785` (showVerifyHelp short-circuit)
 - **Rubric runner:** `commands/verify.js:495-529` (verifyRubric)
 - **Regression:** `test/commands-2.test.js:1512-1527` covers `verify --help` without verifier execution
 - **Modes:**
@@ -54,21 +54,21 @@ rg "planChecks|validateMap|lintMap|whereFromMarkers|codeIdentity|matchReceipt|fi
 
 **Search:** `rg "verifyAtris|verifyRubric|showVerifyHelp|verify --help" bin/atris.js commands/verify.js test/commands-1.test.js`
 
-## Feature: Specialist Code Review (`atris code-review`, `atris cr`)
+## Feature: Wall of shame code review (`atris code-review`, `atris cr`)
 
-**Purpose:** Run the optional six-specialist review engine without confusing it with the core `atris review` workflow validator.
+**Purpose:** Check one change against the recurring mistakes in the project's atris/SPEC.md (qm-compatible `## Wall of shame` with `### Lens (always reviewed, reviewed on <model>, checked by CI, N examples)` headings). Distinct from the `atris review` workflow validator.
 
-- **Routing:** `bin/atris.js:1334-1331` routes `code-review` and `cr` to `commands/review.js`
-- **Engine discovery:** `commands/review.js:14-30` searches for `review_engine.py`
-- **Missing-engine JSON:** `commands/review.js:32-46` returns `{ ok:false, error:"not installed" }` under `--json` and prints `not installed; atris skill install code-review` on stderr for humans, both exit 2 (no stack trace)
-- **JSON error helper:** `commands/review.js:48-55` keeps wrapper-owned setup failures parseable
-- **Handler:** `commands/review.js:57-182` parses file/diff/all/json args and delegates to the Python engine when present
-- **All-mode setup:** `commands/review.js:93-101` returns `{ ok:false }` for missing `backend/services/` under `--all --json`, before auditing services
-- **All-mode JSON success:** `commands/review.js:127-140` returns one parseable `{ ok:true, action:"code_review_all" }` summary instead of human `AUDIT:` prose
-- **All-mode human success:** `commands/review.js:142-151` keeps the existing audit banner and table for non-JSON callers
-- **Regression:** `test/code-review.test.js` and `test/dogfood-t6-t10.test.js` cover not-installed exit 2, JSON missing-services, and JSON success summaries
+- **Routing:** `bin/atris.js` routes `code-review` and `cr` to `commands/review.js` (`reviewCommand`), which returns the exit code
+- **Spec parsing:** `lib/wall-of-shame.js` (`parseSpec`) reads lenses and flags; (`addExample`) appends one dated bullet and bumps the heading count for `atris code-review add`
+- **Diff target:** `commands/review.js` (`collectChange`): default is the merge base with origin's default branch (`defaultBranch` in `lib/zen.js`) plus uncommitted and untracked files (`untrackedDiff`); `--diff <range>` and `--pr <n>` (gh)
+- **Triage and reviewers:** `commands/review.js` (`reviewLenses`) starts always-reviewed lenses alongside one haiku triage call, then one read-only `runEngineAskJobs` job per relevant lens; reviewers read the diff from a temp file under `.atris/reviews/`
+- **Verdicts:** `lib/wall-of-shame.js` (`parseVerdict`, `parseTriage`, both on `extractJson` from `lib/security-audit.js`); a failed or garbled answer is `no verdict`, never accept; a failed triage reviews every lens
+- **Over-testing:** `lib/wall-of-shame.js` (`overTesting`) over `git apply --numstat`, no model call
+- **Report:** `lib/wall-of-shame.js` (`reportBlock`, `upsertBlock`); receipt at `.atris/reviews/<head-sha>.md`; `--pr <n> --comment` updates the block in the PR description (`writeComment`)
+- **Starter spec:** `templates/code-review/SPEC.md`, written by `atris code-review init` (`initSpec`)
+- **Regression:** `test/code-review.test.js` (temp git repo, fake `executeAskJob`)
 
-**Search:** `rg "reviewCommand|printMissingReviewEngine|exitReviewError|code_review_all|code-review --json|not installed" commands/review.js test/code-review.test.js test/dogfood-t6-t10.test.js bin/atris.js`
+**Search:** `rg "reviewCommand|collectChange|reviewLenses|parseSpec|parseVerdict|overTesting|upsertBlock|addExample" commands/review.js lib/wall-of-shame.js test/code-review.test.js`
 
 ## Concern: Endgame Scorecards
 
@@ -124,7 +124,7 @@ rg "planChecks|validateMap|lintMap|whereFromMarkers|codeIdentity|matchReceipt|fi
 
 ## Engine dispatch default branch and refusals
 
-- Readiness runtime selection: `lib/task-proof.js:157` uses `bash -lc`; a login profile can replace the caller's Node path. Reproduction and full failure evidence: `atris/receipts/readiness-runtime-proof-2026-10-14.txt`.
+- Readiness runtime selection: `lib/task-proof.js:156` uses `bash -lc`; a login profile can replace the caller's Node path. Reproduction and full failure evidence: `atris/receipts/readiness-runtime-proof-2026-10-14.txt`.
 
 ## Revision reports across out-of-order commit dates
 

@@ -37,17 +37,41 @@ function resolveRoot(opts, deps) {
   return root;
 }
 
+// --upload, --no-upload or neither (null), then the saved answer or one
+// question (lib/sentinel-consent.js). False when nothing may be saved.
+async function mayUpload(opts, deps, json) {
+  const token = tokenFor(deps);
+  if (!token) return true; // reportFindings says "not logged in" itself
+  const flag = opts.noUpload ? false : (opts.upload ? true : null);
+  const tell = json ? (m) => console.error(m) : (m) => console.log(m);
+  const res = await require('../lib/sentinel-consent').uploadConsent(flag, { token, deps, tell, json });
+  return res.upload;
+}
+
 function tokenFor(deps) {
   if (deps.token !== undefined) return deps.token;
   return require('../lib/sentinel-cloud').authToken();
 }
 
-function uploadLine(res, what) {
-  if (res.skipped === 'no-upload') return '  kept on this machine. nothing was sent (--no-upload)';
+// One line on what reached the dashboard, or '' when nothing was sent.
+// `noun` is one item: finding, threat.
+function uploadLine(res, noun) {
+  if (res.skipped === 'no-upload') return '  kept on this machine. nothing was sent to your dashboard';
   if (res.skipped === 'not-logged-in') return '  not logged in. nothing was sent. run atris login to see this on your dashboard';
-  if (!res.ok) return `  warning: could not send ${what} to your atris dashboard: ${res.reason}. the check itself is done`;
-  const resolved = res.resolved ? ` and marked ${res.resolved} as fixed` : '';
-  return `  sent ${res.sent - (res.resolved || 0)} ${what} to your atris dashboard${resolved}. no file contents or secret values were sent`;
+  if (!res.ok) return `  warning: could not send the ${noun}s to your atris dashboard: ${res.reason}. the check itself is done`;
+  const resolved = Number(res.resolved) || 0;
+  const sent = Math.max(0, (Number(res.sent) || 0) - resolved);
+  const marked = resolved ? `marked ${resolved} as fixed` : '';
+  const refused = Number(res.refused) || 0;
+  const left = refused ? `\n  ${refused} could not be saved. the dashboard refused their wording. they are in the report above` : '';
+  if (!sent && !marked) return left ? left.slice(1) : '';
+  const what = sent ? `sent ${sent} ${noun}${sent === 1 ? '' : 's'} to your atris dashboard${marked ? ` and ${marked}` : ''}` : `${marked} on your atris dashboard`;
+  return `  ${what}. no file contents or secret values were sent${left}`;
+}
+
+function sayUpload(res, noun) {
+  const line = uploadLine(res, noun);
+  if (line) console.log(line);
 }
 
 // ---------------------------------------------------------------- update
@@ -112,16 +136,16 @@ async function runAgents(root, { home = false, upload = true, deps = {} } = {}) 
 
 async function agentsCommand(argv, deps = {}) {
   let opts;
-  try { opts = parseFlags(argv, ['home', 'json', 'no-upload']); } catch (e) { console.error(`  ${e.message}`); return 2; }
+  try { opts = parseFlags(argv, ['home', 'json', 'no-upload', 'upload']); } catch (e) { console.error(`  ${e.message}`); return 2; }
   let root;
   try { root = resolveRoot(opts, deps); } catch (e) { console.error(`  ${e.message}`); return 2; }
-  const { result, upload, record } = await runAgents(root, { home: Boolean(opts.home), upload: !opts.noUpload, deps });
+  const { result, upload, record } = await runAgents(root, { home: Boolean(opts.home), upload: await mayUpload(opts, deps, opts.json), deps });
   recordWarn(record, opts.json);
   if (opts.json) {
     console.log(JSON.stringify({ ok: result.grade !== 'fail', grade: result.grade, areas: result.areas, files: result.files, findings: result.findings, upload }, null, 2));
   } else {
     console.log(require('../lib/sentinel-agents').renderReport(result));
-    console.log(uploadLine(upload, 'the findings'));
+    sayUpload(upload, 'finding');
     console.log('');
   }
   return result.grade === 'fail' ? 1 : 0;
@@ -201,21 +225,21 @@ function manualLines(manual) {
 
 async function watchCommand(argv, deps = {}) {
   let opts;
-  try { opts = parseFlags(argv, ['fix', 'json', 'no-upload', 'allow-major']); } catch (e) { console.error(`  ${e.message}`); return 2; }
+  try { opts = parseFlags(argv, ['fix', 'json', 'no-upload', 'upload', 'allow-major']); } catch (e) { console.error(`  ${e.message}`); return 2; }
   let root;
   try { root = resolveRoot(opts, deps); } catch (e) { console.error(`  ${e.message}`); return 2; }
   const watch = require('../lib/sentinel-watch');
-  const { result, upload, branch, record } = await runWatchCheck(root, { upload: !opts.noUpload, deps });
+  const { result, upload, branch, record } = await runWatchCheck(root, { upload: await mayUpload(opts, deps, opts.json), deps });
   recordWarn(record, opts.json);
   let fix = null;
   if (opts.fix && !result.offline && result.affected.length) {
     try { fix = watch.applyFix(root, result, { run: deps.run, allowMajor: Boolean(opts.allowMajor) }); } catch (e) { fix = { ok: false, reason: String(e.message || e).split('\n')[0] }; }
   }
   if (opts.json) {
-    console.log(JSON.stringify({ ok: !result.affected.some((a) => a.severity === 'critical' || a.severity === 'high'), ...result, upload, branch: branch ? { ...branch, liveFingerprints: undefined } : null, fix }, null, 2));
+    console.log(JSON.stringify({ ok: !result.offline && !result.affected.some((a) => a.severity === 'critical' || a.severity === 'high'), checked: !result.offline, ...result, upload, branch: branch ? { ...branch, liveFingerprints: undefined } : null, fix }, null, 2));
   } else {
     console.log(watch.renderReport(result));
-    if (upload.skipped !== 'offline') console.log(uploadLine(upload, 'the threats'));
+    if (upload.skipped !== 'offline') sayUpload(upload, 'threat');
     for (const l of heldLines(upload, branch)) console.log(l);
     if (fix) {
       console.log('');
@@ -237,6 +261,8 @@ async function watchCommand(argv, deps = {}) {
     console.log('');
   }
   if (fix && !fix.ok) return 1;
+  // 3: the check could not run, so it is neither a pass nor a finding.
+  if (result.offline) return 3;
   return result.affected.some((a) => a.severity === 'critical' || a.severity === 'high') ? 1 : 0;
 }
 
@@ -253,8 +279,11 @@ function guardHelp() {
     atris sentinel guard uninstall [--global]
 
   it stops shell commands that send secrets out, delete home or root, force
-  push to main, drop databases or turn off security. normal curl, git push
-  and rm in project folders still run. it uses fixed rules and no model.
+  push to main, drop databases or turn off security. it also stops code
+  piped from the internet or a decoded string straight into a shell. it
+  stops an agent from reading private keys, login files or every
+  environment variable into its conversation. normal curl, git push and rm in project folders
+  still run. it uses fixed rules and no model.
   trusted sites for secrets can be added in ~/.atris/sentinel/guard.json.
 
   what it promises: it stops the common ways an agent leaks a key or runs a
@@ -262,8 +291,8 @@ function guardHelp() {
   curl, wget or httpie with options on a short safe list, to trusted sites. a
   command that names claude settings or the guard's files runs only when it
   is a read-only program like cat, grep or git log. what it cannot promise: a program that hides its
-  intent can still get past fixed rules. it does not read encoded payloads
-  or scripts written to disk and then run. it does not read interpreters
+  intent can still get past fixed rules. it does not read scripts written
+  to disk and then run, or .env files read in the project. it does not read interpreters
   like python -c either. it is a seatbelt, not a sandbox.
 `);
   return 0;
@@ -278,13 +307,16 @@ async function guardCommand(argv, deps = {}) {
   const inst = require('../lib/sentinel-guard-install');
   const env = deps.env || process.env;
   const root = deps.root || process.cwd();
+  // In the home folder a project install is the global one (see
+  // lib/sentinel-guard-install.js locations).
+  if (!opts.global && path.resolve(root) === path.resolve(env.HOME || require('os').homedir())) opts.global = true;
   const where = opts.global ? 'every claude code session on this computer' : `claude code in ${tildePath(path.resolve(root), env.HOME || undefined)}`;
   if (sub === 'install') {
     let st;
     try { st = inst.install({ global: Boolean(opts.global), root, env, atrisBin: deps.atrisBin }); } catch (e) { console.error(`  could not install the guard: ${e.message}. your settings were not changed`); return 1; }
     console.log(`\n  the sentinel guard is on for ${where}`);
     console.log(`  settings: ${tildePath(st.settings, env.HOME || undefined)}`);
-    console.log('  it checks each shell command and file edit before it runs. try it with atris sentinel guard test');
+    console.log('  it checks each shell command, file read and file edit before it runs. try it with atris sentinel guard test');
     if (st.hooks_off) console.log('  warning: these settings turn all hooks off. the guard will not run until that is removed');
     console.log('  it starts with the next claude code session\n');
     return 0;
@@ -340,6 +372,17 @@ async function flushCommand(argv, deps = {}) {
   const quiet = argv.includes('--quiet');
   const events = require('../lib/sentinel-events');
   const token = tokenFor(deps);
+  // The guard starts `flush --quiet` on its own, with nobody to ask. It
+  // sends only when the person already said yes (saved answer or
+  // ATRIS_SENTINEL_UPLOAD). The queue waits on this machine until then.
+  // A flush typed by hand is that yes.
+  if (quiet && token) {
+    const consent = require('../lib/sentinel-consent');
+    const env = deps.env || process.env;
+    const fromEnv = consent.envChoice(env);
+    const yes = fromEnv !== null ? fromEnv : consent.savedChoice({ homeDir: deps.homeDir, env }) === true;
+    if (!yes) return 0;
+  }
   let res;
   try { res = await events.flushQueue({ token, base: deps.base, env: deps.env || process.env }); } catch (e) { res = { ok: false, reason: e.message, sent: 0 }; }
   if (!quiet) {
@@ -374,18 +417,21 @@ async function runScheduledFreeChecks(root, deps = {}) {
   } catch (e) { say(`  warning: the agent setup check did not finish: ${e.message}`); }
   try {
     out.watch = await runWatchCheck(root, { upload, deps: { ...deps, token } });
-    if (out.watch.result.offline) say('  warning: the dependency check could not reach the osv database this time');
+    if (out.watch.result.offline) say('  warning: the dependency check could not reach the osv database. nothing was checked this time');
     else say(`  dependency check: ${out.watch.result.affected.length} affected package${out.watch.result.affected.length === 1 ? '' : 's'}`);
   } catch (e) { say(`  warning: the dependency check did not finish: ${e.message}`); }
   const agentsOpen = out.agents ? out.agents.result.findings.length : 0;
   const threats = out.watch && !out.watch.result.offline ? out.watch.result.affected.length : 0;
   const bad = (out.agents && out.agents.result.grade === 'fail') || (out.watch && out.watch.result.affected.some((a) => a.severity === 'critical' || a.severity === 'high'));
-  const title = events.fillPlain('Sentinel finished its scheduled check. {a} agent setup findings and {t} dependency threats are open.', { a: ['count', String(agentsOpen), 'some'], t: ['count', String(threats), 'some'] });
+  const watchOffline = Boolean(out.watch && out.watch.result.offline);
+  const title = watchOffline
+    ? events.fillPlain('Sentinel finished its scheduled check. {a} agent setup findings are open. The dependency check could not reach the known attacks database. Nothing was checked.', { a: ['count', String(agentsOpen), 'some'] })
+    : events.fillPlain('Sentinel finished its scheduled check. {a} agent setup findings and {t} dependency threats are open.', { a: ['count', String(agentsOpen), 'some'], t: ['count', String(threats), 'some'] });
   const finished = new Date();
-  const endEv = events.makeEvent({ kind: 'scan_finished', repo, severity: bad ? 'high' : 'info', title, status: 'resolved', fingerprint: events.fingerprint('scan_finished', repo, started.toISOString()), occurredAt: finished });
+  const endEv = events.makeEvent({ kind: 'scan_finished', repo, severity: bad ? 'high' : (watchOffline ? 'medium' : 'info'), title, status: 'resolved', fingerprint: events.fingerprint('scan_finished', repo, started.toISOString()), occurredAt: finished });
   out.sent.push(await send([endEv]));
   if (upload && token) { try { await events.flushQueue({ token, base: deps.base, env: deps.env || process.env }); } catch {} }
   return out;
 }
 
-module.exports = { agentsCommand, guardCommand, watchCommand, flushCommand, runScheduledFreeChecks, runAgents, runWatchCheck, startUpdateNotice };
+module.exports = { agentsCommand, guardCommand, watchCommand, flushCommand, runScheduledFreeChecks, runAgents, runWatchCheck, startUpdateNotice, uploadLine };

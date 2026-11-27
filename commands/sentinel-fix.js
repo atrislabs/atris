@@ -14,7 +14,7 @@ function tildePath(p, home = require('os').homedir()) {
 }
 
 function parseFixArgs(argv) {
-  const opts = { positionals: [], allOpen: false, verify: null, builder: null, verifier: null, engine: null, yes: false, pr: false, upload: true, timeoutMs: null };
+  const opts = { positionals: [], allOpen: false, verify: null, builder: null, verifier: null, engine: null, yes: false, pr: false, upload: null, timeoutMs: null };
   const takes = (i, flag) => {
     if (argv[i + 1] === undefined || argv[i + 1].startsWith('--')) throw new Error(`${flag} needs a value`);
     return argv[i + 1];
@@ -31,6 +31,7 @@ function parseFixArgs(argv) {
     else if (flag === '--yes' || flag === '-y') opts.yes = true;
     else if (flag === '--pr') opts.pr = true;
     else if (flag === '--no-upload') opts.upload = false;
+    else if (flag === '--upload') opts.upload = true;
     else if (flag === '--timeout') opts.timeoutMs = Number(value()) * 1000;
     else if (arg.startsWith('-')) throw new Error(`unknown flag: ${arg}`);
     else opts.positionals.push(arg);
@@ -116,17 +117,40 @@ async function fixCommand(argv, deps = {}) {
   const top = fix.git(start, ['rev-parse', '--show-toplevel'], { allowFail: true });
   if (!top) { console.error(`  ${tildePath(start)} is not a git repository. a fix needs a branch to go on`); return 2; }
   const root = top;
+  require('../lib/sentinel-cloud').keepProjectClean(root);
 
-  const { records } = fix.confirmedFindings(root);
-  if (!records.length) { console.log('\n  no confirmed findings for this repository. run atris sentinel first\n'); return 0; }
+  const { records, system, dir } = fix.confirmedFindings(root);
+  if (system) {
+    const names = system.parts.map((p) => p.name);
+    console.log(`\n  the last review of this repository read ${names.length} places together (${names.join(', ')}), with this one as the ${system.part} part. it has ${system.confirmed} confirmed finding${system.confirmed === 1 ? '' : 's'}.`);
+    console.log('  fix works on a review of one folder for now, so nothing was changed.');
+    console.log(`  the findings are in ${tildePath(path.join(dir, 'REPORT.md'))}. to fix one here, review this folder alone first: atris sentinel\n`);
+    return opts.id || opts.allOpen ? 2 : 0;
+  }
+  if (!records.length) {
+    if (!dir) console.log('\n  no review of this project yet. run atris sentinel first, then come back here\n');
+    else console.log('\n  the last review has no confirmed problems, so there is nothing to fix.\n  a possible problem that is not double-checked yet cannot be fixed. run atris sentinel again to check it\n');
+    return 0;
+  }
 
   if (!opts.id && !opts.allOpen) {
-    console.log('\n  confirmed findings you can fix\n');
-    for (const r of records) {
-      const has = fix.branchExists(root, fix.branchFor(r));
-      console.log(`  ${fix.shortId(r.fingerprint)}  ${sevOf(r).padEnd(8)}  ${r.title}${has ? '  (fix branch exists)' : ''}`);
+    const rank = { critical: 0, high: 1, medium: 2, low: 3, informational: 4 };
+    const sorted = [...records].sort((a, b) => (rank[sevOf(a)] ?? 5) - (rank[sevOf(b)] ?? 5));
+    console.log('\n  confirmed problems you can fix, worst first\n');
+    const open = [];
+    for (const r of sorted) {
+      const branch = fix.branchFor(r);
+      const has = fix.branchExists(root, branch);
+      if (!has) open.push(r);
+      console.log(`  ${fix.shortId(r.fingerprint)}  ${sevOf(r).padEnd(8)}  ${r.title}${has ? `  (fix ready: ${branch})` : ''}`);
     }
-    console.log(`\n  fix one with: atris sentinel fix ${fix.shortId(records[0].fingerprint)}\n`);
+    if (open.length) {
+      console.log(`\n  fix one with: atris sentinel fix ${fix.shortId(open[0].fingerprint)}`);
+      console.log('  it writes the fix and a test that proves the hole is closed, on a new branch.');
+      console.log('  nothing goes into your code until you merge that branch.\n');
+    } else {
+      console.log('\n  every problem here has a fix ready. take one with git merge <branch>, or say no with git branch -D <branch>\n');
+    }
     return 0;
   }
 
@@ -145,7 +169,13 @@ async function fixCommand(argv, deps = {}) {
   if (!from || from === 'HEAD') { console.error('  check out a branch first. a fix branch is made from the branch you are on'); return 2; }
 
   const testCommand = opts.verify || fix.detectTestCommand(root);
-  if (!testCommand) { console.error('  no test command found. name one with --verify "<command>"'); return 2; }
+  if (!testCommand) {
+    console.error('  a fix is kept only when a new test proves the hole is closed, so sentinel needs to run your tests.');
+    const example = fs.existsSync(path.join(root, 'package.json')) ? 'node --test' : fs.existsSync(path.join(root, 'go.mod')) ? 'go test ./...' : 'pytest';
+    console.error('  it could not tell how. name the command that runs them, for example:');
+    console.error(`    atris sentinel fix ${opts.id || '<id>'} --verify "${example}"`);
+    return 2;
+  }
 
   let engines;
   try { engines = fix.resolveFixEngines({ engine: opts.engine, builder: opts.builder, verifier: opts.verifier, env, available: deps.available }); } catch (e) { console.error(`  ${e.message}`); return 2; }
@@ -160,7 +190,7 @@ async function fixCommand(argv, deps = {}) {
     allowed = require('../lib/security-audit').hostedAllowedFiles(root, []);
     const rows = [];
     if (fix.isHosted(engines.builder)) {
-      const sizes = targets.map((r) => Buffer.byteLength(fix.builderPrompt(r, { testCommand, hosted: true, fileList: [...allowed].slice(0, 400), source: fix.hostedSourceBlock(root, fix.citedFiles(r), allowed, 64 * 1024) })));
+      const sizes = targets.map((r) => Buffer.byteLength(fix.builderPrompt(r, { testCommand, hosted: true, others: records, fileList: [...allowed].slice(0, 400), source: fix.hostedSourceBlock(root, fix.citedFiles(r), allowed, 64 * 1024) })));
       const max = Math.max(4096, ...sizes) + 1024;
       rows.push({ role: 'builder', model: engines.builder, calls: targets.length, input_tokens: max, output_tokens: fix.HOSTED_OUTPUT_TOKENS.builder, max_input_bytes: max });
     }
@@ -188,17 +218,21 @@ async function fixCommand(argv, deps = {}) {
   const ctx = {
     from,
     testCommand,
+    others: records,
     engines,
     env,
     allowed,
     hostedRun,
     runBuilder: deps.runBuilder || fix.defaultRunBuilder,
     runChecker: deps.runChecker || fix.defaultRunChecker,
+    copyDependencies: deps.copyDependencies,
     timeouts: { build: opts.timeoutMs || 20 * 60 * 1000, check: opts.timeoutMs || 10 * 60 * 1000, test: 20 * 60 * 1000 },
     log,
   };
 
   console.log(`\n  ◉ sentinel fix · ${engines.builder} writes the fix · ${engines.verifier} checks it · tests: ${testCommand}`);
+  if (engines.same) console.log(`  only ${engines.builder} is ready on this computer, so it also checks its own fix, in a fresh session. a second tool makes that check stronger`);
+  console.log('  this takes a few minutes. your own branch and files are not touched');
   const results = [];
   for (const record of targets) {
     console.log(`\n  ${fix.shortId(record.fingerprint)} · ${record.title}`);
@@ -216,9 +250,23 @@ async function fixCommand(argv, deps = {}) {
       } else {
         console.log('  nothing was pushed');
       }
+      if (res.pr && res.pr.ok) console.log('  to take it, merge the pull request. to say no, close it');
+      else {
+        console.log(`  to take it: git merge ${res.branch}`);
+        console.log(`  to say no:  git branch -D ${res.branch}`);
+      }
     } else {
       console.log(`  no fix was committed: ${res.reason}`);
-      if (res.branch === null || res.branch === undefined) console.log(`  you are on ${from}${res.patch ? `. the attempt is saved at ${tildePath(res.patch, env.HOME || undefined)}` : ''}`);
+      if (res.branch === null || res.branch === undefined) console.log(`  you are on ${from}. nothing in your project changed${res.patch ? `. the attempt is saved at ${tildePath(res.patch, env.HOME || undefined)}` : ''}`);
+      if (res.test_output) console.log(`  what the tests printed: ${tildePath(res.test_output, env.HOME || undefined)}`);
+      // A refusal is a dead end without a next step.
+      if (records.length > 1) console.log(`  if that reason points at another problem on the list, fix that one first (atris sentinel fix), then try this one again`);
+      console.log(`  try again with: atris sentinel fix ${fix.shortId(record.fingerprint)}`);
+      // A tool that stopped or wrote nothing may simply decline this one; the other may not.
+      const otherTool = { codex: 'claude', claude: 'codex' }[engines.builder];
+      if (otherTool && !engines.same && /the builder (stopped|changed nothing)/.test(res.reason || '')) {
+        console.log(`  or let the other tool write it: atris sentinel fix ${fix.shortId(record.fingerprint)} --builder ${otherTool} --verifier ${engines.builder}`);
+      }
     }
   }
 
@@ -234,12 +282,13 @@ async function fixCommand(argv, deps = {}) {
   if (done.length) {
     const events = require('../lib/sentinel-events');
     let upload;
-    if (!opts.upload) upload = { skipped: 'no-upload' };
+    const consent = token ? await require('../lib/sentinel-consent').uploadConsent(opts.upload, { token, deps, tell: (m) => console.log(m) }) : null;
+    if (opts.upload === false || (consent && !consent.upload)) upload = { skipped: 'no-upload' };
     else if (!token) upload = { skipped: 'not-logged-in' };
     else {
       try { upload = await events.postEvents(done.map((x) => fix.fixEvent(root, x.record, x.res)), { token, base: deps.base }); } catch (e) { upload = { ok: false, reason: e.message }; }
     }
-    if (upload.skipped === 'no-upload') console.log('\n  kept on this machine. nothing was sent (--no-upload)');
+    if (upload.skipped === 'no-upload') console.log('\n  kept on this machine. nothing was sent to your dashboard');
     else if (upload.skipped === 'not-logged-in') console.log('\n  not logged in. nothing was sent to your dashboard');
     else if (!upload.ok) console.log(`\n  warning: could not tell your atris dashboard: ${upload.reason}. the fix itself is done`);
     else console.log('\n  told your atris dashboard. no code was sent');

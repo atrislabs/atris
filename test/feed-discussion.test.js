@@ -208,7 +208,8 @@ test('replies: every saved comment on a card, oldest first, with a limit and a t
   for (const text of texts) room.reply(ctx.root, card.id, text, { env: ctx.env });
   room.reply(ctx.root, card.id, 'A member answer.', { as: 'writer', env: ctx.env });
   const all = room.replies(ctx.root, card.id, { env: ctx.env });
-  assert.deepEqual(Object.keys(all).sort(), ['card_id', 'dropped', 'replies', 'reply_count', 'truncated', 'version']);
+  assert.deepEqual(Object.keys(all).sort(), ['card', 'card_id', 'dropped', 'replies', 'reply_count', 'truncated', 'version']);
+  assert.equal(all.card.id, card.id, 'the card comes with its comments, so its discussion and work state read in one call');
   assert.deepEqual(all.replies.map((r) => r.text), [...texts, 'A member answer.']);
   assert.equal(all.reply_count, 6);
   assert.equal(all.truncated, false);

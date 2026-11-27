@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
-const { stateHome } = require('../lib/state-home');
+require('../lib/state-home');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const {

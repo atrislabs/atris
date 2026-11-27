@@ -217,15 +217,79 @@ function renderDoctor(payload) {
   return lines.join('\n');
 }
 
+// --live: one real model turn on the first installed coding tool, checked
+// for the exact reply. Proof that setup ended with something that can work.
+const LIVE_REPLY = 'ATRIS LIVE OK';
+const LIVE_ENGINES = ['claude', 'codex'];
+const LIVE_TIMEOUT_MS = 120000;
+
+async function runLiveCheck(options = {}) {
+  const root = detectWorkspaceRoot(options.cwd || process.cwd());
+  const probe = options.binInstalled || require('../lib/engine-registry').binInstalled;
+  const ask = require('../lib/engine-ask');
+  const runAsk = options.runAsk || ask.runAskProcess;
+  const engine = LIVE_ENGINES.find((bin) => probe(bin)) || null;
+  const result = { ok: false, action: 'doctor_live', at: new Date().toISOString(), engine, model: null, requested_model: null, seconds: null, expected: LIVE_REPLY, reply: null, error: null };
+  if (!engine) {
+    result.error = 'no coding tool found. install claude code or codex, sign in to it, then run atris doctor --live again.';
+  } else {
+    const invocation = ask.buildReadOnlyEngineInvocation(engine, `Reply with exactly: ${LIVE_REPLY}`, '', {
+      timeoutMs: LIVE_TIMEOUT_MS,
+      context: engine === 'claude' ? 'light' : '',
+    });
+    const ran = await runAsk(invocation, { cwd: root, timeoutMs: LIVE_TIMEOUT_MS });
+    const flag = invocation.args.indexOf('--model');
+    // model is only what the tool says ran; what we asked for is kept apart.
+    result.requested_model = flag >= 0 ? invocation.args[flag + 1] : null;
+    result.model = ran.model_ran || null;
+    result.seconds = Math.round((ran.duration_ms || 0) / 100) / 10;
+    result.reply = String(ran.stdout || '').trim();
+    result.ok = Boolean(ran.ok) && result.reply === LIVE_REPLY;
+    if (!ran.ok) {
+      const said = `${ran.stderr || ''}\n${ran.stdout || ''}`.trim();
+      result.error = `${ran.timed_out ? 'no answer in time' : ran.reason}${said ? `: ${said.slice(-2000)}` : ''}`;
+    } else if (!result.ok) {
+      result.error = `replied "${result.reply.slice(0, 300)}" instead of "${LIVE_REPLY}"`;
+    }
+  }
+  try {
+    const receipt = path.join(root, '.atris', 'state', 'doctor-live.json');
+    fs.mkdirSync(path.dirname(receipt), { recursive: true });
+    fs.writeFileSync(receipt, `${JSON.stringify(result, null, 2)}\n`);
+    result.receipt = receipt;
+  } catch (error) {
+    result.receipt = null;
+    result.receipt_error = error.message;
+  }
+  return result;
+}
+
+function renderLive(result) {
+  const model = result.model || (result.requested_model ? `asked for ${result.requested_model}` : '');
+  const tool = result.engine ? ` with ${result.engine}${model ? ` (${model})` : ''}` : '';
+  return result.ok
+    ? `atris doctor --live: passed in ${result.seconds} seconds${tool}.`
+    : `atris doctor --live: failed${tool}. ${result.error}`;
+}
+
 function doctorCommand(args = [], options = {}) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
-    console.log('Usage: atris doctor [--json]');
+    console.log('Usage: atris doctor [--live] [--json]');
     console.log('');
     console.log('Checks that this computer is ready: a new enough node, a working atris install,');
     console.log('whether you are signed in and whether this folder is set up.');
     console.log('Also checks what the team needs: members, git and a coding tool.');
+    console.log('--live asks the first installed coding tool (claude, else codex) for one exact');
+    console.log('reply and saves the result in .atris/state/doctor-live.json.');
     console.log('--json prints the same facts for scripts.');
     return 0;
+  }
+  // Only --live waits on a model, so only it returns a promise.
+  if (args.includes('--live')) {
+    return runLiveCheck(options).then((result) => {
+      console.log(args.includes('--json') ? JSON.stringify(result, null, 2) : renderLive(result));
+      return result.ok ? 0 : 1;
+    });
   }
   const payload = collectDoctor(options);
   if (args.includes('--json')) {

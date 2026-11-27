@@ -498,7 +498,43 @@ async function runStore(ctx) {
   }
 
   // today
-  const data = await client.get(withTz('/nexus/today'));
+  const todayPath = withTz('/nexus/today');
+  let data = await client.get(todayPath);
+  if (flags.all) {
+    const people = [];
+    const seen = new Set();
+    let page = data;
+    let offset = 0;
+    for (;;) {
+      const rows = cardsOf(page);
+      for (const person of rows) {
+        // Live edits can move a person onto a later page. Keep their first row
+        // and its place in the list; rows without an id cannot be matched safely.
+        const id = person.id;
+        if (id != null && id !== '') {
+          if (seen.has(id)) continue;
+          seen.add(id);
+        }
+        people.push(person);
+      }
+      const next = page.next_offset;
+      // Never guess an offset from totals or row counts: older stores truncate
+      // without a cursor. Strict advance also rules out repeats and cycles.
+      if (!rows.length || !Number.isSafeInteger(next) || next <= offset) break;
+      try {
+        page = await client.get(`${todayPath}${tz ? '&' : '?'}offset=${next}`);
+      } catch (error) {
+        // The store already answered. A later outage must not replace those
+        // results with an unrelated saved list through the caller's fallback.
+        if (error instanceof StoreDown) throw new StoreError(error.message);
+        throw error;
+      }
+      offset = next;
+    }
+    data = { ...data, people };
+    if (Object.hasOwn(page, 'next_offset')) data.next_offset = page.next_offset;
+    else delete data.next_offset;
+  }
   const people = cardsOf(data);
   const hint = people.length ? '' : await emptyHint();
   if (json) out(data);

@@ -186,6 +186,9 @@ function startWorktree(args) {
   if (counts && (counts.staged || counts.unstaged || counts.untracked)) {
     console.log(`note: primary checkout is dirty staged=${counts.staged} unstaged=${counts.unstaged} untracked=${counts.untracked}`);
   }
+  // A nudge, never a stop: prints only when the pile is over the map's limit.
+  const pileNotice = require('../lib/waiting-pile').startNotice(root, { base });
+  if (pileNotice) console.log(pileNotice);
   console.log(`path: ${target}`);
   console.log(`branch: ${branch}`);
   console.log(`${member ? 'member' : 'agent'}: ${owner}`);
@@ -818,6 +821,7 @@ function guide() {
   console.log('A shipped copy that has to stay loses its build output (.next, test caches, Python bytecode, node_modules/.cache) unless another program runs in it.');
   console.log('Below 25 GB free, a start skips the workspace sweep for 30 minutes after one that found nothing (ATRIS_WORKTREE_SWEEP_COOLDOWN_MIN=0 always sweeps).');
   console.log('The sweep reports abandoned copies with unsaved work (idle 7 days). With --rescue it saves one to commits on a new atris-rescue/ branch, pushes it, and removes the copy only after origin has it; it removes a copy only when it can prove every byte is saved, and anything unusual keeps the copy for a person. The timer never rescues. Rescues are logged in .atris/state/worktree_removals.jsonl.');
+  console.log('Start prints "N changes are waiting to land here. Clear those first." when more than waiting_limit (atris/checks.json, default 10) finished changes wait to land. It is a nudge: it never blocks the start or changes its exit code.');
   console.log('Use `atris worktree status` to see all worktrees and dirty counts.');
   console.log('Use `atris worktree doctor` to see what every copy really costs and what a prune would free.');
   return 0;

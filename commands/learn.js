@@ -8,7 +8,6 @@ const {
   addLearning,
   searchLearnings,
   findPruneTargets,
-  removeLearning,
   getStats,
   exportMarkdown,
 } = require('../lib/learnings');

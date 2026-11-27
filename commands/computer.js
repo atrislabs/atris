@@ -853,8 +853,6 @@ async function computerOnboard(token, businessSlug) {
     process.exit(1);
   }
 
-  const fs = require('fs');
-  const path = require('path');
 
   console.log(`\nOnboarding "${businessSlug}"...`);
 
@@ -1143,8 +1141,8 @@ function printComputerPrHelp(log = console.log) {
 function cloudTeamIo(token, ctx, request = apiRequestJson) {
   const base = `/business/${ctx.businessId}/workspaces/${ctx.workspaceId}`;
   return {
-    async list() {
-      const r = await request(`${base}/files?path=${encodeURIComponent(codeOpsTeam.TEAM_DIR)}`, { method: 'GET', token, retries: 0 });
+    async list(directory = codeOpsTeam.TEAM_DIR) {
+      const r = await request(`${base}/files?path=${encodeURIComponent(directory)}`, { method: 'GET', token, retries: 0 });
       return r.ok ? (r.data?.files || []) : null;
     },
     async read(filePath) {
@@ -1157,6 +1155,58 @@ function cloudTeamIo(token, ctx, request = apiRequestJson) {
       return r.ok ? null : (require('../lib/computer-pr').errorText(r.error || r.data) || `status ${r.status}`);
     },
   };
+}
+
+async function computerCodeOpsExperiment(token, ctx, args, options) {
+  const { experiment } = require('../lib/codeops-experiment');
+  const { randomUUID } = require('node:crypto');
+  const { homedir } = require('node:os');
+  const deps = {
+    root: path.join(homedir(), '.atris', 'codeops-experiments', ctx.businessId, ctx.workspaceId),
+    io: cloudTeamIo(token, ctx),
+    judgeWorker: options.worker,
+    judgeModel: options.model,
+    async findSession(sessionId) {
+      const audit = await fetchBusinessChatAudit(token, ctx, 25);
+      return audit.ok && audit.data?.rows?.find(row => row.session_id === sessionId)?.execution_id;
+    },
+    async start(message, worker = activeWorker(options.worker || ctx.worker), model = options.model || ctx.model, sessionId = 'experiment-' + randomUUID()) {
+      const started = await apiRequestJson(`/business/${ctx.businessId}/chat`, {
+        method: 'POST', token, retries: 0, timeoutMs: 40000,
+        body: { workspace_id: ctx.workspaceId, session_id: sessionId, reset_context: true,
+          message, worker, ...(model ? { model } : {}), allowed_tools: [] },
+      });
+      if (!started.ok || !started.data?.execution_id) {
+        const error = Error('cloud job did not confirm a start: ' + started.status);
+        error.rejected = [400, 401, 403, 404, 409, 422, 429].includes(started.status);
+        throw error;
+      }
+      return started.data.execution_id;
+    },
+    async observe(execution) {
+      const audit = { tools: 0 };
+      const reply = await streamBusinessChatResult(token, ctx, execution, null, {
+        quiet: true, write() {}, writeError() {},
+        onEvent(event) {
+          if (event.type === 'tool_use') audit.tools++;
+          if (event.type === 'system_init') Object.assign(audit, {
+            execution: event.execution_id, model: event.model, resumed: event.resumed,
+          });
+          if (event.type === 'result') audit.cost_usd = event.cost_usd;
+        },
+      });
+      return { ...reply, audit };
+    },
+  };
+  try {
+    const result = await experiment(args, deps);
+    console.log(JSON.stringify(result, null, 2));
+    return 0;
+  } catch (err) {
+    console.error(err.message);
+    process.exitCode = 1;
+    return 1;
+  }
 }
 
 // After a run: one dated line in the member's lessons.md and one line in its
@@ -1639,6 +1689,7 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null, opti
       const emitEvents = (items, { showTools = true } = {}) => {
         let batchDone = false;
         for (const event of (items || [])) {
+          options.onEvent?.(event);
           if ((event.type === 'assistant_text' || event.type === 'text') && event.content) {
             sawVisibleOutput = true;
             collectedText += event.content;
@@ -1692,7 +1743,7 @@ async function streamBusinessChatResult(token, ctx, executionId, rl = null, opti
         }
 
         out('\n');
-        if (!sawVisibleOutput && events.data?.status === 'completed') console.log('(no result)');
+        if (!sawVisibleOutput && !options.quiet && events.data?.status === 'completed') console.log('(no result)');
         const finalStatus = terminalStatus || events.data?.status || (done ? 'completed' : 'unknown');
         return { ok: finalStatus === 'completed', status: finalStatus, text: collectedText, resultText };
       }
@@ -2475,6 +2526,11 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     return;
   }
 
+  if (sub === 'codeops' && args[1] === 'experiment' && (!args[2] || ['help', '--help', '-h'].includes(args[2]))) {
+    console.log(require('../lib/codeops-experiment').usage);
+    return 0;
+  }
+
   if (sub === 'login') {
     const { computerLogin } = require('./computer-login');
     // The shared option reader takes --business wherever it sits, so hand it
@@ -2715,7 +2771,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
     switch (codeopsSub) {
       case '--help':
       case 'help':
-        console.log('Usage: atris computer codeops [chat|status|wake|sleep|run|grep|ls|cat|exec|team|audit|workflow]');
+        console.log('Usage: atris computer codeops [chat|status|wake|sleep|run|grep|ls|cat|exec|team|experiment|audit|workflow]');
         console.log('');
         console.log('Examples:');
         console.log('  atris computer codeops');
@@ -2734,6 +2790,7 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
       case 'cat': return computerCat(token, codeopsRest, codeopsCtx);
       case 'exec': return computerExec(token, codeopsRest, codeopsCtx, codeopsOptions);
       case 'team': return computerCodeOpsTeam(token, codeopsCtx, args.slice(2));
+      case 'experiment': return computerCodeOpsExperiment(token, codeopsCtx, args.slice(2), codeopsOptions);
       case 'audit': {
         const limit = codeopsRest ? Number.parseInt(codeopsRest, 10) : 10;
         return computerAudit(token, codeopsCtx, Number.isFinite(limit) ? limit : 10);
@@ -2747,7 +2804,6 @@ async function runComputer(argv = process.argv.slice(3), deps = {}) {
         process.exitCode = 1;
         return;
     }
-    return;
   }
 
   if (sub === '--cloud' || sub === 'cloud') {

@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { reasonClass, HUMAN_BLOCKING_REASONS } = require('../lib/self-drive');
+const { reasonClass, isHumanBlockingReason } = require('../lib/self-drive');
 const { missionLockRecords } = require('../lib/loop-doctor');
 const {
   loadMissionMap,
@@ -83,7 +83,7 @@ function classifyRecovery(value) {
       reason,
       happened: entry.happened,
       apply: entry.apply,
-      human_blocking: HUMAN_BLOCKING_REASONS.has(reason),
+      human_blocking: isHumanBlockingReason(reason),
     };
   }
   return {
@@ -91,7 +91,7 @@ function classifyRecovery(value) {
     reason,
     happened: `the mission stopped for "${reason}"`,
     apply: null,
-    human_blocking: HUMAN_BLOCKING_REASONS.has(reason),
+    human_blocking: isHumanBlockingReason(reason),
   };
 }
 

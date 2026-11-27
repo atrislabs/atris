@@ -27,6 +27,7 @@ function writeFakeGh(bin, log, config) {
     "const [a, b] = process.argv.slice(2);",
     "const n = process.argv[4];",
     "if (a === 'pr' && b === 'view') { const v = (cfg.views && cfg.views[n]) || cfg.view; if (!v) process.exit(1); console.log(JSON.stringify(v)); }",
+    "if (a === 'api' && b === 'graphql') console.log(JSON.stringify({ data: { repository: { pullRequest: { ...cfg.view, isInMergeQueue: false, timelineItems: { nodes: [] } } } } }));",
     "if (a === 'pr' && b === 'list') console.log(JSON.stringify(cfg.list || []));",
     "if (a === 'pr' && b === 'create') console.log(cfg.createUrl || 'https://github.com/acme/repo/pull/7');",
   ].join('\n'), { mode: 0o755 });

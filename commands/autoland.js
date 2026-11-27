@@ -1292,6 +1292,8 @@ function slowStepLine(receipt, thresholdMs = SLOW_STEP_MS) {
 // full verify took; 0 is a real value, a missing one stays missing.
 function greenVerdictRow(v) {
   const row = { branch: v.branch, action: v.action, reason: v.reason || null, detail: v.detail || null, failing: v.verify ? v.verify.failing : undefined };
+  // Not checked this run: what it was the last time it was.
+  if (v.was) row.was = v.was;
   if (v.verify && Number.isFinite(v.verify.duration_ms)) row.duration_ms = v.verify.duration_ms;
   // A failed check keeps its exit code and the line that says what broke,
   // so a red or could-not-tell row is never just a word.
@@ -1576,8 +1578,10 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
         handed_back: green.handed_back,
         red: green.red,
         could_not_tell: green.could_not_tell,
+        not_rechecked: green.not_rechecked,
         verdicts: green.verdicts.map(greenVerdictRow),
         summary: summaryLine(green),
+        waiting: green.waiting_pile ? green.waiting_pile.line : null,
       };
       state.green_landing = { at: green.at, ...receipt.green_landing };
     } catch (err) {

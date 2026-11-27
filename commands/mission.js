@@ -4,7 +4,6 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
 const { memberProcessPrompt, currentWorkPrompt } = require('../lib/member-context');
@@ -25,30 +24,20 @@ const {
 } = require('../lib/brief-ledger');
 const {
   resolveClaudeRunnerModel,
-  resolvePinnedRunnerModel,
-  runnerModelFor,
   resolveClaudeRunnerBin,
   resolveClaudeRunnerCommandTemplate,
   buildRunnerCommand,
   codexJsonEventsCommand,
   CLAUDE_SLIM_ARGS,
   slimLaunchSpendStop,
-  RUNNER_PROFILE_DEFS,
-  RUNNER_PROFILE_ALIASES,
-  RUNNER_PROFILE_NAMES,
 } = require('../lib/runner-command');
 const {
-  resolveEngineForRoleWithPreference,
   engineFailureHealthStatus,
-  engineStallReason,
   engineRegistryView,
-  recordEngineRunHealth,
   setEngineHealth,
 } = require('../lib/engine-registry');
-const { appendRosterRun, parseRunUsage } = require('../lib/roster-runs');
+const { parseRunUsage } = require('../lib/roster-runs');
 const {
-  FUNCTIONAL_MEMBER_TOPICS,
-  listWorkspaceMemberSlugs,
   normalizeOwnerSlug,
   resolveFunctionalOwner,
 } = require('../lib/functional-owner');
@@ -77,7 +66,6 @@ const {
 const { compactMissionLedger } = require('../lib/mission-ledger-compact');
 const autolandLib = require('../lib/autoland');
 const { gateForHuman, landingWhyClause } = require('../lib/voice-gate');
-const { operatorReady, hasAgentJargon } = require('./autoland');
 const {
   MISSION_INSPECT_FIELDS,
   readFieldsFlag,
@@ -89,11 +77,8 @@ const {
 } = require('../lib/inspect-fields');
 const {
   displayNumber,
-  meaningfulWords,
   nextRecordNumber,
   recordMatchesRef,
-  shortRecordLabel,
-  shortRecordRef,
 } = require('../lib/short-name');
 const {
   runCloudMissionCommand,
@@ -183,7 +168,6 @@ const {
   MISSION_RUN_BOOLEAN_FLAGS,
   DEFAULT_MISSION_RUN_OWNER_SLUGS,
   missionRunInputRequired,
-  askLine,
   removeValueFlag,
   missionRunOwnerRef,
   missionRunArgsWithOwner,
@@ -2108,7 +2092,10 @@ function missionFromArgs(args) {
     exitMissionError('mission start got more than one --yes-lock, so it is not clear which seal applies; nothing started', 2, wantsJson(args));
   }
   const handoffSeal = String(process.env.ATRIS_HANDOFF_YES_LOCK || '').trim();
-  const yesLocks = readYesLockSeal(handoffSeal || readFlag(args, '--yes-lock', ''), wantsJson(args));
+  // A run woken by a handoff runs under the fixed handoff seal, kind and all,
+  // as Atris made it; the environment only says that it was woken.
+  const flagSeal = readYesLockSeal(handoffSeal || readFlag(args, '--yes-lock', ''), wantsJson(args));
+  const yesLocks = handoffSeal ? require('../lib/yes-lock').handoffSeal() : flagSeal;
   const yesLockParent = yesLocks.length
     ? String((handoffSeal ? process.env.ATRIS_HANDOFF_YES_LOCK_PARENT : readFlag(args, '--yes-lock-parent', '')) || '').trim()
     : '';
@@ -5978,6 +5965,16 @@ function missionProtectedLaneHold(mission, root = process.cwd()) {
   return hold ? { pause_reason: hold.pause_reason } : null;
 }
 
+// The seal a tick runs under: the job's own sealed owner steps, else, when the
+// member's standing mission has words the owner has not confirmed, the fixed
+// unconfirmed seal (lib/standing-text.js).
+function missionTickSeal(mission, cwd) {
+  const steps = (mission.yes_locks && mission.yes_locks.steps) || [];
+  if (steps.length) return steps;
+  const root = mission.worktree_root || mission.worktree?.path || cwd;
+  return require('../lib/standing-text').unconfirmedSeal(mission, root, path.join(require('../lib/state-home').atrisHome(), 'state')) || [];
+}
+
 function campaignApprovedLane(root, campaignId, lane) {
   try {
     const { openCampaignStore } = require('../lib/campaign-store');
@@ -8059,7 +8056,9 @@ function buildPreloadedMemberContextLines(mission, root = process.cwd()) {
       sections.push(`### Member Soul (atris/team/${owner}/SOUL.md)`, soulMd);
     }
     if (missionMd) {
-      sections.push(`### Member Standing Mission (atris/team/${owner}/MISSION.md)`, missionMd);
+      const unconfirmed = !require('../lib/standing-text').standingConfirmed(owner, baseRoot).confirmed
+        ? ', with words the owner has not confirmed, so it gives you no say over landing, publishing, sending or spending' : '';
+      sections.push(`### Member Standing Mission (atris/team/${owner}/MISSION.md${unconfirmed})`, missionMd);
     }
     try {
       const skillsDir = path.join(teamMemberDir, 'skills');
@@ -8476,7 +8475,7 @@ function spawnGenericRunnerTick(mission, opts) {
     }
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: missionTickSeal(mission, cwd), stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
     } catch (error) {
       resolve({
         ok: false,
@@ -8662,7 +8661,7 @@ function spawnClaudeTick(mission, opts) {
   return new Promise((resolve) => {
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: missionTickSeal(mission, cwd), stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
     } catch (error) {
       resolve({
         ok: false,
@@ -9719,7 +9718,7 @@ async function executeMissionRunTicksPhase(context) {
         const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, cycleTickLimit, frozen, pendingMissionPings(mission), cwd, ticks.length + 1);
         let atris2GitGuard = null;
         try {
-          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
+          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: missionTickSeal(mission, cwd), stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
         } catch (error) {
           result = {
             ...result,

@@ -508,7 +508,7 @@ function mapPromptSection(targetDir, cwd = process.cwd()) {
 
 async function planAtris(userInput = null) {
   const { loadConfig } = require('../utils/config');
-  const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
+  const { ensureValidCredentials } = require('../utils/auth');
   const { apiRequestJson } = require('../utils/api');
   const { executeCodeExecution } = require('../utils/claude_sdk');
   const args = process.argv.slice(3);
@@ -963,7 +963,7 @@ function executorAgentPrompt({ filteredTasks = '', taskSource = 'atris/TODO.md',
 
 async function doAtris() {
   const { loadConfig } = require('../utils/config');
-  const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
+  const { ensureValidCredentials } = require('../utils/auth');
   const { apiRequestJson } = require('../utils/api');
   const { executeCodeExecution } = require('../utils/claude_sdk');
   const args = process.argv.slice(3);
@@ -1337,7 +1337,7 @@ async function doAtris() {
 
 async function reviewAtris() {
   const { loadConfig } = require('../utils/config');
-  const { loadCredentials, ensureValidCredentials } = require('../utils/auth');
+  const { ensureValidCredentials } = require('../utils/auth');
   const { apiRequestJson } = require('../utils/api');
   const { executeCodeExecution } = require('../utils/claude_sdk');
   const args = process.argv.slice(3);

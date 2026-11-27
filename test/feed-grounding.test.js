@@ -13,7 +13,7 @@ const tasks = require('../lib/task-db');
 const feed = require('../lib/feed-core');
 const team = require('../lib/feed-team');
 const digest = require('../lib/feed-digest');
-const { project } = require('./helpers/feed-project');
+const { changed, project } = require('./helpers/feed-project');
 
 function seed(ctx) {
   const w = (rel, text) => { fs.mkdirSync(path.dirname(path.join(ctx.root, rel)), { recursive: true }); fs.writeFileSync(path.join(ctx.root, rel), text); };
@@ -104,6 +104,7 @@ test('source: a member that cannot say what sparked its ideas is asked less ofte
   }
   const rows = require('../lib/feed-core')._internal.ideaRows(ctx.root);
   assert.ok(rows.every((row) => row.metadata.feed.unsourced === true));
+  changed(ctx);
   team.ping(ctx.root, { reason: 'scroll', env: { ...ctx.env, ATRIS_FEED_MEMBER_GAP_SECONDS: '0' }, deps: ctx.deps });
   assert.deepEqual(ctx.thinkers[0].names, ['writer', 'scout'], 'asked after the others, never left out');
 });

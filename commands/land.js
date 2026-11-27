@@ -1105,6 +1105,7 @@ function landCommand(args = []) {
       });
       if (json) console.log(JSON.stringify(result, null, 2));
       else console.log(`green landing: ${summaryLine(result)}`);
+      if (!json && result.waiting_pile) console.log(result.waiting_pile.line);
       return 0;
     } catch (err) {
       return finishLandError(err, json);

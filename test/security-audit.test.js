@@ -174,6 +174,29 @@ test('map sees Ruby and Go entry points, crypto, and gem manifests', () => {
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
+test('map seeds agent blast radius from deletes, test setup, and prose rules', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sentinel-blast-'));
+  try {
+    for (const dir of ['scripts', 'tests', 'lib']) fs.mkdirSync(path.join(root, dir));
+    fs.writeFileSync(path.join(root, 'scripts', 'clean.sh'), '#!/bin/bash\nrm -rf "$BUILD_DIR/"\n');
+    fs.writeFileSync(path.join(root, 'tests', 'conftest.py'), 'import os\ndef pytest_sessionstart(session):\n    Base.metadata.drop_all(engine)\n');
+    fs.writeFileSync(path.join(root, 'tests', 'test_users.py'), 'def test_x():\n    Base.metadata.drop_all(engine)\n');
+    fs.writeFileSync(path.join(root, 'CLAUDE.md'), '# Rules\n\nNever push to production without asking.\n');
+    fs.writeFileSync(path.join(root, 'lib', 'note.js'), '// never delete prod rows here\nmodule.exports = {};\n');
+    const { units } = audit.mapTarget(root, { profile: 'standard' });
+    const pairs = new Set(units.map((u) => `${u.starting_paths[0]} ${u.attack_class}`));
+    for (const want of [
+      'scripts/clean.sh agent-blast-radius',
+      'tests/conftest.py agent-blast-radius',
+      'CLAUDE.md agent-blast-radius',
+    ]) assert.ok(pairs.has(want), `missing ${want}`);
+    assert.ok(!pairs.has('tests/test_users.py agent-blast-radius'), 'ordinary test files stay skipped');
+    assert.ok(!pairs.has('lib/note.js agent-blast-radius'), 'a code comment is not a prose rule');
+    assert.ok(!units.some((u) => u.starting_paths[0] === 'tests/conftest.py' && u.attack_class !== 'agent-blast-radius'), 'test setup is read only for this class');
+    assert.deepStrictEqual(audit.validateLedger(units), []);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
 test('ledger validator enforces the state table', () => {
   const root = makeRepo();
   try {
@@ -382,5 +405,45 @@ test('an area a hunter could not settle is named in the report', () => withHome(
     });
     const res = await audit.runAudit({ root, profile: 'standard', runJobs });
     assert.match(fs.readFileSync(path.join(res.dir, 'REPORT.md'), 'utf8'), /Could not settle\n\n- path-traversal in lib\/files\.js: who writes this folder/);
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}));
+
+test('when the checks run out, the report and the landing list each unchecked lead as unchecked', () => withHome(async () => {
+  const root = makeRepo();
+  const out = [];
+  const origLog = console.log;
+  try {
+    const engines = fakeEngines([]);
+    // Hunters answer; every verifier call gets no answer, like a spent budget.
+    const runJobs = async (jobs) => (await engines(jobs)).map((a, i) => (jobs[i].prompt.includes('independent security verifier') ? { ok: false, reason: 'budget', stdout: '' } : a));
+    const res = await audit.runAudit({ root, profile: 'standard', runJobs });
+    assert.strictEqual(res.meta.incomplete_reason, 'validation_budget_exhausted');
+    assert.deepStrictEqual(res.meta.unchecked.map((u) => [u.title, u.location]), [[CANDIDATE.title, 'lib/run.js:4']]);
+    const report = fs.readFileSync(path.join(res.dir, 'REPORT.md'), 'utf8');
+    assert.match(report, /1 lead not checked yet\./);
+    assert.match(report, /## Not checked yet\n\nThe check budget ran out before these leads were checked\. They are not findings and not disproved\. The next run checks them first\.\n\n- unchecked: Task title runs as shell code \(lib\/run\.js:4\)/);
+    const saved = JSON.parse(fs.readFileSync(path.join(res.dir, 'run-metadata.json'), 'utf8'));
+    assert.strictEqual(saved.unchecked.length, 1);
+
+    const { auditCommand } = require('../commands/security-review');
+    console.log = (...a) => out.push(a.join(' '));
+    assert.strictEqual(await auditCommand(['status'], { root }), 0);
+    console.log = origLog;
+    const text = out.join('\n');
+    assert.match(text, /1 lead not checked yet\. it is not disproved; the next run checks it first/);
+    assert.match(text, /unchecked Task title runs as shell code \(lib\/run\.js:4\)/);
+  } finally {
+    console.log = origLog;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}));
+
+test('a complete run lists nothing as unchecked', () => withHome(async () => {
+  const root = makeRepo();
+  try {
+    const res = await audit.runAudit({ root, profile: 'standard', runJobs: fakeEngines([]) });
+    assert.strictEqual(res.meta.run_status, 'complete');
+    assert.deepStrictEqual(res.meta.unchecked, []);
+    assert.doesNotMatch(fs.readFileSync(path.join(res.dir, 'REPORT.md'), 'utf8'), /Not checked yet|not checked yet/);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 }));

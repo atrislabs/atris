@@ -1173,7 +1173,12 @@ async function checkCommand(args, context = {}) {
   if (sub === 'replay') return replayCommand(root, map, options, log);
   if (sub === 'land') return landCommand(root, map, landSha, options, log);
   if (options.verify) return verifyReceipt(root, map, options, log);
-  if (options.push) return pushCommand(root, map, options, log);
+  if (options.push) {
+    const code = await pushCommand(root, map, options, log);
+    const pile = code === EXIT.usage ? '' : require('../lib/waiting-pile').reportLine(root);
+    if (pile) log(pile);
+    return code;
+  }
   return (await evaluate(root, map, options, log)).code;
 }
 

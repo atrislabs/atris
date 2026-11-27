@@ -274,6 +274,31 @@ test('a receipt cannot be reused once the code changes', async (t) => {
   assert.match(after.out, /different code/);
 });
 
+test('a receipt cannot be reused after an edit in the same Git timestamp tick', async (t) => {
+  const { root } = project(t, { map: BASE_MAP });
+  const source = path.join(root, 'src/feature.js');
+  const tick = new Date('2020-01-01T00:00:00Z');
+  git(root, 'config', 'core.trustctime', 'false');
+  write(root, 'src/feature.js', 'module.exports = function feature() {\n  return 2;\n};\n');
+  fs.utimesSync(source, tick, tick);
+  const checked = await check(root, PROOF);
+  assert.equal(checked.code, 0, checked.out);
+  const file = path.join(root, '.atris', 'receipts', `check-${git(root, 'rev-parse', 'HEAD').slice(0, 12)}.json`);
+  commit(root);
+  const before = await check(root, ['--verify', '--receipt', file]);
+  assert.equal(before.code, 0, before.out);
+
+  const index = path.resolve(root, git(root, 'rev-parse', '--git-path', 'index'));
+  fs.utimesSync(index, tick, tick);
+  write(root, 'src/feature.js', 'module.exports = function feature() {\n  return 3;\n};\n');
+  fs.utimesSync(source, tick, tick);
+  assert.equal(git(root, '--no-optional-locks', 'diff', '--name-only'), 'src/feature.js');
+
+  const after = await check(root, ['--verify', '--receipt', file]);
+  assert.equal(after.code, 1, after.out);
+  assert.match(after.out, /different code/);
+});
+
 test('a receipt made from a hand-picked --files list never verifies', async (t) => {
   const { root } = project(t, { map: BASE_MAP });
   write(root, 'src/feature.js', 'module.exports = function feature() {\n  return 2;\n};\n');

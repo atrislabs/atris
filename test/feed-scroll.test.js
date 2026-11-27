@@ -10,10 +10,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const feed = require('../lib/feed-core');
 const team = require('../lib/feed-team');
-const { project } = require('./helpers/feed-project');
+const { changed, project } = require('./helpers/feed-project');
 const { runScrollCheck } = require('../scripts/feed-scroll-check');
 
-test('found: thirty asks in a row with two awake members, passing every idea, each bring a new card', async () => {
+test('found: thirty presses of refresh in a row with two awake members, passing every idea, each bring a new card', async () => {
   const out = await runScrollCheck({ asks: 30 });
   assert.deepEqual(out.empty, [], JSON.stringify(out.empty));
   assert.ok(out.waited_ms > 0, 'a member asked a moment ago made the ask wait a few seconds, not refuse');
@@ -52,6 +52,7 @@ test('found: ideas from an ask are held to the day\'s limit, not the member\'s o
   ctx.deps.turn = async ({ onText }) => { n += 1; const text = `IDEA\nTITLE: A fresh soap idea number ${n} today\nWHY: Buyers\nEND\n`; onText(text); return { ok: true, text }; };
   for (let i = 0; i < 3; i += 1) {
     const events = [];
+    changed(ctx);
     await team.pingStream(ctx.root, { reason: 'scroll', env, deps: ctx.deps, onEvent: (e) => events.push(e) });
     assert.equal(events.filter((e) => e.type === 'card_done').length, 1, `ask ${i + 1}`);
   }
@@ -65,6 +66,7 @@ test('found: an ask whose thinker crashed clears, and the next ask goes ahead', 
   const out = team.ping(ctx.root, { reason: 'scroll', env: ctx.env, deps: { ...ctx.deps, isAlive: (pid) => pid !== 999999 } });
   assert.equal(out.pinged, 1, out.reason);
   fs.writeFileSync(marker, JSON.stringify({ pid: process.pid, at: new Date(Date.now() - 10 * 60000).toISOString() }));
+  changed(ctx);
   assert.equal(team.ping(ctx.root, { reason: 'scroll', env: { ...ctx.env, ATRIS_FEED_MEMBER_GAP_SECONDS: '0' }, deps: ctx.deps }).pinged, 1, 'a thought older than its limit no longer holds the ask');
 });
 

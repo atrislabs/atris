@@ -18,10 +18,12 @@ function setup() {
   return { tmp, root, opts, cleanup: () => fs.rmSync(tmp, { recursive: true, force: true }) };
 }
 
+// Written where older versions kept runs (the bare folder name); backfill
+// moves the ones whose target is this project into its own history.
 function writeRun(opts, project, n, meta, findings) {
   const dir = path.join(opts.recordHome, project, `run-${n}`);
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, 'run-metadata.json'), JSON.stringify({ run_id: `run-${n}`, run_status: 'complete', coverage: { in_scope: 10, done: 4 }, ...meta }));
+  fs.writeFileSync(path.join(dir, 'run-metadata.json'), JSON.stringify({ run_id: `run-${n}`, run_status: 'complete', target: path.join(path.dirname(opts.recordHome), project), coverage: { in_scope: 10, done: 4 }, ...meta }));
   fs.writeFileSync(path.join(dir, 'findings.json'), JSON.stringify(findings));
   return dir;
 }

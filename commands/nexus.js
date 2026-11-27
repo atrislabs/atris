@@ -22,6 +22,7 @@ const capture = require('./nexus-capture');
 const importer = require('./nexus-import');
 const hour = require('./nexus-hour');
 const experiments = require('./nexus-experiments');
+const rank = require('./nexus-rank');
 
 const USAGE = [
   'atris nexus: your people, the same cards as atris.ai/dashboard/nexus',
@@ -61,6 +62,7 @@ const USAGE = [
   ...importer.HELP,
   ...hour.HELP,
   ...experiments.HELP,
+  ...rank.HELP,
   '  --json on any of these prints one JSON object for agents (the store\'s own answer when it answers)',
   'The store is tried first. If it does not answer, reads use the saved list; changes are never saved there (wall, goal, due, paid, city, bring-over and the filters need the store).',
 ].join('\n');
@@ -81,6 +83,31 @@ const FILTERED = new Set(['list', 'find', 'search']);
 const FILTERS_NEED_STORE = 'The people store did not answer, and --stage, --closeness and --group need it. Try again in a moment.';
 const STAGE_WORDS = { found: 'prospect', reached: 'sent', replied: 'replied', met: 'met', paying: 'paying', partner: 'partner' };
 const NAME_LIMIT = 10;
+
+/** A real calendar day written YYYY-MM-DD. */
+function realDay(text) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(text || '').trim());
+  if (!m) return false;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.getUTCFullYear() === Number(m[1]) && d.getUTCMonth() === Number(m[2]) - 1 && d.getUTCDate() === Number(m[3]);
+}
+
+// window and decides are set on one column, through the same path (and the same rules) as set.
+function shortcut(words) {
+  const [word, name] = words;
+  const rest = words.slice(2).map((w) => String(w).trim()).filter(Boolean);
+  if (word === 'window') {
+    if (!String(name || '').trim() || rest.length !== 1) return { error: 'atris nexus window needs a name and one date, like: atris nexus window "Rae Sample" 2026-12-15 --source <link>' };
+    if (rest[0].toLowerCase() === 'clear') return { words: ['unset', name, 'window_ends'] };
+    if (!realDay(rest[0])) return { error: `"${rest[0]}" is not a real date. Use YYYY-MM-DD, like 2026-12-15, or clear to take it off.` };
+    return { words: ['set', name, 'window_ends', rest[0]] };
+  }
+  if (word === 'decides') {
+    if (!String(name || '').trim() || !rest.length) return { error: 'atris nexus decides needs a name and who decides, like: atris nexus decides "Rae Sample" "Rae, the owner" --source <link>' };
+    return { words: ['set', name, 'decider', rest.join(' ')] };
+  }
+  return { words };
+}
 
 function parseArgs(args) {
   const words = [];
@@ -128,7 +155,8 @@ function peopleClient(request, token) {
 
 async function defaultToken() {
   const creds = await ensureFreshCredentials(apiRequestJson);
-  return { token: tokenFrom(creds) };
+  const account = creds && typeof creds.user_id === 'string' ? creds.user_id : '';
+  return { token: tokenFrom(creds), account };
 }
 
 /** One person by name: exact (any case) first, else the only name holding the words. */
@@ -219,13 +247,21 @@ async function nexusCommand(args = [], deps = {}) {
   const log = deps.log || console.log;
   const err = deps.err || console.error;
   const now = deps.now ? deps.now() : new Date();
-  const { words, flags } = parseArgs(args);
+  const parsedArgs = parseArgs(args);
+  const { flags } = parsedArgs;
   const json = !!flags.json;
 
-  if (flags.help || words[0] === 'help') {
+  if (flags.help || parsedArgs.words[0] === 'help') {
     log(USAGE);
     return 0;
   }
+  const short = shortcut(parsedArgs.words);
+  if (short.error) {
+    if (json) log(JSON.stringify({ ok: false, error: short.error }));
+    else err(short.error);
+    return 2;
+  }
+  const words = short.words;
   const sub = SUBS.has(words[0]) ? words[0] : null;
 
   const fail = (message, extra = {}) => {
@@ -251,6 +287,9 @@ async function nexusCommand(args = [], deps = {}) {
   // Before the person-search fallback, so "atris nexus score" never looks up a person called "score".
   if (experiments.SUBS.has(words[0])) {
     return experiments.run({ rawArgs: args, log, err, now, request: deps.apiRequestJson || apiRequestJson, getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN, confirm: deps.confirm });
+  }
+  if (rank.SUBS.has(words[0])) {
+    return rank.run({ rawArgs: args, log, err, now, request: deps.apiRequestJson || apiRequestJson, getToken: deps.getToken || defaultToken, notLoggedIn: NOT_LOGGED_IN });
   }
 
   // The local copy: pull and push-notes sign in; local reads only files on this computer.

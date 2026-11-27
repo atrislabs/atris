@@ -9,11 +9,12 @@ const { apiRequestJson } = require('../utils/api');
 const { NOT_LOGGED_IN } = require('../lib/developer-api');
 const { parseArgs, loginToken, relativeTime, clip } = require('../lib/business-target');
 const { resolveChannelBusiness, boardWhy, memberName, lookupMember } = require('../lib/team-board');
+const { reachedLines } = require('./tell');
 
 // Words that are verbs here, so no channel can be called one of them.
 const REPORTS = ['done', 'failed', 'blocked'];
 const VERBS = new Set(['list', 'claim', ...REPORTS]);
-const FLAGS = { switches: ['new'], values: ['channel', 'limit', 'task', 'as'] };
+const FLAGS = { switches: ['new'], values: ['channel', 'limit', 'task', 'as', 'reply_to'] };
 const OVERVIEW_PER_CHANNEL = 3;
 // The server reads the newest limit x 3 posts of the whole business and then
 // keeps one channel's, so a small limit hides a quiet channel's older posts.
@@ -29,11 +30,14 @@ function channelHelp(log = console.log) {
        atris channel done <task-key> "summary"         report it done (also: failed, blocked)
        atris channel list                              channel names only
 
+to reach one member: atris tell <member> "..."
+
 options:
   --business <slug>   which business (else ATRIS_BUSINESS, this folder's business, or your only one)
   --as <member>       post, claim, and report as that team member (else ATRIS_AGENT, else you)
   --channel <name>    for claim and done: skip the search for the task's channel
   --limit <n>         posts to read, 1 to 50 (default 20)
+  --reply-to <post>   link this answer to the original question in this channel (use --json to see post IDs)
   --new               post to a channel that does not exist yet
   --json              raw replies from the server
 
@@ -153,6 +157,10 @@ async function channelCommand(args = [], deps = {}) {
   // Writes go out as a team member when one is named (--as, else ATRIS_AGENT),
   // so a member's post reads as that member, not as the signed-in person. A
   // member that cannot be found stops the write; it never falls back to you.
+  if (flags.reply_to !== undefined && (verb || !name || !text || !String(flags.reply_to).trim())) {
+    err('--reply-to needs a question post ID and an answer to post in that channel');
+    return 1;
+  }
   const writes = (verb && verb !== 'list') || (name && text);
   const env = deps.env || process.env;
   const asWho = memberName(flags, env);
@@ -192,10 +200,17 @@ async function channelCommand(args = [], deps = {}) {
     if (!channels) return 1;
     if (!channels.includes(name) && !flags.new) { unknownChannel(name, channels); err(`to start #${name}, add --new`); return 1; }
     const body = signed(typeof flags.task === 'string' ? { content: text, task_key: flags.task } : { content: text });
+    if (flags.reply_to) body.reply_to_post_id = flags.reply_to;
     const res = await call(`/channels/${encodeURIComponent(name)}/posts`, { method: 'POST', body });
     if (!res || !res.ok) { err(`could not post to #${name}: ${why(res)}`); return 1; }
-    if (flags.json) say(res);
-    else log(body.task_key ? `posted task ${body.task_key} to #${name}${byline}. claim it: atris channel claim ${body.task_key}` : `posted to #${name}${byline}`);
+    if (body.reply_to_post_id && res.data?.reply_to_post_id !== body.reply_to_post_id) {
+      err('The message was posted but the server did not confirm the question link. Check the posted message before retrying.');
+      if (flags.json) say(res);
+      return 1;
+    }
+    if (flags.json) { say(res); return 0; }
+    log(body.task_key ? `posted task ${body.task_key} to #${name}${byline}. claim it: atris channel claim ${body.task_key}` : `posted to #${name}${byline}`);
+    for (const line of reachedLines(res.data)) log(line);
     return 0;
   }
 

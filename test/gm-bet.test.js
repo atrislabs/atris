@@ -2966,17 +2966,53 @@ test('yes lock on the desk: do it locks the owner steps before the job runs; a h
   assert.deepEqual([held.hold, held.steps], [true, [3]]);
   h.d.pollJobs();
   const card = h.d.next();
-  assert.deepEqual([card.kind, card.job.what], ['yes', 'publish the page and post the recording on x']);
+  assert.deepEqual([card.kind, card.job.what], ['yes', 'builder wants to publish atris to npm'], 'the card names the held command, not the step');
   const yes = await h.d.answerYes();
   assert.deepEqual([yes.ok, yes.ack], [true, 'told builder yes.']);
   const ping = h.cli.find(a => a[1] === 'ping');
   assert.deepEqual(ping.slice(0, 3), ['mission', 'ping', 'm-new']);
-  assert.match(ping[3], /the owner said yes to step 3: publish the page and post the recording on x\. the guard lets it through now/);
+  assert.match(ping[3], /the owner said yes to step 3: builder wants to publish atris to npm\. the guard lets it through now/);
   assert.ok(yesLock.effectiveLocks(root, 'm-new', seal).locks[0].approved_at);
   assert.deepEqual(yesLock.check({ stateDir: root, missionId: 'm-new', seal, tool: 'npm', args: ['publish'] }).consume, [3], 'now it runs, once');
   // the job is told about the lock in its own words
   const start = h.cli.find(a => a[1] === 'start');
   assert.match(start[2], /a step marked "your yes" is locked until the owner says yes: publishing, pushing tags, releases, posting, sending, and merging to master are held by the guard on your PATH/);
+});
+
+// The yes card once showed the step's words ("publish the shop page") and its
+// yes let whatever the step held run: here a rollback the owner never saw.
+test('a held command is shown as itself in full; only a yes naming its hash lets it run', async () => {
+  const root = workspace();
+  const yesLock = require('../lib/yes-lock');
+  const seal = [{ step: 1, text: 'publish the shop page', categories: ['publish', 'post'] }];
+  const args = ['dist-tag', 'add', `shop-site@0.0.1-${'x'.repeat(120)}`, 'latest'];
+  const post = ['twitter', 'post', 'run `npm publish` now'];
+  const running = id => ({ id, owner: 'builder', status: 'running', created_at: new Date(NOW).toISOString(), human_asks: [] });
+  for (const [id, tool, a] of [['m-shop', 'npm', args], ['m-post', 'atris', post]]) {
+    yesLock.writeYesLocks(root, id, { seal });
+    assert.equal(yesLock.check({ stateDir: root, missionId: id, seal, tool, args: a }).hold, true);
+  }
+  const h = jobDesk(root, { 'm-shop': running('m-shop'), 'm-post': running('m-post') });
+  const [card, tweet] = h.d.jobDeck().cards;
+  assert.deepEqual([card.yes.what, tweet.yes.what], ['builder wants to change which version of shop-site npm installs', 'builder wants to post in public'], 'the rollback and the post, not the step or a command quoted in the post');
+  assert.deepEqual([card.yes.exact, tweet.yes.exact], [`npm ${args.join(' ')}`, "atris twitter post 'run `npm publish` now'"], 'the exact command, each argument kept whole');
+  const served = require('../lib/gm-card').wire(require('../lib/gm-card').deck({ id: 'd', at: 0, total: 2, card, columns: [] }));
+  assert.deepEqual([served.exact, served.options.find(o => o.id === 'yes').binds.hash], [`npm ${args.join(' ')}`, card.yes.hash], 'the phone gets the whole command and a yes bound to it');
+  assert.equal(yesLock.approveYesLock(root, 'm-shop', 1, seal), null, 'a yes to the step names no command');
+  assert.equal(yesLock.check({ stateDir: root, missionId: 'm-shop', seal, tool: 'npm', args }).hold, true);
+  assert.ok(yesLock.approveYesLock(root, 'm-shop', 1, seal, undefined, { hash: card.yes.hash }));
+  const once = yesLock.check({ stateDir: root, missionId: 'm-shop', seal, tool: 'npm', args });
+  assert.deepEqual([once.consume, once.claims.length], [[1], 1], 'the card\'s own yes lets it run once');
+  yesLock.consume(root, 'm-shop', seal, once.consume, { ok: true, claims: once.claims });
+  assert.equal(yesLock.check({ stateDir: root, missionId: 'm-shop', seal, tool: 'npm', args }).hold, true, 'the same command is held again');
+  // a request whose arguments cannot be read back is never offered a yes
+  const file = path.join(root, 'yes-locks', 'm-post.json');
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace(/"key": "[^\n]*",/, '"key": "{}",'));
+  const lost = h.d.jobDeck().cards[1].yes;
+  assert.deepEqual([lost.what, lost.why], ['builder has a held request that can no longer be read in full. it must be held again before it can be approved.', 'nothing here can be approved until it is held again.']);
+  assert.deepEqual([lost.exact, lost.unreadable, require('../lib/gm-card').deck({ id: 'd', at: 1, total: 2, card: { ...card, yes: lost }, columns: [] }).options.map(o => o.id)], [null, true, ['prev', 'next', 'no', 'later', 'back']]);
+  assert.equal((await h.d.answerYes({ key: lost.key, job: 'm-post' })).reason, 'unreadable');
+  assert.equal(yesLock.approveYesLock(root, 'm-post', 1, seal, undefined, { hash: lost.hash }), null);
 });
 
 test('page: the working line is static and lists who has each job; do it hands off to the next card', () => {
@@ -3649,7 +3685,7 @@ test('card contract: every kind of card is whole: a way forward, options that an
     const show = `${c.name}: ${JSON.stringify(c.wire)}`;
     assert.deepEqual(gmCard.cardProblems(c.card), [], show);
     // the page gets the contract and nothing the desk keeps to itself
-    assert.deepEqual(Object.keys(c.wire).filter(k => !['id', 'kind', 'title', 'body', 'options', 'input', 'job', 'table', 'thread', 'line', 'count', 'label', 'time', 'watch', 'progress', 'started_at', 'waited_ms'].includes(k)), [], show);
+    assert.deepEqual(Object.keys(c.wire).filter(k => !['id', 'kind', 'title', 'body', 'options', 'input', 'job', 'table', 'thread', 'exact', 'line', 'count', 'label', 'time', 'watch', 'progress', 'started_at', 'waited_ms'].includes(k)), [], show);
     for (const o of c.wire.options) assert.deepEqual(Object.keys(o).filter(k => !['id', 'label', 'action', 'binds', 'style', 'confirm', 'type', 'detail', 'chosen', 'cell', 'group'].includes(k)), [], show);
     assert.ok(c.wire.options.length > 0 || c.wire.input, show);
     // every card served has its own id

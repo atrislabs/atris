@@ -13,7 +13,6 @@ const {
   renderClarityMd,
   readProfile,
   writeProfile,
-  profilePaths,
 } = require('../lib/clarity');
 
 function parseSets(args) {

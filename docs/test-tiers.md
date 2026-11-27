@@ -1,5 +1,13 @@
 # Test tiers
 
+## What runs before merge
+
+Pull requests and queue entries run changed tests, tests that cover the changed code and two inexpensive repository checks. Changing the phone view includes its browser tests. Changes to shared infrastructure or files without a known owner get a quick pull request check and the full suite in the queue. Incomplete comparison history, the daily run and a manual full run all use eight full-suite groups.
+
+The CI plan in GitHub lists the chosen tests. To measure a merged change, run `node scripts/merge-time.js <pull request number>` from this repository with GitHub CLI signed in. The first number includes all time from opening through merge, including reviews and retries. The second measures only the last successful entry into the queue. The target for a routine change ready at opening is under 180 seconds end to end.
+
+## Historical local timings
+
 Measured on 2026-07-06 in the CLI worktree with `node --test <file>` for every `test/*.test.js` file. Timings are a snapshot, not a current measurement. The fast tier uses `test/fast-tests.txt`: every measured file in that list ran in about 2s or less, plus `test/smoke.fast.test.js` and `test/coverage.fast.test.js`.
 
 `npm test` remains the full trusted suite (`node --test`). Recommended agent flight verify is:

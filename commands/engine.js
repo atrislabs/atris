@@ -1220,12 +1220,6 @@ function expiringWorkers(jobs) {
   return list;
 }
 
-function untilText(worker, days = null) {
-  const until = parseRosterUntil(worker.until);
-  if (until) return `until ${shortDay(worker.until)}${endsSoon(days) ? `, ${endsInText(days)}` : ''}`;
-  return worker.never_expires ? 'no end date' : 'until no valid date';
-}
-
 // One line under the jobs when any worker ends within seven days, naming
 // each one and the command that keeps it going.
 function renderExpiringLine(expiring) {
