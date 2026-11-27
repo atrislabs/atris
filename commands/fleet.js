@@ -14,6 +14,8 @@
  *   atris fleet up <member>...   : Activate team members on the hub
  *   atris fleet down <member>... : Deactivate launched members
  *   atris fleet launched         : List activated members (alias: roster)
+ *   atris fleet watch            : Nudge launched members when work waits
+ *   atris fleet tail [sec]       : Live-tail the board
  */
 
 const http = require('http');
@@ -285,7 +287,7 @@ async function fleetPrune(state, minutes = 60) {
   }
 }
 
-async function fleetWatch(state, intervalSec = 10) {
+async function fleetTail(state, intervalSec = 10) {
   const hubUrl = getHubUrl();
   const hubId = getHubId();
   const h = authHeaders(state);
@@ -737,6 +739,163 @@ async function fleetMemberLifecycle(subcommand, scopeArgs, { json } = {}) {
   await fleetUp(parsed, asJson);
 }
 
+// ── Member watch (doorbell) ──────────────────────────────
+//
+// `fleet watch` polls every launched member's hub for work addressed to it
+// and rings the doorbell — a board post that @mentions the member — when
+// something is pending. It never claims tasks, never posts heartbeats, and
+// never starts an engine: it is a doorbell, not a worker. The poll, dedup,
+// and nudge logic lives in lib/fleet-watch.js; this is flags, the loop, and
+// output. The board tail keeps the name `fleet tail`.
+
+// --interval takes seconds (`--interval 45` or `--interval=45`); a bare
+// number keeps the old `fleet watch <sec>` habit working as the interval.
+function parseFleetWatchArgs(args) {
+  const out = { intervalSec: 30, once: false, json: false, hub: '', server: '' };
+  const valueFlags = { '--interval': 'interval', '--hub': 'hub', '--server': 'server' };
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = String(args[i]);
+    const eq = arg.indexOf('=');
+    const isFlagValue = eq > 0 && arg.startsWith('--');
+    const flag = isFlagValue ? arg.slice(0, eq) : arg;
+    const inline = isFlagValue ? arg.slice(eq + 1) : null;
+    const takeValue = () => {
+      if (inline !== null) return inline;
+      const next = args[i + 1];
+      if (next === undefined || String(next).startsWith('--')) return '';
+      i += 1;
+      return String(next);
+    };
+    if (flag === '--once' && !isFlagValue) { out.once = true; continue; }
+    if (flag === '--json' && !isFlagValue) { out.json = true; continue; }
+    if (Object.prototype.hasOwnProperty.call(valueFlags, flag)) {
+      const value = takeValue();
+      if (flag === '--interval') {
+        const seconds = Number(value);
+        if (Number.isFinite(seconds) && seconds > 0) out.intervalSec = seconds;
+      } else {
+        out[valueFlags[flag]] = value;
+      }
+      continue;
+    }
+    if (/^\d+(\.\d+)?$/.test(arg)) out.intervalSec = Number(arg);
+  }
+  return out;
+}
+
+function watchEventLine(event) {
+  if (event.type === 'nudge') {
+    const kinds = event.kinds && Object.keys(event.kinds).length
+      ? ` (${Object.entries(event.kinds).map(([k, n]) => `${n} ${k}`).join(', ')})`
+      : '';
+    return `  → ${event.member} nudged on ${event.hub} (#${event.channel}): ${event.pending} waiting${kinds}`;
+  }
+  if (event.type === 'dropped') return `  · ${event.member} is no longer launched on ${event.hub}`;
+  if (event.type === 'recovered') return `  · ${event.member} is reachable again on ${event.hub}`;
+  return `  ! ${event.member}: ${event.reason}`;
+}
+
+async function fleetMembersWatch(scopeArgs, { json } = {}) {
+  const watch = require('../lib/fleet-watch');
+  const swarlo = require('../lib/swarlo-members');
+  const { workspaceRoot } = require('../lib/workspace-root');
+  const { isLocalMember, setMemberAwake } = require('../lib/member-switches');
+
+  const parsed = parseFleetWatchArgs(lifecycleTailArgs(scopeArgs, 'watch'));
+  const asJson = json || parsed.json;
+  const intervalSec = Math.max(1, parsed.intervalSec);
+  const root = workspaceRoot(process.cwd());
+
+  // The CLI's own hub key can sponsor watcher registrations, same as up.
+  const sponsorKeys = {};
+  try {
+    const state = loadState();
+    if (state.api_key && state.hub_id) sponsorKeys[state.hub_id] = state.api_key;
+  } catch {}
+
+  let polling = false;
+  const poll = async () => {
+    if (polling) return null;
+    polling = true;
+    try {
+      const launched = watch.filterLaunched(swarlo.loadLaunched(), parsed);
+      const result = await watch.pollOnce({
+        launched,
+        state: watch.loadWatchState(),
+        env: process.env,
+        sponsorKeyFor: (hub) => sponsorKeys[hub] || '',
+      });
+      watch.saveWatchState(result.state);
+      // The board mention is the doorbell; the awake switch is the same one
+      // `atris wake` flips, so a slept local member is marked awake too.
+      for (const event of result.events) {
+        if (event.type !== 'nudge') continue;
+        try {
+          if (isLocalMember(event.member, root)) setMemberAwake(event.member, true, root);
+        } catch {}
+      }
+      return result;
+    } catch {
+      return null; // transient: stay quiet, the next tick retries
+    } finally {
+      polling = false;
+    }
+  };
+
+  const emit = (result) => {
+    if (!result) return;
+    if (asJson) {
+      if (result.events.length) {
+        console.log(JSON.stringify({ at: result.at, events: result.events }, null, 2));
+      }
+      return;
+    }
+    for (const event of result.events) console.log(watchEventLine(event));
+  };
+
+  if (parsed.once) {
+    const result = await poll();
+    if (result) {
+      if (asJson) {
+        console.log(JSON.stringify({
+          at: result.at,
+          members: result.members,
+          events: result.events,
+        }, null, 2));
+      } else {
+        for (const event of result.events) console.log(watchEventLine(event));
+        if (!result.members.length) console.log('  No launched members.');
+      }
+    }
+    return;
+  }
+
+  const launchedCount = watch.launchedRows(watch.filterLaunched(swarlo.loadLaunched(), parsed)).length;
+  if (!asJson) {
+    console.log(launchedCount
+      ? `  Watching ${launchedCount} launched member${launchedCount === 1 ? '' : 's'} every ${intervalSec}s (Ctrl+C to stop)`
+      : '  No launched members yet. Ctrl+C to stop.');
+  }
+  emit(await poll());
+  const timer = setInterval(() => { poll().then(emit); }, intervalMs(intervalSec));
+
+  await new Promise((resolve) => {
+    const stop = () => {
+      clearInterval(timer);
+      process.off('SIGINT', stop);
+      process.off('SIGTERM', stop);
+      if (!asJson) console.log('\n  Stopped watching.\n');
+      resolve();
+    };
+    process.on('SIGINT', stop);
+    process.on('SIGTERM', stop);
+  });
+}
+
+function intervalMs(seconds) {
+  return Math.max(1, Number(seconds) || 30) * 1000;
+}
+
 // ── Main ────────────────────────────────────────────────
 
 async function fleet(args = []) {
@@ -759,7 +918,9 @@ async function fleet(args = []) {
     console.log('  fleet done <key>   report task complete (global)');
     console.log('  fleet members      who is online');
     console.log('  fleet prune [min]  remove stale members (default 60m)');
-    console.log('  fleet watch [sec]  live-tail the board (default 10s)');
+    console.log('  fleet watch [--interval sec] [--once] [--json]');
+    console.log('                      nudge launched members when work waits');
+    console.log('  fleet tail [sec]    live-tail the board (default 10s)');
     console.log('  fleet up <member>  activate team members on the hub');
     console.log('                      ([--hub id] [--server url] [--channels a,b]');
     console.log('                       [--engine member=profile] [--dry-run] [--json])');
@@ -774,14 +935,19 @@ async function fleet(args = []) {
     return;
   }
 
-  if (!scope.global && ['post', 'say', 'task', 'claim', 'done', 'report', 'prune', 'watch', 'tail'].includes(subcommand)) {
+  if (!scope.global && ['post', 'say', 'task', 'claim', 'done', 'report', 'prune', 'tail'].includes(subcommand)) {
     console.error('fleet mutations need the machine hub. re-run with --global.');
     process.exitCode = 1;
     return;
   }
 
-  // Member activation manages per-member hub identities; it always targets
-  // the machine hub, so it does not wait on --global or the CLI's own join.
+  // Member activation and watch manage per-member hub identities; they
+  // always target the machine hub, so they do not wait on --global or the
+  // CLI's own join.
+  if (subcommand === 'watch') {
+    await fleetMembersWatch(scope.args, { json });
+    return;
+  }
   if (['up', 'down', 'launched', 'roster'].includes(subcommand)) {
     await fleetMemberLifecycle(subcommand, scope.args, { json });
     return;
@@ -839,9 +1005,8 @@ async function fleet(args = []) {
     case 'prune':
       await fleetPrune(state, parseInt(rest) || 60);
       break;
-    case 'watch':
     case 'tail':
-      await fleetWatch(state, parseInt(rest) || 10);
+      await fleetTail(state, parseInt(rest) || 10);
       break;
     default:
       if (!scope.global) {
@@ -852,4 +1017,4 @@ async function fleet(args = []) {
   }
 }
 
-module.exports = { fleet, fleetWorkspaceStatus, parseFleetMemberArgs };
+module.exports = { fleet, fleetWorkspaceStatus, parseFleetMemberArgs, parseFleetWatchArgs };

@@ -693,7 +693,7 @@ async function gmWatch(args = []) {
       const events = newWatchEvents(await gmWatchSnapshot(args, seen), seen);
       for (const event of events) console.log(watchLine(event));
     } catch {
-      // Match fleet watch: quiet on transient poll failures.
+      // Match fleet tail: quiet on transient poll failures.
     } finally {
       polling = false;
     }
