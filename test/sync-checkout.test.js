@@ -180,6 +180,8 @@ test('sync-checkout --vault vaults untracked and tracked files through the real 
   try {
     fs.writeFileSync(path.join(checkout, 'tracked.txt'), 'my edit\n');
     fs.writeFileSync(path.join(checkout, 'scratch.txt'), 'untracked work\n');
+    fs.writeFileSync(path.join(checkout, 'intent-note.md'), 'intent to add work\n');
+    git(checkout, 'add', '-N', 'intent-note.md');
     const result = run(process.execPath, [cliPath, 'sync-checkout', '--vault', '--grace-minutes', '0'], checkout, {
       ...process.env,
       HOME: home,
@@ -191,9 +193,11 @@ test('sync-checkout --vault vaults untracked and tracked files through the real 
     assert.equal(snaps.length, 1);
     assert.ok(snaps[0].vaultedFiles.includes('tracked.txt'));
     assert.ok(snaps[0].vaultedFiles.includes('scratch.txt'));
+    assert.ok(snaps[0].vaultedFiles.includes('intent-note.md'));
     assert.equal(fs.existsSync(path.join(checkout, '.atris', 'state', 'vault-catalog.md')), true);
     assert.equal(fs.existsSync(path.join(checkout, 'scratch.txt')), false);
-    assert.match(result.stdout, /vaulted 2 file\(s\) to refs\/atris\/vault\//);
+    assert.equal(fs.existsSync(path.join(checkout, 'intent-note.md')), false);
+    assert.match(result.stdout, /vaulted 3 file\(s\) to refs\/atris\/vault\//);
     assert.match(result.stdout, /this checkout is up to date with origin\/master\./);
     assert.equal(git(checkout, 'rev-parse', 'HEAD'), git(checkout, 'rev-parse', 'origin/master'));
     assert.equal(fs.readFileSync(path.join(checkout, 'tracked.txt'), 'utf8'), 'second\n');
