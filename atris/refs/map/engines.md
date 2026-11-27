@@ -121,3 +121,5 @@ Verify: `npm run test:fast && node --test test/ax.test.js test/runner-command.te
 ## Revision reports across out-of-order commit dates
 
 Bounded process-reader output: `lib/engine-resource.js:94` gives only ps an eight MiB output allowance and keeps every command deadline at three seconds. Actual Node child regressions at `test/engine-resource-output-buffer.test.js:86` and `test/engine-resource-output-buffer.test.js:113` cover complete output above the former limit and unknown output above the new cap; nonzero, missing and signaled readers remain unknown. Check: `node --test test/engine-resource-output-buffer.test.js test/engine-dispatch.test.js test/engine-resource.test.js`.
+
+[The workspace roster](../../ROSTER.md) assigns each job a model and maps members to jobs. Scout and Navigator share search. Builder and Executor share build. [Computer Operator](../../team/computer-operator/MEMBER.md), [Computer Lead](../../team/computer-lead/MEMBER.md) and [Interoperability Translator](../../team/interop-translator/MEMBER.md) describe what each specialist owns.

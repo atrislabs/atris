@@ -3364,7 +3364,7 @@ if (command === 'guide') {
 } else if (command === 'fleet') {
   const args = process.argv.slice(3);
   require('../commands/fleet').fleet(args)
-    .then(() => exitAfterStdoutDrain(0))
+    .then(() => exitAfterStdoutDrain(process.exitCode || 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'loops' || command === 'self-improve') {
   try {

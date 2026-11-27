@@ -39,3 +39,9 @@ rg "founderCommand|--global|singleRepo|defaultScanRoot|isFreshWorkspace" command
 - `lib/fleet.js` (`boundedGit`) probes SSH setup once per landing or self-land runner. `lib/fleet.js:1897` shares the SSH-preserving Git environment for protected remote reads, with SIGKILL on network process timeouts; `lib/fleet.js:1973` accepts the pinned flight branch for sealed review snapshots, quarantine refs, and trusted import. The existing master-named receipt fields remain compatible and refer to the selected protected branch.
 
 - `lib/fleet.js:2958` applies the same prompt settings and a bounded fetch when checking a build that landed itself. The real-Git regression traces that alternate landing path as well.
+
+## Recovering a checked delivery after a restart
+
+Open [the coordination campaign](../../campaigns/cmp-coordination-spark/BRIEF.md) when a worker has lost its acknowledgement. `commands/fleet.js` sends a keyed report to the retry-safe receiver. `lib/element-swarm.js` binds completion to the current claim and stores its check. The [joint judge](../../campaigns/cmp-coordination-spark/judge.py) reads the resulting card and thread.
+
+For a cross-repository contract, start with [the two-repository example](../../campaigns/cmp-spark-repo-contract/BRIEF.md). `atris fleet verify` runs individually pinned local repository checks and then exercises their shared interface on fresh copies. [Runner](../../../lib/fleet-verify.js) [Independent exercise](../../campaigns/cmp-coordination-spark/join.py)
