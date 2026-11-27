@@ -8,11 +8,24 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const trace = require('../scripts/gm-phone-trace');
 const gmCard = require('../lib/gm-card');
+const { phonePage } = require('../lib/gm-phone-page');
 const { layout, CASES } = require('../scripts/gm-phone-layout');
 
 const CHROME = trace.findChrome();
 const skip = !CHROME && 'no chrome on this machine';
 const only = (...names) => CASES.filter(c => names.includes(c.name));
+
+test('layout: measure after a delayed animation has finished, not after a fixed sleep', { skip, timeout: 90000 }, async () => {
+  const page = (...args) => phonePage(...args).replace('</style>', `
+    @keyframes layout-test { from { margin-left: 0 } to { margin-left: 12px } }
+    #bet { animation: layout-test 850ms 150ms both; }
+  </style>`);
+  const rows = await layout({
+    chromePath: CHROME, cases: only('idea'), viewports: ['phone'], page,
+    probe: "getComputedStyle(document.getElementById('bet')).marginLeft",
+  });
+  assert.equal(rows[0].probe, '12px');
+});
 
 test('layout: on the swap card every model\'s note sits on its own line under its name', { skip, timeout: 90000 }, async () => {
   const probe = `Array.prototype.map.call(document.querySelectorAll('#bet button.choice'), function (b) {
