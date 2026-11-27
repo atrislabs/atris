@@ -269,7 +269,7 @@ test('the delayed remover waits for a pushed copy to be free, then removes it', 
   const ws = workspace(t);
   const copy = addCopy(ws, 'pushed-wait');
   git(copy, ['push', '-q', 'origin', 'codex/pushed-wait']);
-  const holder = spawn('sleep', ['2'], { cwd: copy, stdio: 'ignore' });
+  const holder = spawn('sleep', ['30'], { cwd: copy, stdio: 'ignore' });
   t.after(() => holder.kill('SIGKILL'));
   await new Promise((resolve) => holder.once('spawn', resolve));
   const reasons = [];
@@ -278,10 +278,11 @@ test('the delayed remover waits for a pushed copy to be free, then removes it', 
     target: copy,
     branch: 'codex/pushed-wait',
     settleMs: 0,
-    pollMs: 3000,
+    pollMs: 1000,
     remove: (options) => {
       const outcome = require('../lib/worktree-core').finishShippedCopy({ ...options, log: () => {}, schedule: () => ({}) });
       reasons.push(outcome.removed ? 'removed' : outcome.reason);
+      if (!outcome.removed) holder.kill('SIGKILL');
       return outcome;
     },
   });
