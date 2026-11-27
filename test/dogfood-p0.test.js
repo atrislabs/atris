@@ -345,7 +345,7 @@ test('P0-15: mission attach-task binds the live claimed task instead of spawning
       '--owner', 'mission-lead',
       '--runner', 'manual',
       '--lane', 'code',
-      '--verify', 'true',
+      '--verify', 'test -f atris/TODO.md',
       '--json',
     ], { cwd: dir, env });
     assert.equal(start.status, 0, start.stderr || start.stdout);
