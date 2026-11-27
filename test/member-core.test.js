@@ -117,3 +117,30 @@ test('lib/member-core path, goals, frontmatter, log, jsonl, and receipt helpers 
     assert.equal(memberCore.memberLiveMission('builder', new Map()), null);
   });
 });
+
+test('activeGoal skips retired, stopped, done, superseded, paused, completed, and archived goals unless asked directly by id', () => {
+  assert.equal(memberCore.activeGoal({ goals: [{ id: 'a', status: 'retired' }] }), null);
+  assert.equal(
+    memberCore.activeGoal({ goals: [{ id: 'a', status: 'stopped' }, { id: 'b', status: 'done' }] }),
+    null
+  );
+  assert.equal(
+    memberCore.activeGoal({
+      goals: [
+        { id: 'old', status: 'superseded' },
+        { id: 'hold', status: 'paused' },
+        { id: 'fin', status: 'completed' },
+        { id: 'arc', status: 'archived' },
+      ],
+    }),
+    null
+  );
+  assert.deepEqual(
+    memberCore.activeGoal({ goals: [{ id: 'a', status: 'retired' }, { id: 'b', status: 'active' }] }),
+    { id: 'b', status: 'active' }
+  );
+  assert.deepEqual(
+    memberCore.activeGoal({ goals: [{ id: 'a', status: 'retired' }] }, 'a'),
+    { id: 'a', status: 'retired' }
+  );
+});
