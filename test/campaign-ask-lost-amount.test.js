@@ -12,6 +12,7 @@ const { campaignCommand } = require('../commands/campaign');
 const { createMemoryStore, getCampaign } = require('../lib/campaign-store');
 
 const CLI = path.resolve(__dirname, '..', 'bin', 'atris.js');
+const HAS_ZSH = fs.existsSync('/bin/zsh') && spawnSync('/bin/zsh', ['-c', 'exit 0']).status === 0;
 
 function tempEnv(t) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-lost-amount-')));
@@ -120,40 +121,46 @@ test('campaign ask and campaign event ask_opened refuse shell-eaten amounts with
   assert.equal(getCampaign(store, 'cmp-spend').asks.length, 2);
 });
 
-test('real zsh double-quote stripping is caught by atris campaign ask while single quotes pass', (t) => {
+test('real shell double-quote stripping is caught by atris campaign ask while single quotes pass', (t) => {
   const { dir, env } = tempEnv(t);
   const started = spawnSync(
     process.execPath,
-    [CLI, 'campaign', 'start', 'Shell ask test', '--judge', 'exit 1', '--budget', '10', '--id', 'cmp-zsh'],
+    [CLI, 'campaign', 'start', 'Shell ask test', '--judge', 'exit 1', '--budget', '10', '--id', 'cmp-shell'],
     { cwd: dir, env, encoding: 'utf8' },
   );
   assert.equal(started.status, 0, started.stderr);
 
-  const zshCmd = (script) => spawnSync('/bin/zsh', ['-c', script], { cwd: dir, env, encoding: 'utf8' });
+  const shellCmd = (shellPath, script) => spawnSync(shellPath, ['-c', script], { cwd: dir, env, encoding: 'utf8' });
   const bin = `${JSON.stringify(process.execPath)} ${JSON.stringify(CLI)}`;
+  const shells = [
+    { path: '/bin/bash', bare: 'bash', zeroPathRe: /\/bin\/bash\.50/, zeroBareRe: /bash\.50/ },
+    ...(HAS_ZSH ? [{ path: '/bin/zsh', bare: 'zsh', zeroPathRe: /\/bin\/zsh\.50/, zeroBareRe: /zsh\.50/ }] : []),
+  ];
 
-  // Double-quoted $9/month: zsh expands $9 to empty -> "price is /month"
-  const strippedUnit = zshCmd(`${bin} campaign ask cmp-zsh "Published compute price is $9/month per instance"`);
-  assert.equal(strippedUnit.status, 2, strippedUnit.stdout + strippedUnit.stderr);
-  assert.match(strippedUnit.stderr, /price is \/month/);
-  assert.match(strippedUnit.stderr, /single quotes/i);
+  for (const sh of shells) {
+    // Double-quoted $9/month: shell expands $9 to empty -> "price is /month"
+    const strippedUnit = shellCmd(sh.path, `${bin} campaign ask cmp-shell "Published compute price is $9/month per instance"`);
+    assert.equal(strippedUnit.status, 2, `${sh.bare}: ${strippedUnit.stdout}${strippedUnit.stderr}`);
+    assert.match(strippedUnit.stderr, /price is \/month/);
+    assert.match(strippedUnit.stderr, /single quotes/i);
 
-  // Double-quoted $1,000: zsh expands $1 to empty -> ",000"
-  const strippedComma = zshCmd(`${bin} campaign ask cmp-zsh "Approve $1,000 for compute?"`);
-  assert.equal(strippedComma.status, 2, strippedComma.stdout + strippedComma.stderr);
-  assert.match(strippedComma.stderr, /,000/);
+    // Double-quoted $1,000: shell expands $1 to empty -> ",000"
+    const strippedComma = shellCmd(sh.path, `${bin} campaign ask cmp-shell "Approve $1,000 for compute?"`);
+    assert.equal(strippedComma.status, 2, `${sh.bare}: ${strippedComma.stdout}${strippedComma.stderr}`);
+    assert.match(strippedComma.stderr, /,000/);
 
-  // Double-quoted $0.50: /bin/zsh expands $0 to "/bin/zsh" -> "/bin/zsh.50", bare zsh expands $0 to "zsh" -> "zsh.50"
-  const strippedZeroPath = zshCmd(`${bin} campaign ask cmp-zsh "Token price is $0.50 per call?"`);
-  assert.equal(strippedZeroPath.status, 2, strippedZeroPath.stdout + strippedZeroPath.stderr);
-  assert.match(strippedZeroPath.stderr, /\/bin\/zsh\.50/);
+    // Double-quoted $0.50: /bin/<sh> expands $0 to "/bin/<sh>", bare <sh> expands $0 to "<sh>"
+    const strippedZeroPath = shellCmd(sh.path, `${bin} campaign ask cmp-shell "Token price is $0.50 per call?"`);
+    assert.equal(strippedZeroPath.status, 2, `${sh.bare}: ${strippedZeroPath.stdout}${strippedZeroPath.stderr}`);
+    assert.match(strippedZeroPath.stderr, sh.zeroPathRe);
 
-  const strippedZeroBare = spawnSync('zsh', ['-c', `${bin} campaign ask cmp-zsh "Token price is $0.50 per call?"`], { cwd: dir, env, encoding: 'utf8' });
-  assert.equal(strippedZeroBare.status, 2, strippedZeroBare.stdout + strippedZeroBare.stderr);
-  assert.match(strippedZeroBare.stderr, /zsh\.50/);
+    const strippedZeroBare = shellCmd(sh.bare, `${bin} campaign ask cmp-shell "Token price is $0.50 per call?"`);
+    assert.equal(strippedZeroBare.status, 2, `${sh.bare}: ${strippedZeroBare.stdout}${strippedZeroBare.stderr}`);
+    assert.match(strippedZeroBare.stderr, sh.zeroBareRe);
+  }
 
-  // Single-quoted $85/month survives zsh intact and succeeds.
-  const preserved = zshCmd(`${bin} campaign ask cmp-zsh 'Published compute price is $85/month per instance' --json`);
+  // Single-quoted $85/month survives shell intact and succeeds.
+  const preserved = shellCmd(shells[shells.length - 1].path, `${bin} campaign ask cmp-shell 'Published compute price is $85/month per instance' --json`);
   assert.equal(preserved.status, 0, preserved.stderr);
   const body = JSON.parse(preserved.stdout);
   assert.equal(body.campaign.asks.length, 1);
@@ -195,14 +202,20 @@ test('lostAmount avoids false positives on route/endpoint paths and catches bash
   const bashCmd = (script) => spawnSync('/bin/bash', ['-c', script], { cwd: dir, env, encoding: 'utf8' });
   const zshCmd = (script) => spawnSync('/bin/zsh', ['-c', script], { cwd: dir, env, encoding: 'utf8' });
 
-  for (const [label, res] of [
+  const shellCases = [
     ['bash $100/month', bashCmd(`${bin} campaign ask cmp-shells "Published compute price is $100/month per instance"`)],
     ['bash $10,000', bashCmd(`${bin} campaign ask cmp-shells "Approve $10,000 for compute?"`)],
     ['bash $1.50', bashCmd(`${bin} campaign ask cmp-shells "Approve $1.50 per call?"`)],
     ['bash $0.50', bashCmd(`${bin} campaign ask cmp-shells "Token price is $0.50 per call?"`)],
-    ['zsh [$1,000]', zshCmd(`${bin} campaign ask cmp-shells "Budget [$1,000] for compute?"`)],
-    ['zsh $1.50', zshCmd(`${bin} campaign ask cmp-shells "Approve $1.50 per call?"`)],
-  ]) {
+    ['bash [$1,000]', bashCmd(`${bin} campaign ask cmp-shells "Budget [$1,000] for compute?"`)],
+  ];
+  if (HAS_ZSH) {
+    shellCases.push(
+      ['zsh [$1,000]', zshCmd(`${bin} campaign ask cmp-shells "Budget [$1,000] for compute?"`)],
+      ['zsh $1.50', zshCmd(`${bin} campaign ask cmp-shells "Approve $1.50 per call?"`)],
+    );
+  }
+  for (const [label, res] of shellCases) {
     assert.equal(res.status, 2, `${label}: ${res.stdout}${res.stderr}`);
     assert.match(res.stderr, /single quotes/i, `${label}: ${res.stderr}`);
   }
