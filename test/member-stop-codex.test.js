@@ -38,7 +38,8 @@ function cliEnv(dir, extra) {
 async function waitFor(check, ms = 15000) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
-    if (check()) return true;
+    const result = check();
+    if (result) return result;
     await new Promise((r) => setTimeout(r, 50));
   }
   return check();
@@ -80,10 +81,11 @@ test('member stop ends a live codex mission run started by the real runner', asy
   const readLog = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '');
   let leader = null;
   try {
-    assert.ok(await waitFor(() => fs.existsSync(pidFile)), `codex never started:\n${readLog()}`);
-    const m = /started: \[pid (\d+) engine codex run [0-9a-f]{16}\] tidy the readme/.exec(readLog());
+    const startedLine = /started: \[pid (\d+) engine codex run [0-9a-f]{16}\] tidy the readme/;
+    const m = await waitFor(() => startedLine.exec(readLog()));
     assert.ok(m, `the started line names the codex run:\n${readLog()}`);
     leader = Number(m[1]);
+    assert.ok(await waitFor(() => fs.statSync(pidFile, { throwIfNoEntry: false })?.size > 0), `codex never started:\n${readLog()}`);
     const codexPid = Number(fs.readFileSync(pidFile, 'utf8').trim());
     assert.equal(readBoard({ dir: progress })[0].state, 'working');
 
