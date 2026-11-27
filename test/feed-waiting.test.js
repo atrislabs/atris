@@ -306,3 +306,71 @@ test('waiting: commands work without a task database and help names all three fo
   assert.match(help.stdout, /atris feed waiting clear --session <id>/);
   assert.match(help.stdout, /atris feed waiting list \[--json\]/);
 });
+
+test('waiting: background member runs skip set and clear without writing state while list still works', (t) => {
+  const ctx = project(t);
+  const bgEnv = { ...ctx.env, ATRIS_AGENT_PROOF_ONLY: '1' };
+  const feedDir = path.dirname(stateFile(ctx));
+
+  const bgSetJson = cli(ctx, ['waiting', 'set', '--session', 'bg-run', '--ask', 'May I ship this?', '--json'], bgEnv);
+  assert.equal(bgSetJson.status, 0, `${bgSetJson.stderr}${bgSetJson.stdout}`);
+  assert.deepEqual(JSON.parse(bgSetJson.stdout), {
+    version: 'atris.feed.v1',
+    skipped: true,
+    reason: 'background_member_run',
+  });
+  const bgSetText = cli(ctx, ['waiting', 'set', '--session', 'bg-run', '--ask', 'May I ship this?'], bgEnv);
+  assert.equal(bgSetText.status, 0, `${bgSetText.stderr}${bgSetText.stdout}`);
+  assert.equal(bgSetText.stdout.trim(), 'skipped: background member run.');
+  assert.equal(fs.existsSync(stateFile(ctx)), false);
+  assert.equal(fs.existsSync(feedDir), false);
+  assert.deepEqual(json(ctx, ['cards']).cards, []);
+
+  const bgClearEmpty = cli(ctx, ['waiting', 'clear', '--session', 'bg-run', '--json'], bgEnv);
+  assert.equal(bgClearEmpty.status, 0, `${bgClearEmpty.stderr}${bgClearEmpty.stdout}`);
+  assert.deepEqual(JSON.parse(bgClearEmpty.stdout), {
+    version: 'atris.feed.v1',
+    skipped: true,
+    reason: 'background_member_run',
+  });
+  assert.equal(fs.existsSync(stateFile(ctx)), false);
+  assert.equal(fs.existsSync(feedDir), false);
+
+  // Normal human waiting set still creates the waiting card as before.
+  set(ctx, 'human-chat', 'May I release the Mac app?');
+  assert.deepEqual(json(ctx, ['waiting', 'list']).waiting.map((entry) => entry.session), ['human-chat']);
+
+  // Background clear must not wipe an existing human waiting card.
+  const bgClear = cli(ctx, ['waiting', 'clear', '--session', 'human-chat', '--json'], bgEnv);
+  assert.equal(bgClear.status, 0, `${bgClear.stderr}${bgClear.stdout}`);
+  assert.deepEqual(JSON.parse(bgClear.stdout), {
+    version: 'atris.feed.v1',
+    skipped: true,
+    reason: 'background_member_run',
+  });
+  assert.deepEqual(json(ctx, ['waiting', 'list']).waiting.map((entry) => entry.session), ['human-chat']);
+
+  // Background list still works normally.
+  const bgList = cli(ctx, ['waiting', 'list', '--json'], bgEnv);
+  assert.equal(bgList.status, 0, `${bgList.stderr}${bgList.stdout}`);
+  assert.deepEqual(JSON.parse(bgList.stdout).waiting.map((entry) => entry.session), ['human-chat']);
+});
+
+test('waiting: clear on a fresh workspace without waiting.json succeeds and writes nothing', (t) => {
+  const ctx = project(t);
+  const feedDir = path.dirname(stateFile(ctx));
+  assert.equal(fs.existsSync(stateFile(ctx)), false);
+  assert.equal(fs.existsSync(feedDir), false);
+
+  const run = cli(ctx, ['waiting', 'clear', '--session', 'missing']);
+  assert.equal(run.status, 0, `${run.stderr}${run.stdout}`);
+  assert.equal(run.stdout, '');
+  assert.equal(run.stderr, '');
+  assert.equal(fs.existsSync(stateFile(ctx)), false, 'clear must not create waiting.json');
+  assert.equal(fs.existsSync(path.join(feedDir, 'waiting.lock')), false, 'clear must not create waiting.lock');
+  assert.equal(fs.existsSync(feedDir), false, 'clear must not create .atris/state/feed');
+
+  const invalid = cli(ctx, ['waiting', 'clear', '--session', '   ']);
+  assert.equal(invalid.status, 1);
+  assert.equal(fs.existsSync(stateFile(ctx)), false);
+});
