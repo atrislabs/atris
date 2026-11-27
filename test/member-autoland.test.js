@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { autolandMemberRun } = require('../lib/member-autoland');
+const { autolandMemberRun, gitCodeState } = require('../lib/member-autoland');
 
 function git(args, cwd) {
   const res = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -162,6 +162,17 @@ test('policy on and every gate passes: pushes, opens a pull request, turns on au
     assert.equal(calls.length, 3);
     for (const call of calls.filter((c) => c[1] === 'merge')) assert.ok(call.includes('--auto'), 'never a plain merge');
     assert.ok(git(['ls-remote', fx.origin, 'refs/heads/codex/member-work'], fx.base), 'branch pushed');
+  });
+});
+
+test('tool bookkeeping in the mission folder does not hold the branch', () => {
+  const fx = fixture({ policy: JSON.stringify({ enabled: true, owner: 'keshav' }) });
+  withFakeGh(fx, () => {
+    fs.mkdirSync(path.join(fx.worktree, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(fx.worktree, '.atris', 'state', 'tasks.projection.json'), '{"tasks":[]}\n');
+    assert.equal(gitCodeState(fx.worktree).clean, true);
+    const out = autolandMemberRun({ mission: mission(), cwd: fx.worktree, loadTask: () => null });
+    assert.equal(out.auto_merge, true, out.line);
   });
 });
 
