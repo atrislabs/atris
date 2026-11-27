@@ -6,7 +6,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
-const { memberProcessPrompt, currentWorkPrompt } = require('../lib/member-context');
+const { memberProcessPrompt, memoryCorePrompt, currentWorkPrompt } = require('../lib/member-context');
 const { memberIdentityLine, missionObjectiveLine } = require('../lib/member-identity');
 const { formatToolStep, formatCodexEvent, appendProgress, reportProgress, startedLine, newRunToken, runMarker } = require('../lib/member-progress');
 const {
@@ -98,6 +98,7 @@ const {
 } = require('../lib/mission-human-asks');
 const { missionLinkedTaskGate } = require('../lib/mission-task-gate');
 const { memberApprovalAsks, runBlockingAsks } = require('../lib/member-approval');
+const { workerEnvMarker } = require('../lib/task-core');
 const {
   inspectMissionProtectedDiff,
   prepareMissionGitGuard,
@@ -2078,8 +2079,15 @@ function missionFromArgs(args) {
     fallbackOwners: ['mission-lead', 'task-planner', 'architect', 'validator'],
   });
   const owner = ownerResolution.owner;
-  const verifier = readFlag(args, '--verify', '');
-  assertMissionVerifier(verifier, wantsJson(args));
+  const noVerify = hasFlag(args, '--no-verify');
+  const hasVerifyFlag = hasFlag(args, '--verify') || args.some((a) => String(a || '').startsWith('--verify='));
+  const rawVerifier = readFlag(args, '--verify', '');
+  const verifier = noVerify && rawVerifier && lintMissionVerifier(rawVerifier) === 'verifier cannot be a trivial no-op command'
+    ? ''
+    : rawVerifier;
+  if (hasVerifyFlag && !(noVerify && !verifier)) {
+    assertMissionVerifier(verifier, wantsJson(args));
+  }
   const stopCondition = readFlag(args, '--stop', budgetStopCondition(budgetContract) || (verifier ? 'verifier passes and no human asks remain' : 'human marks complete with proof'));
   const taskIds = readRepeatedFlag(args, '--task');
   // MEMBER.md approval-required becomes an open human ask the owner must clear.
@@ -4126,12 +4134,16 @@ function setMissionVerifier(args) {
     console.log('Usage: atris mission set-verifier <id> "<cmd>" [--json]');
     return;
   }
+  if (Boolean(workerEnvMarker())) {
+    exitMissionError('only a person can change a mission verifier', 2, asJson);
+  }
   const positionals = stripKnownFlags(args, [], ['--json']);
   const ref = String(positionals[0] || '').trim();
   if (!ref || positionals.length < 2) {
     exitMissionError('Usage: atris mission set-verifier <id> "<cmd>" [--json].', 1, asJson);
   }
-  const verifier = String(positionals[1]);
+  const verifier = String(positionals[1]).trim();
+  assertMissionVerifier(verifier, asJson);
   let mission = resolveMission(ref);
   if (!mission) exitMissingMission(ref, 1, asJson);
 
@@ -8123,6 +8135,7 @@ function buildPreloadedMemberContextLines(mission, root = process.cwd()) {
 
 function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd = process.cwd(), runRound = null) {
   const sharedProcess = memberProcessPrompt(cwd);
+  const memoryCore = memoryCorePrompt(cwd);
   const baseRoot = mission.worktree_root || mission.worktree?.path || cwd;
   const owner = String(mission.owner || '').trim();
   const forbidsLanding = require('../lib/member-save-work').memberForbidsLanding(owner, mission.objective, baseRoot);
@@ -8175,6 +8188,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     ...checkFeedbackLines,
     ...turnDownLines,
     ...(sharedProcess ? ['', sharedProcess] : []),
+    ...(memoryCore ? ['', memoryCore] : []),
     ...preloadedContextLines,
     '',
     currentWorkPrompt(cwd, { ...mission, verifier: frozen.verifier }),
@@ -10595,8 +10609,12 @@ function tickMission(args) {
     console.log('Run `atris mission --help` for the full option list.');
     process.exit(0);
   }
-  const verify = hasFlag(args, '--verify');
+  const hasVerifyFlag = hasFlag(args, '--verify') || args.some((a) => String(a || '').startsWith('--verify='));
+  const verify = hasVerifyFlag;
   const verifyOverride = readFlag(args, '--verify', '');
+  const verifyIdx = args.indexOf('--verify');
+  const explicitEmptyVerifyOverride = args.includes('--verify=')
+    || (verifyIdx !== -1 && args[verifyIdx + 1] === '');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
   const summary = readFlag(args, '--summary', '');
   const selfDrive = hasFlag(args, '--self-drive');
@@ -10620,6 +10638,22 @@ function tickMission(args) {
   try {
     // Re-read inside the lock, the initial resolveMission ran before we held it.
     mission = resolveMission(mission.id) || mission;
+
+    const effectiveVerifier = effectiveMissionVerifier(mission);
+    const normalizedEffective = String(effectiveVerifier || '').trim();
+    const normalizedOverride = String(verifyOverride || '').trim();
+    if (explicitEmptyVerifyOverride) {
+      if (Boolean(workerEnvMarker()) && normalizedEffective) {
+        exitMissionError('only a person can override a frozen mission verifier during tick', 2, asJson);
+      }
+      assertMissionVerifier('', asJson);
+    }
+    if (normalizedOverride) {
+      if (Boolean(workerEnvMarker()) && normalizedOverride !== normalizedEffective) {
+        exitMissionError('only a person can override a frozen mission verifier during tick', 2, asJson);
+      }
+      assertMissionVerifier(normalizedOverride, asJson);
+    }
 
     if (['complete', 'stopped'].includes(mission.status)) {
       const { mission: saved } = saveMission({ ...mission, next_action: 'mission is closed' }, process.cwd(), 'mission_tick_skipped', { reason: mission.status });
@@ -10656,9 +10690,8 @@ function tickMission(args) {
     // for this tick_index while last_tick_index stays behind. Reuse it on resume
     // instead of re-deriving the step from scratch.
     const cachedStep = findCachedMissionStepReceipt(cwd, { missionId: mission.id, tickIndex: tickIdx });
-    const effectiveVerifier = effectiveMissionVerifier(mission);
     const verifierCommand = verify
-      ? String(verifyOverride || effectiveVerifier || '').trim()
+      ? String(normalizedOverride || normalizedEffective || '').trim()
       : '';
     if (!cachedStep && verifierCommand) assertMissionVerifier(verifierCommand, asJson);
 
@@ -10957,6 +10990,9 @@ function completeMission(args) {
   const root = process.cwd();
   if (!ref || !proof) {
     exitMissionError('Usage: atris mission complete <id> --proof "..."', 1, asJson);
+  }
+  if (force && Boolean(workerEnvMarker())) {
+    exitMissionError('only a person can override completion gates with --force', 2, asJson);
   }
   const mission = resolveMission(ref);
   if (!mission) {

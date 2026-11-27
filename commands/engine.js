@@ -132,13 +132,14 @@ function knownLoginProviders() {
   return Object.keys(ENGINE_LOGIN_MANIFESTS);
 }
 
-function engineFile(root = process.cwd()) {
-  return path.join(root, '.atris', 'engine.json');
+function engineFile(root = process.cwd(), { global = false } = {}) {
+  const base = global ? os.homedir() : root;
+  return path.join(base, '.atris', 'engine.json');
 }
 
-function readSavedEngine(root = process.cwd()) {
+function readSavedEngine(root = process.cwd(), { global = false } = {}) {
   try {
-    const saved = JSON.parse(fs.readFileSync(engineFile(root), 'utf8'));
+    const saved = JSON.parse(fs.readFileSync(engineFile(root, { global }), 'utf8'));
     return canonicalEngineName(saved.default);
   } catch {
     return '';
@@ -176,19 +177,19 @@ function roster(root = process.cwd()) {
     }));
 }
 
-function setEngine(name, root = process.cwd()) {
+function setEngine(name, root = process.cwd(), { global = false } = {}) {
   const canonical = canonicalEngineName(name);
   if (!canonical) {
     throw new Error(`Unknown engine "${name}". Known engines: ${RUNNER_PROFILE_NAMES.join(', ')}`);
   }
-  const file = engineFile(root);
+  const file = engineFile(root, { global });
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify({ default: canonical, set_at: new Date().toISOString() }, null, 2)}\n`);
   return canonical;
 }
 
-function resetEngine(root = process.cwd()) {
-  try { fs.unlinkSync(engineFile(root)); return true; } catch { return false; }
+function resetEngine(root = process.cwd(), { global = false } = {}) {
+  try { fs.unlinkSync(engineFile(root, { global })); return true; } catch { return false; }
 }
 
 function expandHomePath(filePath, homeDir = os.homedir()) {
@@ -2117,33 +2118,89 @@ function writeProbeReceipt(result, root = process.cwd()) {
 }
 
 function runBenchCommand(args, root, deps = {}) {
+  if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
+    console.log('\n  atris engine bench [names...] [--runs N] [--timeout SEC] [--json]\n                           ranked latency scoreboard of engine passes\n');
+    return 0;
+  }
   const probe = deps.probe || probeEngine;
 
   const names = [];
   let runs = 3;
+  let runsRaw = null;
   let timeout;
+  let timeoutRaw = null;
   let json = false;
 
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
-    if (a === '--runs') { runs = parseInt(args[i + 1] || '3', 10); i += 1; continue; }
-    if (a.startsWith('--runs=')) { runs = parseInt(a.slice('--runs='.length), 10); continue; }
-    if (a === '--timeout') { timeout = parseInt(args[i + 1] || '0', 10) * 1000; i += 1; continue; }
-    if (a.startsWith('--timeout=')) { timeout = parseInt(a.slice('--timeout='.length), 10) * 1000; continue; }
+    if (a === '--runs') {
+      const next = args[i + 1];
+      if (next === undefined || String(next).startsWith('--')) {
+        runsRaw = '';
+      } else {
+        runsRaw = next;
+        i += 1;
+      }
+      continue;
+    }
+    if (a.startsWith('--runs=')) { runsRaw = a.slice('--runs='.length); continue; }
+    if (a === '--timeout') {
+      const next = args[i + 1];
+      if (next === undefined || String(next).startsWith('--')) {
+        timeoutRaw = '';
+      } else {
+        timeoutRaw = next;
+        i += 1;
+      }
+      continue;
+    }
+    if (a.startsWith('--timeout=')) { timeoutRaw = a.slice('--timeout='.length); continue; }
     if (a === '--json') { json = true; continue; }
     if (a.startsWith('--')) continue;
     names.push(a);
   }
 
+  if (runsRaw !== null) {
+    const parsedRuns = /^\d+$/.test(String(runsRaw)) ? Number(runsRaw) : NaN;
+    if (!Number.isInteger(parsedRuns) || parsedRuns < 1) {
+      const error = `--runs must be a positive integer (got "${runsRaw ?? ''}")`;
+      if (json) console.log(JSON.stringify({ ok: false, error }, null, 2));
+      else console.error(`\n  ${error}\n`);
+      return 2;
+    }
+    runs = parsedRuns;
+  }
+
+  if (timeoutRaw !== null) {
+    const parsedTimeout = /^\d+$/.test(String(timeoutRaw)) ? Number(timeoutRaw) : NaN;
+    if (!Number.isInteger(parsedTimeout) || parsedTimeout < 1) {
+      const error = `--timeout must be a positive integer (got "${timeoutRaw ?? ''}")`;
+      if (json) console.log(JSON.stringify({ ok: false, error }, null, 2));
+      else console.error(`\n  ${error}\n`);
+      return 2;
+    }
+    timeout = parsedTimeout * 1000;
+  }
+
   let enginesToBench;
   if (names.length) {
-    enginesToBench = names.map((n) => {
+    enginesToBench = [];
+    for (const n of names) {
       const c = canonicalEngineName(n);
       if (!c) {
-        throw new Error(`Unknown engine "${n}". Known engines: ${RUNNER_PROFILE_NAMES.join(', ')}`);
+        const message = `Unknown engine "${n}". Known engines: ${RUNNER_PROFILE_NAMES.join(', ')}`;
+        if (!json && !deps.fromCommand) {
+          throw new Error(message);
+        }
+        if (json) {
+          console.log(JSON.stringify({ ok: false, error: `Unknown engine "${n}"`, known: RUNNER_PROFILE_NAMES }, null, 2));
+        } else {
+          console.error(`\n  ${message}\n`);
+        }
+        return 2;
       }
-      return c;
-    });
+      enginesToBench.push(c);
+    }
   } else {
     enginesToBench = deps.installedEngines || RUNNER_PROFILE_NAMES.filter((n) => binInstalled(RUNNER_PROFILE_DEFS[n].bin));
     if (!enginesToBench.length) {
@@ -2260,13 +2317,19 @@ function runBenchCommand(args, root, deps = {}) {
 function runEngineTest(targets, { json, root } = {}) {
   let enginesToTest;
   if (targets && targets.length) {
-    enginesToTest = targets.map((n) => {
+    enginesToTest = [];
+    for (const n of targets) {
       const c = canonicalEngineName(n);
       if (!c) {
-        throw new Error(`Unknown engine "${n}". Known engines: ${RUNNER_PROFILE_NAMES.join(', ')}`);
+        if (json) {
+          console.log(JSON.stringify({ ok: false, error: `Unknown engine "${n}"`, known: RUNNER_PROFILE_NAMES }, null, 2));
+        } else {
+          console.error(`\n  Unknown engine "${n}". Known engines: ${RUNNER_PROFILE_NAMES.join(', ')}\n`);
+        }
+        return 2;
       }
-      return c;
-    });
+      enginesToTest.push(c);
+    }
   } else {
     enginesToTest = RUNNER_PROFILE_NAMES.filter((n) => binInstalled(RUNNER_PROFILE_DEFS[n].bin));
     if (!enginesToTest.length) {
@@ -2443,7 +2506,7 @@ function shorthandPromptParts(args) {
       index += 1;
       continue;
     }
-    if (value.startsWith('--')) continue;
+    if (value.startsWith('--') || value === '-h') continue;
     parts.push(value);
   }
   return parts;
@@ -2609,29 +2672,47 @@ function engineCommand(args = [], deps = {}) {
     return dispatch(args.slice(1), root);
   }
 
+  const DEFAULT_SETTER_FLAGS = new Set(['--json', '--global', '-g', '--help', '-h']);
   const requestedEngine = (args[0] || '').trim();
   if (canonicalEngineName(requestedEngine) && args.length > 1) {
     const canonical = canonicalEngineName(requestedEngine);
     const shorthandArgs = args.slice(1);
+    const wantsHelp = shorthandArgs.includes('--help') || shorthandArgs.includes('-h');
     const promptParts = shorthandPromptParts(shorthandArgs);
-    if (TASK_ID_TOKEN.test(promptParts[0] || '')) {
-      if (shorthandArgs.length !== 1) {
-        console.error('engine shorthand: a task id cannot include prompt text or flags; pick one: ask a question or build the task');
+    const hasJobsFlag = shorthandArgs.some((a) => a === '--jobs' || String(a).startsWith('--jobs='));
+    if (!wantsHelp && (promptParts.length > 0 || hasJobsFlag)) {
+      if (TASK_ID_TOKEN.test(promptParts[0] || '')) {
+        if (shorthandArgs.length !== 1) {
+          console.error('engine shorthand: a task id cannot include prompt text or flags; pick one: ask a question or build the task');
+          return 2;
+        }
+        return dispatch([promptParts[0], '--engine', canonical], root);
+      }
+      const modelError = shorthandModelError(canonical, shorthandArgs, root);
+      if (modelError) {
+        console.error(`engine ask: ${modelError}`);
         return 2;
       }
-      return dispatch([promptParts[0], '--engine', canonical], root);
+      return runEngineAskCommand([...shorthandArgs, '--engine', canonical], root, deps.engineAsk || {});
     }
-    const modelError = shorthandModelError(canonical, shorthandArgs, root);
-    if (modelError) {
-      console.error(`engine ask: ${modelError}`);
-      return 2;
+    if (!wantsHelp) {
+      const nonSetterTokens = shorthandArgs.filter((a) => !DEFAULT_SETTER_FLAGS.has(String(a)));
+      if (nonSetterTokens.length > 0) {
+        const wantJson = shorthandArgs.includes('--json');
+        const message = `engine ${canonical}: flag "${nonSetterTokens[0]}" requires a prompt or --jobs; run "atris engine ${canonical}" without ask flags to set the default`;
+        if (wantJson) {
+          console.log(JSON.stringify({ ok: false, error: message }, null, 2));
+        } else {
+          console.error(`\n  ${message}\n`);
+        }
+        return 2;
+      }
     }
-    return runEngineAskCommand([...shorthandArgs, '--engine', canonical], root, deps.engineAsk || {});
   }
 
   const scope = parseScopeFlag(args);
   const json = scope.args.includes('--json') || args.includes('--json');
-  const positional = scope.args.filter((a) => !a.startsWith('--'));
+  const positional = scope.args.filter((a) => !a.startsWith('--') && a !== '-h');
   const sub = (positional[0] || '').trim();
 
   if (sub === 'roster') return runRosterCommand(scope.args.slice(scope.args.indexOf('roster') + 1), root, deps.now);
@@ -2650,11 +2731,15 @@ function engineCommand(args = [], deps = {}) {
   }
 
   if (sub === 'test') {
+    if (args.includes('--help') || args.includes('-h') || positional[1] === 'help') {
+      console.log('\n  atris engine test [name...] [--json]\n                           preflight: run the engine CLI headless and report pass/fail\n');
+      return 0;
+    }
     return runEngineTest(positional.slice(1), { json, root });
   }
 
   if (sub === 'bench') {
-    return runBenchCommand(scope.args.slice(scope.args.indexOf('bench') + 1), root, deps);
+    return runBenchCommand(scope.args.slice(scope.args.indexOf('bench') + 1), root, { ...deps, fromCommand: true });
   }
 
   if (sub === 'resolve') {
@@ -2681,7 +2766,7 @@ function engineCommand(args = [], deps = {}) {
     return 0;
   }
 
-  if (!sub || sub === 'list' || sub === 'status' || sub === 'help') {
+  if (!sub || sub === 'list' || sub === 'status' || sub === 'help' || args.includes('--help') || args.includes('-h')) {
     if (sub === 'help' || args.includes('--help') || args.includes('-h')) {
       console.log('\n  atris engine watch [<id>|latest] [--no-follow]\n                           follow one live transcript or list running engine work');
       console.log('\n  long read-only asks: atris engine ask "..." --engine agy --timeout <seconds>\n                           quick asks default to 120 seconds; explicit jobs allow up to 3600\n                           follow live work with atris engine watch latest');
@@ -2700,7 +2785,7 @@ function engineCommand(args = [], deps = {}) {
   }
 
   if (sub === 'reset' || sub === 'off') {
-    const removed = resetEngine(root);
+    const removed = resetEngine(root, { global: scope.global });
     console.log(removed
       ? `\n  default engine reset, back to ${resolveDefaultEngine(root).name}\n`
       : `\n  nothing to reset, no engine was set here\n`);
@@ -2720,7 +2805,11 @@ function engineCommand(args = [], deps = {}) {
     }
     return 2;
   }
-  const canonical = setEngine(sub, root);
+  const canonical = setEngine(sub, root, { global: scope.global });
+  if (json) {
+    console.log(JSON.stringify({ ok: true, default: canonical, scope: scope.kind, path: engineFile(root, { global: scope.global }) }, null, 2));
+    return 0;
+  }
   console.log(`default engine changed to ${canonical}`);
   console.log(`ask a question: atris engine ask "..." --engine ${canonical}`);
   console.log(`dispatch a build: atris engine dispatch <task> --engine ${canonical}`);

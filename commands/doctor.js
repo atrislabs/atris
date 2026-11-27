@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { findWorkspaceRoot } = require('../lib/workspace-root');
 const {
   inspectInstallGitState,
   formatCliVersionLine,
@@ -23,16 +24,7 @@ function parseNodeVersion(raw = process.version) {
 }
 
 function detectWorkspaceRoot(cwd = process.cwd()) {
-  let current = path.resolve(cwd);
-  for (;;) {
-    if (fs.existsSync(path.join(current, 'atris', 'atris.md'))
-      || fs.existsSync(path.join(current, '.atris'))) {
-      return current;
-    }
-    const parent = path.dirname(current);
-    if (parent === current) return path.resolve(cwd);
-    current = parent;
-  }
+  return findWorkspaceRoot(cwd);
 }
 
 function authState() {

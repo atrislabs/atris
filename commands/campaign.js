@@ -10,6 +10,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { readFlag } = require('../lib/arg-parser');
+const { lostAmount } = require('../lib/feed-plain-words');
 const { CAMPAIGN_ID, isHumanActor, validateCampaign } = require('../lib/campaign-schema');
 const { decide, paysDollars } = require('../lib/campaign-core');
 const { campaignDbPath, getCampaign, listCampaigns, newCampaignId, openCampaignStore } = require('../lib/campaign-store');
@@ -121,10 +122,27 @@ function readAll(args, name) {
 // Agents run in shells that say so; their writes are never recorded as a
 // person. ATRIS_HUMAN=1 is how a person typing inside an agent session says
 // it is really them.
-const AGENT_ENV = ['ATRIS_AGENT_ID', 'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CODEX_SANDBOX', 'CURSOR_AGENT'];
+const AGENT_ENV = [
+  'ATRIS_AGENT_ID', 'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CODEX_SANDBOX', 'CURSOR_AGENT',
+  'ATRIS_AGENT_PROOF_ONLY', 'ATRIS_DISPATCH_DEPTH', 'ATRIS_MISSION_DRIVER_DETACHED',
+  'ATRIS_MISSION_DRIVER_PARENT_PID', 'CODEX_THREAD_ID', 'CODEX_SESSION_ID',
+  'DEVIN_SESSION_ID', 'OPENCODE_SESSION_ID',
+];
+
+function hasAgentEnv(env) {
+  return AGENT_ENV.some((name) => {
+    const value = String(env[name] || '').trim();
+    if (!value) return false;
+    if (name === 'ATRIS_AGENT_PROOF_ONLY') return value === '1';
+    return true;
+  });
+}
 
 function defaultActor(env = process.env) {
-  if (env.ATRIS_HUMAN !== '1' && AGENT_ENV.some((name) => env[name])) return env.ATRIS_AGENT_ID || 'agent';
+  if (env.ATRIS_HUMAN !== '1' && hasAgentEnv(env)) {
+    const id = String(env.ATRIS_AGENT_ID || '').trim();
+    return id && !isHumanActor(id) && !/^human:/i.test(id) ? id : 'agent';
+  }
   try {
     return `human:${os.userInfo().username}`;
   } catch {
@@ -238,8 +256,12 @@ function savedStartCommit(store, campaignId) {
 function makeContext(args, deps) {
   const asJson = args.includes('--json');
   const store = deps.store || openCampaignStore(process.cwd());
-  const actor = readFlag(args, '--as', '') || deps.actor || defaultActor();
-  const forgedHuman = readFlag(args, '--as', '').startsWith('human:');
+  const env = deps.env || process.env;
+  const asFlag = readFlag(args, '--as', '');
+  const actor = asFlag || deps.actor || defaultActor(env);
+  const humanActor = isHumanActor(actor) || /^human:/i.test(actor);
+  const forgedHuman = isHumanActor(asFlag) || /^human:/i.test(asFlag)
+    || (env.ATRIS_HUMAN !== '1' && hasAgentEnv(env) && humanActor && (!deps.actor || Boolean(deps.env)));
   const runJudge = deps.runJudge || ((command, timeout, env) => runJudgeCommand(command, process.cwd(), timeout, env));
   // Held-out files live beside the campaign store, outside every checkout.
   const holdoutRoot = deps.holdoutRoot || path.dirname(store.path || campaignDbPath());
@@ -680,7 +702,7 @@ function simpleEvent(type, buildData, describe, toCloud = null) {
     const words = positionals(args);
     const { view, error } = requireCampaign(ctx, words[1]);
     if (error !== undefined) return error;
-    const built = buildData(args, words, view);
+    const built = buildData(args, words, view, ctx);
     if (built.error) return ctx.fail(built.error);
     let via = 'local';
     if (toCloud && isHumanActor(ctx.actor) && cloudLink(ctx.store, view.id)) {
@@ -732,7 +754,12 @@ const cmdBet = simpleEvent('bet_set', (args, words) => {
   return { data: wrongIf ? { bet, wrong_if: wrongIf } : { bet } };
 }, (d) => `bet set: ${d.bet}`);
 
-const cmdBudget = simpleEvent('budget_added', (args) => {
+function lostAmountError(hole) {
+  return `the question looks like the shell ate a dollar amount ("${hole}"). wrap the question in single quotes ('...') or spell out the amount (e.g. 85 dollars).`;
+}
+
+const cmdBudget = simpleEvent('budget_added', (args, words, view, ctx) => {
+  if (!isHumanActor(ctx.actor)) return { error: 'only a person can add budget' };
   const amount = Number(readFlag(args, '--add', ''));
   if (!(amount > 0)) return { error: 'say how much to add: atris campaign budget <id> --add <dollars>' };
   return { data: { amount_usd: amount } };
@@ -742,17 +769,39 @@ const cmdBudget = simpleEvent('budget_added', (args) => {
 const cmdAsk = simpleEvent('ask_opened', (args, words) => {
   const question = words[2];
   if (!question) return { error: 'write the question: atris campaign ask <id> "<question>" [--mission <mission-id>]' };
+  const hole = lostAmount(question);
+  if (hole) return { error: lostAmountError(hole) };
   const askId = `a-${require('crypto').randomBytes(3).toString('hex')}`;
   const mission = readFlag(args, '--mission', '');
   return { data: mission ? { ask_id: askId, question, mission_id: mission } : { ask_id: askId, question } };
 }, (d) => `asked ${d.ask_id}: ${d.question}`);
 
-const cmdAnswer = simpleEvent('ask_answered', (args, words) => {
+async function cmdAnswer(args, ctx) {
+  const words = positionals(args);
+  const { view, error } = requireCampaign(ctx, words[1]);
+  if (error !== undefined) return error;
   const askId = words[2];
   const answer = words[3];
-  if (!askId || !answer) return { error: 'answer an ask: atris campaign answer <id> <ask-id> "<answer>"' };
-  return { data: { ask_id: askId, answer } };
-}, (d, view) => (view.asks.some((a) => a.id === d.ask_id) ? `not closed: only a person can answer ${d.ask_id}` : `answered ${d.ask_id}: ${d.answer}`), (d) => ({ ask_id: d.ask_id, answer: d.answer }));
+  if (!askId || !answer) return ctx.fail('answer an ask: atris campaign answer <id> <ask-id> "<answer>"');
+  if (!isHumanActor(ctx.actor)) {
+    const message = `not closed: only a person can answer a campaign question (${askId})`;
+    ctx.out(message, { ok: false, error: message, action: 'ask_answered', campaign: view, next: decide(view) });
+    return 2;
+  }
+  if (!view.asks.some((a) => a.id === askId)) {
+    return ctx.fail(`no open ask ${askId} on ${view.id}`);
+  }
+  let via = 'local';
+  if (cloudLink(ctx.store, view.id)) {
+    const sent = await sendPersonAction(ctx.store, view.id, { ask_id: askId, answer }, ctx.cloud);
+    if (sent.ok) via = 'cloud';
+    else if (!ctx.asJson) console.error(`recorded here only; the cloud did not take it: ${sent.error}`);
+  }
+  if (via === 'local') ctx.append(view.id, 'ask_answered', { ask_id: askId, answer });
+  const after = getCampaign(ctx.store, view.id);
+  ctx.out(`answered ${askId}: ${answer}\n${renderShow(after)}`, { ok: true, action: 'ask_answered', via, campaign: after, next: decide(after) });
+  return 0;
+}
 
 const cmdPause = simpleEvent('paused', () => ({ data: {} }), () => 'paused');
 const cmdResume = simpleEvent('resumed', () => ({ data: {} }), () => 'resumed');
@@ -765,13 +814,24 @@ const cmdEvent = (args, ctx) => {
   const type = words[2];
   if (!type) return ctx.fail('name the event type: atris campaign event <id> <type> [--data \'<json>\']');
   // Events that only the judge or a person may write have their own verbs.
-  const guarded = { judge_ran: 'atris campaign judge', ask_answered: 'atris campaign answer', done: 'atris campaign stop, or a passing judge', budget_added: 'atris campaign budget --add', campaign_started: 'atris campaign start' };
+  const guarded = {
+    judge_ran: 'atris campaign judge',
+    judge_set: 'atris campaign set-judge',
+    ask_answered: 'atris campaign answer',
+    done: 'atris campaign stop, or a passing judge',
+    budget_added: 'atris campaign budget --add',
+    campaign_started: 'atris campaign start',
+  };
   if (guarded[type]) return ctx.fail(`${type} cannot be written by hand; use ${guarded[type]}`);
   let data;
   try {
     data = JSON.parse(readFlag(args, '--data', '') || '{}');
   } catch {
     return ctx.fail('--data must be JSON, for example --data \'{"mission_id":"m1"}\'');
+  }
+  if (type === 'ask_opened' && data && typeof data.question === 'string') {
+    const hole = lostAmount(data.question);
+    if (hole) return ctx.fail(lostAmountError(hole));
   }
   try {
     ctx.append(view.id, type, data);

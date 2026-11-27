@@ -238,8 +238,8 @@ function cmdReady(args) {
   const verifyFlag = flag(args, '--verify');
   const resultFlag = textFlag(args, ['--result']);
   if (!id || (!proofFlag && !verifyFlag && !resultFlag)) {
-    console.log('Usage: atris task ready <id> --proof "..." --result "<sentence>" [--work-root <path>] (the copy you built in; ATRIS_WORK_ROOT is the fallback; a relative path resolves from the current folder)');
-    process.exit(2);
+    const usage = 'Usage: atris task ready <id> --proof "..." --result "<sentence>" [--work-root <path>] (the copy you built in; ATRIS_WORK_ROOT is the fallback; a relative path resolves from the current folder)';
+    failTask('atris task ready', !id ? 'missing_id' : 'proof_required', usage);
   }
   // The copy the builder actually built in. Its commit is the one the job records.
   // Without it the job records the main folder's commit, as before.
@@ -282,6 +282,13 @@ function cmdReady(args) {
   // row. Without --verify nothing slow comes first. The actor, task and landing checks then keep
   // their place after the proof checks below.
   let readyTarget = null;
+  const guardPlanApprovalForWorker = (task) => {
+    const { workerEnvMarker } = require('../../../lib/task-core');
+    const { isPlanAwaitingApproval } = require('../../../lib/member-task-pick');
+    if (workerEnvMarker() && isPlanAwaitingApproval(task)) {
+      failTask('atris task ready', 'agent_proof_only_plan_approval_blocked', 'only a person can approve a plan before marking it ready', 2);
+    }
+  };
   const resolveReadyTarget = () => {
     if (readyTarget) return readyTarget;
     guardExplicitActor('atris task ready', flag(args, '--as'));
@@ -289,6 +296,7 @@ function cmdReady(args) {
     const db = taskDb.open();
     const taskId = requireTaskId(taskDb, db, id, 'atris task ready');
     const beforeTask = taskDetail(taskDb, db, taskId);
+    guardPlanApprovalForWorker(beforeTask || taskDb.getTask(db, taskId));
     requireExplicitLandingDayOnePm('atris task ready', landing, beforeTask && beforeTask.title);
     readyTarget = { taskDb, db, taskId, beforeTask };
     return readyTarget;
@@ -349,8 +357,7 @@ function cmdReady(args) {
     if (!wantsJson(args)) console.log(`✓ verified: \`${verifyFlag}\` exited 0 (receipt ${receipt.receiptPath})`);
   }
   if (!proof) {
-    console.error('atris task ready: --proof or --verify required');
-    process.exit(2);
+    failTask('atris task ready', 'proof_required', 'atris task ready: --proof or --verify required');
   }
   requireMeaningfulTaskProof('atris task ready', proof);
   requireRanNamedProofCommand('atris task ready', proof, usedVerify);
@@ -378,7 +385,10 @@ function cmdReady(args) {
   // elapsed and the read from the checks above stands. The landing sentence is checked against the
   // refreshed title too, since a verifier can rename the task.
   const beforeTask = usedVerify ? taskDetail(taskDb, db, taskId) : readyTarget.beforeTask;
-  if (usedVerify) requireExplicitLandingDayOnePm('atris task ready', landing, beforeTask && beforeTask.title);
+  if (usedVerify) {
+    guardPlanApprovalForWorker(beforeTask || taskDb.getTask(db, taskId));
+    requireExplicitLandingDayOnePm('atris task ready', landing, beforeTask && beforeTask.title);
+  }
   const missionXpIssue = missionXpEndToEndProofIssue(beforeTask, proof, taskDb.workspaceRoot());
   if (missionXpIssue) {
     failTask('atris task ready', MISSION_XP_END_TO_END_REASON, missionXpIssue);
@@ -1187,10 +1197,12 @@ function cmdLanding(args) {
     return cmdAutoAcceptCertified(passthrough);
   }
   cmdReviews(args);
-  console.log('');
-  console.log('land everything certified above in one gesture:');
-  console.log('  atris task landing --accept --as <you>');
-  console.log('(items needing one more check stay in review; only certified work lands)');
+  if (!wantsJson(args)) {
+    console.log('');
+    console.log('land everything certified above in one gesture:');
+    console.log('  atris task landing --accept --as <you>');
+    console.log('(items needing one more check stay in review; only certified work lands)');
+  }
 }
 
 function cmdAutoAcceptCertified(args) {
@@ -1609,18 +1621,28 @@ function evaluateSweepAutoAccept(task, root, includeProtected = false) {
   return { eligible: false, ref, reason: verifier.reason, evidence: verifier.evidence };
 }
 
+function hasFlagOrInline(args, name) {
+  const prefix = `${name}=`;
+  for (const raw of args) {
+    const arg = String(raw);
+    if (arg === '--') break;
+    if (arg === name || arg.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
 // atris task sweep --held: ask GitHub about each job waiting on an open pull request and write
 // down what happened (lib/held-pull-requests.js). Anyone may run it, agents included: GitHub is
 // the only source and the run grants nothing, so the agent block that guards --auto-accept does
 // not apply here. It takes none of the expired-claims flags.
 function cmdSweepHeld(args) {
   for (const name of ['--auto-accept', '--stale-days', '--claimer']) {
-    if (hasFlag(args, name)) {
+    if (hasFlagOrInline(args, name)) {
       failTask('atris task sweep', 'held_flags_conflict', `atris task sweep: --held cannot be combined with ${name}`);
     }
   }
   const named = flag(args, '--as');
-  if (named === true) failTask('atris task sweep', 'missing_actor', 'atris task sweep: --as needs a name');
+  if (named === true || (hasFlagOrInline(args, '--as') && !named)) failTask('atris task sweep', 'missing_actor', 'atris task sweep: --as needs a name');
   guardExplicitActor('atris task sweep', named);
   const actor = String(named || DEFAULT_OWNER);
   const dryRun = hasFlag(args, '--dry-run');
@@ -1667,9 +1689,9 @@ function cmdSweep(args) {
   if (!hasFlag(args, '--auto-accept')) {
     const taskDb = getTaskDb();
     const staleRaw = flag(args, '--stale-days');
-    if (staleRaw === true || (staleRaw != null && (!Number.isFinite(Number(staleRaw)) || Number(staleRaw) < 0))) throw new Error('stale days must be a nonnegative number');
+    if (staleRaw === true || (hasFlagOrInline(args, '--stale-days') && staleRaw === null) || (staleRaw != null && (!Number.isFinite(Number(staleRaw)) || Number(staleRaw) < 0))) throw new Error('stale days must be a nonnegative number');
     const claimer = flag(args, '--claimer');
-    if (claimer === true) throw new Error('claimer requires a name');
+    if (claimer === true || (hasFlagOrInline(args, '--claimer') && !claimer)) throw new Error('claimer requires a name');
     const dryRun = hasFlag(args, '--dry-run');
     const options = { staleDays: staleRaw == null ? undefined : Number(staleRaw), claimer };
     const tasks = dryRun ? taskDb.previewExpiredLeases(options) : taskDb.expireLeases(taskDb.open(), options);

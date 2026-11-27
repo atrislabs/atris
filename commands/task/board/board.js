@@ -1,5 +1,8 @@
 'use strict';
 
+const { isPlanAwaitingApproval } = require('../../../lib/member-task-pick');
+const { workerEnvMarker } = require('../../../lib/task-core');
+
 // commands/task/board/board.js: The everyday board commands: add, list, status, day, home, keep,
 // delegate, claim, release, and moving a task between plan, doing and backlog.
 // Owner: unassigned. Moved out of commands/task.js on 2026-11-16 by lib/split-file.js; read
@@ -879,6 +882,17 @@ function cmdClaim(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task claim');
+  if (Boolean(workerEnvMarker())) {
+    const existingTask = taskDb.getTask(db, taskId);
+    if (isPlanAwaitingApproval(existingTask)) {
+      failTask(
+        'atris task claim',
+        'plan_awaiting_approval',
+        'plan is waiting on a person to approve before claiming',
+        2,
+      );
+    }
+  }
   const leaseMinutes = flag(args, '--lease-minutes');
   const leasePid = flag(args, '--lease-pid');
   if (leaseMinutes != null && (!Number.isFinite(Number(leaseMinutes)) || Number(leaseMinutes) <= 0 || !Number.isInteger(Number(leasePid)) || Number(leasePid) <= 0)) throw new Error('invalid claim lease');
@@ -1059,6 +1073,9 @@ function cmdDo(args) {
   const pos = positional(args);
   const id = pos[0];
   if (!id) failTask('atris task do', 'missing_id', 'id required');
+  if (Boolean(workerEnvMarker())) {
+    failTask('atris task do', 'agent_proof_only_plan_approval_blocked', 'only a person can approve a plan', 2);
+  }
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
   const goal = textFlag(args, ['--goal', '--objective']);
   const proofNeeded = textFlag(args, ['--proof-needed', '--proof', '--verify']);
@@ -1113,6 +1130,17 @@ function cmdBacklog(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task backlog');
+  if (Boolean(workerEnvMarker())) {
+    const existingTask = taskDb.getTask(db, taskId);
+    if (isPlanAwaitingApproval(existingTask)) {
+      failTask(
+        'atris task backlog',
+        'agent_proof_only_plan_approval_blocked',
+        'only a person can backlog or clear a plan waiting on approval',
+        2,
+      );
+    }
+  }
   const result = taskDb.backlogTask(db, { id: taskId, actor, reason, tag });
   if (!result.backlogged) {
     failTask('atris task backlog', result.reason || 'backlog_failed', stageErrorDetail('atris task backlog', result.reason, result), 1);
@@ -1134,6 +1162,14 @@ function cmdBacklog(args) {
 }
 
 function cmdClearPlan(args) {
+  if (Boolean(workerEnvMarker())) {
+    failTask(
+      'atris task clear-plan',
+      'agent_proof_only_plan_approval_blocked',
+      'only a person can clear plans waiting on approval',
+      2,
+    );
+  }
   const confirmed = hasFlag(args, '--yes') || hasFlag(args, '--confirm');
   if (!confirmed) failTask('atris task clear-plan', 'confirm_required', stageErrorDetail('atris task clear-plan', 'confirm_required'), 2);
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);

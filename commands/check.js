@@ -997,12 +997,45 @@ function bigNoticeLine(receipt) {
   return `Big bug in ${receipt.repo}: ${name} failed on ${String(why).split('\n')[0].slice(0, 80)}. A fix job is running with the strongest model.`;
 }
 
+// Prefer our own bin/atris.js so check fix never fails with ENOENT when atris
+// is not globally installed on PATH, while honoring ATRIS_BIN and temp-dir fake shims in tests.
+function resolveAtrisInvocation(argv, env = process.env) {
+  const explicitBin = String((env && env.ATRIS_BIN) || '').trim();
+  if (explicitBin) {
+    if (explicitBin.endsWith('.js') && fs.existsSync(explicitBin)) {
+      return { bin: process.execPath, args: [explicitBin, ...argv] };
+    }
+    return { bin: explicitBin, args: argv };
+  }
+  const ownBin = path.resolve(__dirname, '..', 'bin', 'atris.js');
+  const inTest = Boolean((env && env.NODE_TEST_CONTEXT) || process.env.NODE_TEST_CONTEXT);
+  if (inTest) {
+    let tmpRoot = '';
+    try { tmpRoot = fs.realpathSync(os.tmpdir()); } catch { tmpRoot = path.resolve(os.tmpdir()); }
+    const pathEntries = String((env && env.PATH) || '').split(path.delimiter).filter(Boolean);
+    for (const dir of pathEntries) {
+      const candidate = path.join(dir, 'atris');
+      try {
+        const st = fs.statSync(candidate);
+        if (!st.isFile() || !(st.mode & 0o111)) continue;
+        const real = fs.realpathSync(candidate);
+        if (real.startsWith(`${tmpRoot}${path.sep}`)) {
+          return { bin: candidate, args: argv };
+        }
+        break;
+      } catch {}
+    }
+  }
+  return { bin: process.execPath, args: [ownBin, ...argv] };
+}
+
 // Post the line to the owner notice channel. A failure to post never fails
 // the hand-off.
 function postOwnerNotice(root, line, channel, post) {
   if (channel !== 'feed') return { posted: false, why: 'owner_notice is none' };
   try {
-    const result = post ? post(line) : spawnSync('atris', ['feed', 'post', line], { cwd: root, encoding: 'utf8', timeout: 60000 });
+    const inv = resolveAtrisInvocation(['feed', 'post', line], process.env);
+    const result = post ? post(line) : spawnSync(inv.bin, inv.args, { cwd: root, encoding: 'utf8', timeout: 60000 });
     return result && result.status === 0 ? { posted: true } : { posted: false, why: `atris feed post exited ${result ? result.status : 'none'}` };
   } catch (error) {
     return { posted: false, why: String(error && error.message || error).split('\n')[0] };
@@ -1022,16 +1055,19 @@ function fixJobFrom(output, exitCode, sentAt) {
 function sendFixJob(root, argv, env) {
   return new Promise((resolve) => {
     let output = '';
+    let settled = false;
+    const finish = (res) => { if (!settled) { settled = true; resolve(res); } };
+    const inv = resolveAtrisInvocation(argv, env);
     let child;
     try {
-      child = spawn('atris', argv, { cwd: root, env, stdio: ['inherit', 'pipe', 'inherit'] });
+      child = spawn(inv.bin, inv.args, { cwd: root, env, stdio: ['inherit', 'pipe', 'inherit'] });
     } catch (error) {
-      resolve({ status: null, output: String(error && error.message || error) });
+      finish({ status: null, signal: null, spawnError: true, output: String(error && error.message || error) });
       return;
     }
     child.stdout.on('data', (chunk) => { output += chunk; process.stdout.write(chunk); });
-    child.on('error', (error) => resolve({ status: null, output: `${output}${error.message}` }));
-    child.on('close', (status) => resolve({ status, output }));
+    child.on('error', (error) => finish({ status: null, signal: null, spawnError: true, output: `${output}${error.message}` }));
+    child.on('close', (status, signal) => finish({ status, signal: signal || null, spawnError: false, output }));
   });
 }
 
@@ -1082,13 +1118,34 @@ async function fixCommand(root, options, log, context = {}) {
   const recent = Object.entries({ ...ledger, [receipt.tree]: at }).sort((a, b) => b[1].localeCompare(a[1])).slice(0, 200);
   fs.writeFileSync(ledgerFile, `${JSON.stringify(Object.fromEntries(recent), null, 2)}\n`);
   // computer pr learns who sent the job and which receipt it fixes.
-  const sent = await sendFixJob(root, argv, { ...process.env, ATRIS_RUNNER: 'atris check fix', ATRIS_FIX_RECEIPT: file });
+  const sent = await (context.sendFixJob || sendFixJob)(root, argv, { ...process.env, ATRIS_RUNNER: 'atris check fix', ATRIS_FIX_RECEIPT: file });
+  if (sent && sent.spawnError === true) {
+    // Spawn failed before launching: roll back the dispatch lock so retries are not permanently blocked.
+    try {
+      const current = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (current.fix_dispatched_at === at) {
+        delete current.fix_dispatched_at;
+        delete current.fix_big;
+        fs.writeFileSync(file, `${JSON.stringify(current, null, 2)}\n`);
+      }
+    } catch {}
+    try {
+      const currentLedger = JSON.parse(fs.readFileSync(ledgerFile, 'utf8')) || {};
+      if (currentLedger[receipt.tree] === at) {
+        delete currentLedger[receipt.tree];
+        fs.writeFileSync(ledgerFile, `${JSON.stringify(currentLedger, null, 2)}\n`);
+      }
+    } catch {}
+    log(`fix job: could not launch (${String(sent.output || 'spawn failed').trim().split('\n')[0]})`);
+    return EXIT.failed;
+  }
   const job = fixJobFrom(sent.output, sent.status, at);
   try {
     const now = JSON.parse(fs.readFileSync(file, 'utf8'));
     fs.writeFileSync(file, `${JSON.stringify({ ...now, fix_job: job }, null, 2)}\n`);
   } catch {}
-  log(`fix job: exit ${sent.status === null ? 'none' : sent.status}${job.pr_url ? `, ${job.pr_url}` : ''}`);
+  const exitLabel = sent.status === null ? (sent.signal ? `none (${sent.signal})` : 'none') : sent.status;
+  log(`fix job: exit ${exitLabel}${job.pr_url ? `, ${job.pr_url}` : ''}`);
   if (sent.status === 0 && big.big) {
     const told = postOwnerNotice(root, notice, channel, context.postNotice);
     log(told.posted ? 'notice: posted to the feed' : `notice: not posted (${told.why}); the fix job was still sent`);

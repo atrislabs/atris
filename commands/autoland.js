@@ -130,8 +130,16 @@ function digestNextMoves(root) {
 
 function flag(args, name, fallback = '') {
   const idx = args.indexOf(name);
-  if (idx === -1) return fallback;
-  return args[idx + 1] || fallback;
+  if (idx !== -1) return args[idx + 1] || fallback;
+  const prefix = `${name}=`;
+  const inline = args.find((arg) => typeof arg === 'string' && arg.startsWith(prefix));
+  if (inline !== undefined) return inline.slice(prefix.length) || fallback;
+  return fallback;
+}
+
+function hasFlagOption(args, name) {
+  const prefix = `${name}=`;
+  return args.some((arg) => arg === name || (typeof arg === 'string' && arg.startsWith(prefix)));
 }
 
 function runOwnCli(root, cliArgs, timeoutMs = 300000) {
@@ -661,28 +669,53 @@ function heartbeatLines(installed) {
 }
 
 function turnOn(root, args, deps = {}) {
-  const owner = flag(args, '--as', os.userInfo().username);
-  const to = flag(args, '--to', '');
-  const digestHour = Number(flag(args, '--digest-hour', autoland.DEFAULT_DIGEST_HOUR));
-  const alarmHours = Number(flag(args, '--alarm-hours', autoland.DEFAULT_ALARM_HOURS));
-  const acceptAll = args.includes('--all');
   // Every key this command does not set stays as the owner left it: the
   // green landing pause switch, the verify command, the hold labels, the
   // janitor and the rest.
   // `default` is what a missing file reads as and `disabled_at` belongs to
   // off; neither survives turning it on.
   const { default: _inferred, disabled_at: _disabledAt, ...previous } = savedPolicy(root);
+  const hasAs = hasFlagOption(args, '--as');
+  const hasTo = hasFlagOption(args, '--to');
+  const hasDigestHour = hasFlagOption(args, '--digest-hour');
+  const hasAlarmHours = hasFlagOption(args, '--alarm-hours');
+  const owner = hasAs ? flag(args, '--as', os.userInfo().username) : (previous.enabled_by || os.userInfo().username);
+  const to = hasTo ? (flag(args, '--to', '') || null) : (previous.imessage_to ?? null);
+  const prevDigestHour = previous.digest_hour !== undefined && previous.digest_hour !== null && Number.isFinite(Number(previous.digest_hour))
+    ? Number(previous.digest_hour)
+    : autoland.DEFAULT_DIGEST_HOUR;
+  const parsedDigestHour = Number(flag(args, '--digest-hour', autoland.DEFAULT_DIGEST_HOUR));
+  const digestHour = hasDigestHour
+    ? (Number.isFinite(parsedDigestHour) ? parsedDigestHour : autoland.DEFAULT_DIGEST_HOUR)
+    : prevDigestHour;
+  const prevAlarmHours = previous.alarm_hours !== undefined && previous.alarm_hours !== null && Number.isFinite(Number(previous.alarm_hours)) && Number(previous.alarm_hours) > 0
+    ? Number(previous.alarm_hours)
+    : autoland.DEFAULT_ALARM_HOURS;
+  const parsedAlarmHours = Number(flag(args, '--alarm-hours', autoland.DEFAULT_ALARM_HOURS));
+  const alarmHours = hasAlarmHours
+    ? (Number.isFinite(parsedAlarmHours) && parsedAlarmHours > 0 ? parsedAlarmHours : autoland.DEFAULT_ALARM_HOURS)
+    : prevAlarmHours;
+  const strictVerify = args.includes('--no-strict-verify')
+    ? false
+    : (args.includes('--strict-verify') ? true : (previous.strict_verify !== undefined ? Boolean(previous.strict_verify) : true));
+  const acceptAll = args.includes('--all')
+    ? true
+    : (args.includes('--no-all') ? false : Boolean(previous.accept_all));
+  const wasDisabled = previous.enabled === false || Boolean(_disabledAt);
+  const acceptProtected = args.includes('--include-protected')
+    ? true
+    : (args.includes('--no-include-protected') || wasDisabled ? false : Boolean(previous.accept_protected));
   const policy = autoland.writePolicy(root, {
     ...previous,
     enabled: true,
     enabled_by: owner,
     enabled_at: new Date().toISOString(),
-    imessage_to: to || null,
-    digest_hour: Number.isFinite(digestHour) ? digestHour : autoland.DEFAULT_DIGEST_HOUR,
-    alarm_hours: Number.isFinite(alarmHours) && alarmHours > 0 ? alarmHours : autoland.DEFAULT_ALARM_HOURS,
-    strict_verify: !args.includes('--no-strict-verify'),
+    imessage_to: to,
+    digest_hour: digestHour,
+    alarm_hours: alarmHours,
+    strict_verify: strictVerify,
     accept_all: acceptAll,
-    accept_protected: args.includes('--include-protected'),
+    accept_protected: acceptProtected,
     daily_experiment: previous.daily_experiment !== false,
   });
   const installed = autoland.installSchedule(root, deps.scheduler);
@@ -693,8 +726,8 @@ function turnOn(root, args, deps = {}) {
   });
   console.log('');
   console.log('autoland is on.');
-  if (acceptAll && policy.accept_protected) console.log(`  everything in review now lands itself, accepted as ${owner}.`);
-  else if (acceptAll) console.log(`  everything in review now lands itself, accepted as ${owner}; only the protected lanes wait.`);
+  if (policy.accept_all && policy.accept_protected) console.log(`  everything in review now lands itself, accepted as ${owner}.`);
+  else if (policy.accept_all) console.log(`  everything in review now lands itself, accepted as ${owner}; only the protected lanes wait.`);
   else console.log(`  certified, verified, reversible work now lands itself, accepted as ${owner}.`);
   if (policy.accept_protected) console.log('  protected work (money, deploys, security, customer, outward) also lands itself; sends and payments still need you.');
   else console.log('  protected lanes (money, deploys, security, customer, outward) still wait for you.');
@@ -1484,7 +1517,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     const sent = autoland.sendImessage(root, policy.imessage_to, text);
     if (sent.ok) {
       autoland.markAlerted(state, due);
-      receipt.alarms = due.length;
+      receipt.alarms = Number(receipt.alarms || 0) + due.length;
     }
   });
 

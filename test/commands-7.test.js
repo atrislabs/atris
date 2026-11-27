@@ -53,12 +53,12 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.match(html, /class="beat" id="heartbeat"/);
 	    assert.match(html, /class="activity" id="activity"/);
 	    assert.match(html, /async function loadStream\(\)/);
-	    assert.match(html, /\/api\/tasks\/' \+ task\.id \+ '\/ready/);
-	    assert.match(html, /\/api\/tasks\/' \+ task\.id \+ '\/accept/);
+	    assert.match(html, /\/api\/tasks\/' \+ encodeURIComponent\(task\.id\) \+ '\/ready/);
+	    assert.match(html, /\/api\/tasks\/' \+ encodeURIComponent\(task\.id\) \+ '\/accept/);
 	    assert.match(html, /if \(lesson\) payload\.lesson = lesson/);
 	    assert.match(html, /if \(nextTask\) payload\.next = nextTask/);
 	    assert.match(html, /task\.review && task\.review\.next_task/);
-	    assert.doesNotMatch(html, /\/api\/tasks\/' \+ task\.id \+ '\/finish/);
+	    assert.doesNotMatch(html, /\/api\/tasks\/' \+ (?:encodeURIComponent\(task\.id\)|task\.id) \+ '\/finish/);
 
     // the activity stream endpoint returns a heartbeat + an events array
     const stream = await fetch(`${base}/api/stream`).then(r => r.json());

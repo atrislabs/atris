@@ -60,11 +60,14 @@ function request(method, urlStr, body, headers = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlStr);
     const mod = url.protocol === 'https:' ? https : http;
+    const envTimeout = Number(process.env.ATRIS_FLEET_HTTP_TIMEOUT_MS);
+    const timeoutMs = Number.isFinite(envTimeout) && envTimeout > 0 ? envTimeout : 15000;
     const opts = {
       hostname: url.hostname,
       port: url.port,
       path: url.pathname + url.search,
       method,
+      timeout: timeoutMs,
       headers: { 'Content-Type': 'application/json', ...headers },
     };
     const req = mod.request(opts, (res) => {
@@ -78,6 +81,7 @@ function request(method, urlStr, body, headers = {}) {
         }
       });
     });
+    req.on('timeout', () => req.destroy(new Error('request timed out')));
     req.on('error', reject);
     if (body) req.write(JSON.stringify(body));
     req.end();
@@ -178,6 +182,13 @@ async function fleetStatus(state) {
     request('GET', `${hubUrl}/api/${hubId}/claims`, null, h),
   ]);
 
+  const failed = [members, posts, claims].find((res) => res.status >= 300);
+  if (failed) {
+    console.error('✗ Failed:', failed.data);
+    process.exitCode = 1;
+    return;
+  }
+
   const m = members.data;
   const p = posts.data;
   const c = claims.data;
@@ -219,6 +230,7 @@ async function fleetPost(state, message) {
     console.log('✓ Posted to general');
   } else {
     console.error('✗ Failed:', res.data);
+    process.exitCode = 1;
   }
 }
 
@@ -235,6 +247,7 @@ async function fleetTask(state, prompt) {
     console.log(`✓ Task posted: ${taskKey}`);
   } else {
     console.error('✗ Failed:', res.data);
+    process.exitCode = 1;
   }
 }
 
@@ -250,6 +263,7 @@ async function fleetClaim(state, taskKey) {
     console.log(`✓ Claimed: ${taskKey}`);
   } else {
     console.error('✗ Failed:', res.data);
+    process.exitCode = 1;
   }
 }
 
@@ -281,6 +295,11 @@ async function fleetMembers(state) {
   const hubUrl = getHubUrl();
   const hubId = getHubId();
   const res = await request('GET', `${hubUrl}/api/${hubId}/members`, null, authHeaders(state));
+  if (res.status >= 300) {
+    console.error('✗ Failed:', res.data);
+    process.exitCode = 1;
+    return;
+  }
   if (res.data?.members) {
     console.log(`\n  Members (${res.data.count}):`);
     for (const m of res.data.members) {
@@ -297,6 +316,11 @@ async function fleetPrune(state, minutes = 60) {
   const res = await request('POST', `${hubUrl}/api/${hubId}/prune`, {
     stale_minutes: minutes,
   }, authHeaders(state));
+  if (res.status >= 300) {
+    console.error('✗ Failed:', res.data);
+    process.exitCode = 1;
+    return;
+  }
   if (res.data?.pruned) {
     console.log(`✓ Pruned ${res.data.count} stale members: ${res.data.pruned.join(', ') || 'none'}`);
   } else {
@@ -543,7 +567,7 @@ async function fleetUp(parsed, asJson) {
     const memberName = card.name || name;
 
     r.stage = 'engine';
-    const overrideProfile = parsed.engines.get(name) || parsed.engineAll;
+    const overrideProfile = parsed.engines.get(String(name).toLowerCase()) || parsed.engineAll;
     if (overrideProfile) {
       const engineId = engineIdForProfile(overrideProfile);
       if (!engineId) {
@@ -915,7 +939,47 @@ function intervalMs(seconds) {
 
 // ── Main ────────────────────────────────────────────────
 
-async function fleet(args = []) {
+const FLEET_SWARM_VALUE_FLAGS = new Set([
+  '--lead', '--workers', '--team', '--role', '--channel', '--channels', '--hub', '--server',
+  '--engine', '--campaign', '--as', '--reason', '--stale-minutes',
+  '--depends-on', '--priority', '--to', '--tasks', '--file', '--verify', '--idempotency-key',
+  '--tier', '--task-key', '--evidence', '--tried', '--limit', '--scorer', '--every', '--max-cycles',
+  '--exec', '--max-repeat-errors', '--parallel', '--max-ticks',
+]);
+
+function extractFleetPositionals(args = []) {
+  const pos = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const token = String(args[i]);
+    if (token === '--') {
+      pos.push(...args.slice(i + 1).map(String));
+      break;
+    }
+    if (token.startsWith('-')) {
+      if (!token.includes('=') && FLEET_SWARM_VALUE_FLAGS.has(token)) {
+        i += 1;
+      }
+      continue;
+    }
+    pos.push(token);
+  }
+  return pos;
+}
+
+async function fleet(args = [], options = {}) {
+  const positionalsOnly = extractFleetPositionals(args);
+  const firstPositional = String(positionalsOnly[0] || '').toLowerCase();
+  const timedUpShape = firstPositional === 'up'
+    && Boolean(require('../lib/swarm-comms').parseDurationTokens(positionalsOnly.slice(1)));
+  const swarmReportShape = firstPositional === 'report'
+    && args.some((a) => a === '--as' || String(a).startsWith('--as=') || a === '--server' || String(a).startsWith('--server='));
+  if (!options.fromSwarm && (['start', 'expand', 'scale', 'freeze', 'unfreeze', 'plan', 'decompose', 'pull', 'brief', 'route', 'escalate', 'run'].includes(firstPositional) || swarmReportShape || timedUpShape)) {
+    const { swarmCommand } = require('./swarm');
+    const code = await swarmCommand(args, { fromFleet: true });
+    process.exitCode = typeof code === 'number' ? code : 0;
+    return;
+  }
+
   const scope = parseScopeFlag(args);
   let argv = scope.args.filter((a) => !String(a).startsWith('-'));
   let operationKey = null;
@@ -955,6 +1019,10 @@ async function fleet(args = []) {
     console.log('                       [--engine member=profile] [--dry-run] [--json])');
     console.log('  fleet down <member> deactivate launched members ([--hub id])');
     console.log('  fleet launched     list activated members (alias: roster)');
+    console.log('  fleet start "<goal>" start a 1-lead + N-worker swarm (same as atris swarm start)');
+    console.log('  fleet expand <N>   add workers to the active swarm');
+    console.log('  fleet freeze <p..> lock solved modules (unfreeze to release)');
+    console.log('  fleet plan|pull|report  lead DAG plan, atomic pull, verified report');
     console.log('');
     return;
   }
@@ -1016,6 +1084,18 @@ async function fleet(args = []) {
           request('GET', `${hubUrl}/api/${hubId}/channels/general/posts?limit=5`, null, h),
           request('GET', `${hubUrl}/api/${hubId}/claims`, null, h),
         ]);
+        const failed = [members, posts, claims].find((res) => res.status >= 300);
+        if (failed) {
+          console.log(JSON.stringify({
+            ok: false,
+            scope: 'global',
+            hub: { id: hubId, url: hubUrl },
+            status: failed.status,
+            error: failed.data,
+          }, null, 2));
+          process.exitCode = 1;
+          return;
+        }
         console.log(JSON.stringify({
           scope: 'global',
           hub: { id: hubId, url: hubUrl },
@@ -1030,15 +1110,15 @@ async function fleet(args = []) {
       break;
     case 'post':
     case 'say':
-      if (!rest) { console.error('Usage: atris fleet post <message>'); return; }
+      if (!rest) { console.error('Usage: atris fleet post <message>'); process.exitCode = 1; return; }
       await fleetPost(state, rest);
       break;
     case 'task':
-      if (!rest) { console.error('Usage: atris fleet task <prompt>'); return; }
+      if (!rest) { console.error('Usage: atris fleet task <prompt>'); process.exitCode = 1; return; }
       await fleetTask(state, rest);
       break;
     case 'claim':
-      if (!rest) { console.error('Usage: atris fleet claim <task_key>'); return; }
+      if (!rest) { console.error('Usage: atris fleet claim <task_key>'); process.exitCode = 1; return; }
       await fleetClaim(state, rest);
       break;
     case 'done':

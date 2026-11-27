@@ -66,7 +66,7 @@ test('compact status counts follow actual transitions while full APIs ignore glo
   add('ask_answered', { ask_id: 'q', answer: 'yes' });
   add('ask_answered', { ask_id: 'q', answer: 'yes' }, 'human:operator');
   const exhausted = add('mission_ended', { mission_id: 'claimed-job', outcome: 'failed', cost_usd: 10 });
-  add('budget_added', { amount_usd: 5, mission_id: 'global-only' });
+  add('budget_added', { amount_usd: 5, mission_id: 'global-only' }, 'human:operator');
   add('step', { mission_id: 'ended-job' });
   add('mission_ended', { mission_id: 'step-job', outcome: 'failed', cost_usd: 1 });
   add('judge_ran', { passed: true, reading: 0.6 }, 'judge');

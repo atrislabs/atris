@@ -343,9 +343,11 @@ async function runDream(root = process.cwd(), options = {}) {
 
 function showHelp(log = console.log) {
   log('');
-  log('Usage: atris dream');
+  log('Usage: atris dream [--yes]');
+  log('       atris dream consolidate [--apply] [--json]');
   log('');
   log('Reads today and writes 2 or 3 cards for atris next.');
+  log('consolidate runs an offline memory pass: audits failures, strips poisoned or duplicate lessons, trims bloated member now.md files, checks wiki links, and writes top invariants to atris/MEMORY_CORE.md.');
   log('');
   log('Run me nightly: atris dream');
   log('launchd line: run atris dream at 4:00 every morning');
@@ -356,6 +358,16 @@ function showHelp(log = console.log) {
 async function dreamCommand(args = [], root = process.cwd(), options = {}) {
   const log = options.log || console.log;
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') return showHelp(log);
+  const isConsolidate = args[0] === 'consolidate' || args.includes('--consolidate') || args.includes('--depoison');
+  if (isConsolidate) {
+    const { runDreamConsolidate, formatConsolidateReport } = require('../lib/dream-consolidate');
+    const apply = args.includes('--apply') || args.includes('--yes') || args.includes('-y');
+    const asJson = args.includes('--json');
+    const result = runDreamConsolidate(root, { apply, stamp: options.stamp });
+    if (asJson) log(JSON.stringify(result, null, 2));
+    else log(formatConsolidateReport(result));
+    return 0;
+  }
   const { refuseHeadlessUnless } = require('../lib/noninteractive');
   if (refuseHeadlessUnless(args, {
     allowYes: true,

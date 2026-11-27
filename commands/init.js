@@ -320,7 +320,7 @@ function initAtris() {
   // many files, including atris/now.md and atris/team/). Asking for help
   // shouldn't have file-system side effects.
   const args = process.argv.slice(3);
-  if (args[0] === '-h' || args[0] === '--help' || args[0] === 'help') {
+  if (args.includes('-h') || args.includes('--help') || args[0] === 'help') {
     console.log('Usage: atris init [--force] [--yes|-y] [--verbose] [--minimal] [--full] [--with-adapters] [--with-skills] [--no-commit]');
     console.log('');
     console.log('  Scaffold the atris/ workspace in the current directory.');

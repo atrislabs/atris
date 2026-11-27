@@ -14,8 +14,10 @@ function formatPageList(items, limit = 3) {
   return items.slice(0, limit).map((item) => item.page || item);
 }
 
-function buildReport(projectRoot = process.cwd(), limit = 3) {
-  ensureWikiScaffold(projectRoot);
+function buildReport(projectRoot = process.cwd(), limit = 3, { dryRun = false } = {}) {
+  if (!dryRun) {
+    ensureWikiScaffold(projectRoot);
+  }
   const pages = readWikiPages(projectRoot);
   const stalePages = findStaleWikiPages(projectRoot);
   const orphanPages = findWikiOrphans(projectRoot);
@@ -87,7 +89,7 @@ async function loopAtris(args = []) {
   const limitArg = args.find((arg) => arg.startsWith('--limit='));
   const limit = limitArg ? Math.max(1, parseInt(limitArg.split('=')[1], 10) || 3) : 3;
 
-  const report = buildReport(process.cwd(), limit);
+  const report = buildReport(process.cwd(), limit, { dryRun });
 
   if (!dryRun) {
     writeWikiStatus(process.cwd(), report);
