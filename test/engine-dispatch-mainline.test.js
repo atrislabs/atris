@@ -404,15 +404,39 @@ test('a remote lookup that ignores termination cannot stall the flight', (t) => 
 const args = process.argv.slice(2);
 if (['ls-remote', 'fetch'].includes(args[0])) {
   process.on('SIGTERM', () => {});
+  console.log('waiting on the remote');
   setInterval(() => {}, 1000);
   return;
 }`));
-  const started = Date.now();
-  assert.equal(defaultMainlineBase(setup.root), 'origin/main');
-  assert.ok(Date.now() - started < 10000, 'lookup must stop at its process timeout');
-  const landingStarted = Date.now();
-  const landing = fleet.landArrival({ worktreePath: setup.root, targetRef: 'origin/main' });
-  assert.equal(landing.ok, false);
-  assert.equal(landing.stage, 'fetch');
-  assert.ok(Date.now() - landingStarted < 20000, 'landing fetch must also stop at its process timeout');
+  // Observe the production deadline and signal before shortening only the wait.
+  const run = spawnSync(process.execPath, ['-e', `
+    const assert = require('node:assert/strict');
+    const childProcess = require('node:child_process');
+    const { spawnSync } = childProcess;
+    const attempted = [];
+    childProcess.spawnSync = (command, args, options) => {
+      const action = args?.[0];
+      if (command !== 'git' || !['ls-remote', 'fetch'].includes(action)) {
+        return spawnSync(command, args, options);
+      }
+      const ceiling = action === 'ls-remote' ? 10000 : 20000;
+      assert.ok(Number.isFinite(options.timeout) && options.timeout > 0 && options.timeout < ceiling,
+        action + ' must have a bounded timeout');
+      assert.equal(options.killSignal, 'SIGKILL', action + ' must stop a process that ignores SIGTERM');
+      const child = spawnSync(command, args, { ...options, timeout: 1200 });
+      assert.match(child.stdout, /waiting on the remote/);
+      assert.equal(child.error?.code, 'ETIMEDOUT');
+      assert.equal(child.signal, 'SIGKILL');
+      attempted.push(action);
+      return child;
+    };
+    const [root, worktreeModule, fleetModule] = process.argv.slice(1);
+    assert.equal(require(worktreeModule).defaultMainlineBase(root), 'origin/main');
+    const landing = require(fleetModule).landArrival({ worktreePath: root, targetRef: 'origin/main' });
+    assert.deepEqual(landing, { ok: false, stage: 'fetch', detail: 'timed out' });
+    assert.deepEqual(attempted, ['ls-remote', 'fetch']);
+  `, setup.root, require.resolve('../commands/worktree'), require.resolve('../lib/fleet')], {
+    cwd: setup.root, encoding: 'utf8', timeout: 12000, killSignal: 'SIGKILL',
+  });
+  assert.equal(run.status, 0, run.stderr || run.stdout || run.error?.message);
 });

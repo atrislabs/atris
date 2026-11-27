@@ -59,6 +59,7 @@ rg "pickLane|loadOverrides|routerCommand|promotionCandidates|autoLaneForMessage|
 ## Engine dispatch default branch and refusals
 
 - Regression: `test/engine-dispatch-mainline.test.js:1` uses real engines and Git for main/trunk dispatch and fleet landings, successful login-related output with backups available, engine-only refusals, backup refusal receipts, a server-only rename without a local tracking ref, failed fetch refusal, one lookup per flight, traced network prompt settings, failed Codex tool transcripts, absent-origin landing, and branch fallback priority. `test/one-lap-runtime.test.js:913` covers sealed review and import on main; `test/engine-dispatch-no-origin.test.js:1` covers absent and unavailable origin.
+- The stalled Git regression in `test/engine-dispatch-mainline.test.js` checks the real lookup and fetch deadlines before reducing them in the test process. Both stand-ins still ignore termination and must be killed at the deadline.
 
 - Engine start helper count: `lib/engine-resource.js:153` appends `leaked_ssh_agents` on start only, using `readSshAgents` at line 229 and the sweep filter at line 239; throws or unreadable scan fields leave null. Regression: `test/engine-resource.test.js:2374` covers all three unavailable readers, and `test/engine-resource.test.js:2389` denies real ps execution and reads back the saved null. `lib/fleet.js:1256` records before launch. Regression: `test/engine-resource.test.js:127`, `test/engine-dispatch.test.js:1319`.
 
@@ -97,6 +98,10 @@ Process-list scan failure: `lib/engine-resource.js:234` returns `unread: ['proce
 Partial socket scan warning: `lib/engine-resource.js:278` names agent sockets unread when any listed agent lacks a socket reading; unread agents remain protected and readable agents can still be proven leaked. `commands/engine.js:2392` warns that the count may be incomplete. Regressions: `test/engine-resource.test.js:383` checks mixed readings; `test/engine-resource.test.js:395` launches two real ssh-agents, withholds only one real lsof process block, and runs the real text and JSON CLI.
 
 - Cleanup scan warnings: `commands/engine.js:2347` merges unread initial and final readers for text and JSON; `lib/engine-resource.js:347` records unread final readers and an unknown remaining count. `test/engine-resource.test.js:2410` covers changed readers across scans; `test/engine-resource.test.js:2427` exercises the real CLI with process execution denied.
+
+## Scout time limits
+
+- `commands/scout.js` uses the same `lib/fleet.js` (`spawnWithOutputChunks`) process-group timeout as fleet dispatch. The timeout stops the engine and children holding its output open on Linux and macOS. `test/engine-resource.test.js` verifies that a real child cannot finish after the timeout and that the receipt distinguishes a timeout from a crash.
 
 ## Mercury 3 test model and the model picker
 

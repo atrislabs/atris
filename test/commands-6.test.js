@@ -19,6 +19,15 @@ const {
   waitForOutput,
 } = require('./helpers/commands-fixtures');
 
+function seedTaskRows(dir, dbPath, seed) {
+  const db = taskStore.open(dbPath);
+  try {
+    seed(db, taskStore.workspaceRoot(dir));
+  } finally {
+    taskStore.close();
+  }
+}
+
 test('task proof-only agent env blocks acceptance verbs', () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
@@ -209,17 +218,20 @@ test('task auto-accept-certified --all sweeps past the old 12-row cap', () => {
     fs.writeFileSync(path.join(trustState, 'career_xp_receipts.jsonl'), `${trustedCodex.join('\n')}\n`);
     fs.writeFileSync(path.join(trustState, 'scorecards.jsonl'), '');
     writePolicy(dir, { enabled: false, enabled_by: 'test' });
-    for (let i = 0; i < ROW_COUNT; i += 1) {
-      const add = runCli(['task', 'add', `Row ${i} lands under --all`, '--tag', 'code', '--json'], { cwd: dir, env });
-      assert.equal(add.status, 0, add.stderr);
-      const ref = JSON.parse(add.stdout).task.display_id;
-      assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
-      assert.equal(runCli([
-        'task', 'ready', ref,
-        '--proof', `Row ${i}: node --check test/commands.test.js passed and diff inspected end to end`,
-        '--as', 'codex',
-      ], { cwd: dir, env }).status, 0);
-    }
+    const title = i => `Row ${i} lands under --all`;
+    const proof = i => `Row ${i}: node --check test/commands.test.js passed and diff inspected end to end`;
+    const add = runCli(['task', 'add', title(0), '--tag', 'code', '--json'], { cwd: dir, env });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', proof(0), '--as', 'codex'], { cwd: dir, env }).status, 0);
+    seedTaskRows(dir, dbPath, (db, workspaceRoot) => {
+      for (let i = 1; i < ROW_COUNT; i += 1) {
+        const { id } = taskStore.addTask(db, { title: title(i), tag: 'code', workspaceRoot });
+        assert.equal(taskStore.claimTask(db, { id, claimedBy: 'codex' }).claimed, true);
+        assert.equal(taskStore.readyTask(db, { id, actor: 'codex', proof: proof(i) }).ready, true);
+      }
+    });
 
     // Without --all, the certified-only queue is unchanged: none of these
     // rows carry a second review pass, so the default path certifies none.
@@ -1195,15 +1207,22 @@ test('task review groups are capped by default for human scan', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    for (let index = 1; index <= 12; index += 1) {
-      const tag = `tag-${String(index).padStart(2, '0')}`;
-      const created = runCli(['task', 'new', `Grouped approval ${index}`, '--tag', tag, '--json'], { cwd: dir, env });
-      assert.equal(created.status, 0, created.stderr);
-      const task = JSON.parse(created.stdout).task;
-      assert.equal(runCli(['task', 'claim', task.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
-      assert.equal(runCli(['task', 'ready', task.display_id, '--proof', 'node --check test/commands.test.js passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
-      assert.equal(runCli(['task', 'review', task.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
-    }
+    const proof = 'node --check test/commands.test.js passed';
+    const created = runCli(['task', 'new', 'Grouped approval 1', '--tag', 'tag-01', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const ref = JSON.parse(created.stdout).task.display_id;
+    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', ref, '--proof', proof, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'review', ref, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
+    seedTaskRows(dir, dbPath, (db, workspaceRoot) => {
+      for (let index = 2; index <= 12; index += 1) {
+        const tag = `tag-${String(index).padStart(2, '0')}`;
+        const { id } = taskStore.addTask(db, { title: `Grouped approval ${index}`, tag, workspaceRoot });
+        assert.equal(taskStore.claimTask(db, { id, claimedBy: 'codex' }).claimed, true);
+        assert.equal(taskStore.readyTask(db, { id, actor: 'codex', proof }).ready, true);
+        assert.equal(taskStore.reviewTask(db, { id, actor: 'validator', reward: 0 }).reviewed, true);
+      }
+    });
 
     const grouped = runCli(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env });
     assert.equal(grouped.status, 0, grouped.stderr);
@@ -1372,13 +1391,18 @@ test('task render archives old completed records from TODO view', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    for (let i = 0; i < 12; i += 1) {
-      const created = runCli(['task', 'new', `Completed task ${i}`, '--tag', 'agent', '--json'], { cwd: dir, env });
-      assert.equal(created.status, 0, created.stderr);
-      const id = JSON.parse(created.stdout).task_id;
-      const done = runCli(['task', 'done', id, '--proof', `node --test test/commands.test.js passed for archive ${i}`, '--json'], { cwd: dir, env });
-      assert.equal(done.status, 0, done.stderr);
-    }
+    const proof = i => `node --test test/commands.test.js passed for archive ${i}`;
+    const created = runCli(['task', 'new', 'Completed task 0', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const first = JSON.parse(created.stdout).task_id;
+    const done = runCli(['task', 'done', first, '--proof', proof(0), '--json'], { cwd: dir, env });
+    assert.equal(done.status, 0, done.stderr);
+    seedTaskRows(dir, dbPath, (db, workspaceRoot) => {
+      for (let i = 1; i < 12; i += 1) {
+        const { id } = taskStore.addTask(db, { title: `Completed task ${i}`, tag: 'agent', workspaceRoot });
+        assert.equal(taskStore.doneTask(db, { id, status: 'done', proof: proof(i) }).updated, true);
+      }
+    });
 
     const render = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
     assert.equal(render.status, 0, render.stderr);
@@ -1438,13 +1462,18 @@ test('task render archives old blocked records from TODO view', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    for (let i = 0; i < 16; i += 1) {
-      const created = runCli(['task', 'new', `Blocked task ${i}`, '--tag', 'agent', '--json'], { cwd: dir, env });
-      assert.equal(created.status, 0, created.stderr);
-      const id = JSON.parse(created.stdout).task_id;
-      const failed = runCli(['task', 'done', id, '--failed', '--proof', `node --test test/commands.test.js passed for blocked archive ${i}`, '--json'], { cwd: dir, env });
-      assert.equal(failed.status, 0, failed.stderr);
-    }
+    const proof = i => `node --test test/commands.test.js passed for blocked archive ${i}`;
+    const created = runCli(['task', 'new', 'Blocked task 0', '--tag', 'agent', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const first = JSON.parse(created.stdout).task_id;
+    const failed = runCli(['task', 'done', first, '--failed', '--proof', proof(0), '--json'], { cwd: dir, env });
+    assert.equal(failed.status, 0, failed.stderr);
+    seedTaskRows(dir, dbPath, (db, workspaceRoot) => {
+      for (let i = 1; i < 16; i += 1) {
+        const { id } = taskStore.addTask(db, { title: `Blocked task ${i}`, tag: 'agent', workspaceRoot });
+        assert.equal(taskStore.doneTask(db, { id, status: 'failed', proof: proof(i) }).updated, true);
+      }
+    });
 
     const render = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
     assert.equal(render.status, 0, render.stderr);

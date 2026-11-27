@@ -14,6 +14,28 @@ rg "releaseAtris|releasePreflight|release preflight" commands/release.js bin/atr
 
 `scripts/ci-impact-check.js` (`plan`) maps changed files to tests and explains when the full suite is needed. `.github/workflows/ci.yml` requires planning, tests and deck lint to pass. Scheduled and manual runs use all eight full-suite groups.
 
+The slow-answer and lost-answer retry checks in `test/gm-phone-hands.test.js` and the team-table, long-name and engine-swap viewport checks in `test/gm-phone.test.js` run at most two independent Chrome sessions at a time per check. Each case still uses its own browser and local test server.
+
+The sleep and lost-look checks in `test/gm-phone-health.test.js` also overlap up to two independent Chrome sessions. The page keeps the same polling and response deadlines.
+
+The connection and navigation checks in `test/gm-phone-hands.test.js` overlap up to two independent sessions. The checks keep the real reconnect, polling and response timers.
+
+The calm-line checks in `test/gm-phone.test.js` overlap motion and reduced motion when closing the team, and sending and clearing a note while an idea waits. Each case keeps its own browser and desk.
+
+The detached mission check in `test/mission-status.test.js` uses a one-second cadence. The real child still runs past its first cycle and exits when its saved budget runs out.
+
+The phone checks for words kept after a failed send, replies that keep the card's action, and returning to the orb in `test/gm-phone.test.js` run up to two card cases together. Each still has its own Chrome session and desk.
+
+`test/gm-phone-health.test.js` shares the identical screen reader capture between announcement and refusal checks, and the identical keyboard capture between focus ring checks. Each check can still run on its own.
+
+`test/gm-phone-cards.test.js` holds nine unchanged browser journeys for card typing, team, and deck actions so CI can run them on a different worker from `test/gm-phone.test.js`.
+
+`test/gm-phone-layout.test.js` measures card line wrapping, footer geometry, contrast, type sizes and team-link visibility in the same Chrome render where the card and viewport match. Each assertion keeps its original cards and screen sizes.
+
+`test/engine-resource.test.js` counts bytes as it fills large log fixtures. The task history and archive checks in `test/commands-4.test.js` and `test/commands-6.test.js` make the first entry through the CLI and add the rest through the task store.
+
+The workspace-free help sweep in `test/commands-7.test.js` runs two CLI processes at a time. Every invocation has its own home and working folder and still checks the exit code, output and absence of local state.
+
 ## Feature: Release (`atris release`)
 
 **Purpose:** Tag a release, bump version, create GitHub release, draft /launch post
@@ -56,6 +78,8 @@ npm run publish:release
 ## Revision reports across out-of-order commit dates
 
 Raw temporary-folder test setup: `test/helpers/task-help-fixture.js:43` supplies the unchanged folder functions to version-cmd, confidence-gate, unknowns, console-packet-shape and agent-proof-only tests. Their local no-argument wrappers retain each exact prefix and raw temporary path; CLI helpers, options and behavior checks remain local. Check: `node --test test/version-cmd.test.js test/confidence-gate.test.js test/unknowns.test.js test/console-packet-shape.test.js test/agent-proof-only.test.js`. The same unchanged folder functions also serve agents, config-guard, dream and router-brain tests; their local files, injected callbacks and availability checks stay local. Check: `node --test test/agents.test.js test/config-guard.test.js test/dream.test.js test/router-brain.test.js`.
+
+The task list limit cases in `test/commands-6.test.js` create the first row through the CLI and populate the other rows through the task store. The auto-accept scan, grouped reviews and blocked-task archive checks still run through the CLI at their original row counts.
 
 ## Balanced GitHub test groups and review resilience
 

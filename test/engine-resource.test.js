@@ -763,6 +763,17 @@ test('resource history survives removal of a real linked checkout', () => {
   }
 });
 
+function fillResourceLog(lines, minBytes, entry) {
+  let bytes = Buffer.byteLength(lines.join('\n'));
+  while (bytes < minBytes) {
+    const start = entry(lines.length, 'start');
+    const end = entry(lines.length, 'end');
+    lines.push(start, end);
+    bytes += Buffer.byteLength(start) + Buffer.byteLength(end) + 2;
+  }
+  return `${lines.join('\n')}\n`;
+}
+
 test('a full resource log is cut back to its newest lines but keeps starts still waiting for an end', () => {
   const { MAX_LOG_BYTES } = require('../lib/engine-resource');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-cap-'));
@@ -771,8 +782,7 @@ test('a full resource log is cut back to its newest lines but keeps starts still
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const old = (run_id, phase) => JSON.stringify({ at: '2026-10-01T00:00:00.000Z', phase, engine: 'cursor', task: 'OLD', run_id, pad: 'x'.repeat(200) });
     const lines = [old('long-run', 'start'), old('done-run', 'start'), old('done-run', 'end')];
-    while (lines.join('\n').length < MAX_LOG_BYTES) lines.push(old(`filler-${lines.length}`, 'start'), old(`filler-${lines.length}`, 'end'));
-    fs.writeFileSync(file, `${lines.join('\n')}\n`);
+    fs.writeFileSync(file, fillResourceLog(lines, MAX_LOG_BYTES, (i, phase) => old(`filler-${i}`, phase)));
     const deps = { platform: 'linux', loadavg: () => [0, 0, 0], now: () => '2026-10-14T12:00:00.000Z' };
     recordEngineResource(root, { phase: 'end', engine: 'cursor', task: 'LONG', run_id: 'long-run', signal: 'SIGKILL' }, deps);
     assert.ok(fs.statSync(file).size < MAX_LOG_BYTES, 'log was not cut back');
@@ -823,8 +833,7 @@ test('an unfinished run whose start sits more than a megabyte back is still coun
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const line = (run_id, phase) => JSON.stringify({ at: '2026-10-14T09:00:00.000Z', phase, engine: 'cursor', task: run_id, run_id, pad: 'x'.repeat(200) });
     const lines = [line('deep-open', 'start')];
-    while (lines.join('\n').length < 1.2 * 1024 * 1024) lines.push(line(`done-${lines.length}`, 'start'), line(`done-${lines.length}`, 'end'));
-    fs.writeFileSync(file, `${lines.join('\n')}\n`);
+    fs.writeFileSync(file, fillResourceLog(lines, 1.2 * 1024 * 1024, (i, phase) => line(`done-${i}`, phase)));
     const history = readResourceHistory(root);
     assert.strictEqual(history.open_runs, 1);
     assert.strictEqual(history.last_open.run_id, 'deep-open');
@@ -1065,9 +1074,12 @@ test('atris scout records each engine run with a time limit kill and a crash tol
     fake('echo "it is in lib/fleet.js:1"');
     const answered = scout(30);
     assert.strictEqual(answered.status, 0, answered.stderr);
-    fake('sleep 30');
+    fake('(echo running > scout-child-started; sleep 30; echo survived > scout-child-finished) &\nwait');
     const slow = scout(1);
     assert.strictEqual(slow.status, 1);
+    assert.match(slow.stdout, /timed out after 1s/);
+    assert.ok(fs.existsSync(path.join(root, 'scout-child-started')), 'the shell started a real descendant');
+    assert.ok(!fs.existsSync(path.join(root, 'scout-child-finished')), 'the timed-out scout let its descendant finish');
     fake('kill -9 $$');
     const crashed = scout(30);
     assert.strictEqual(crashed.status, 1);

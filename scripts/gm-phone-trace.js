@@ -49,6 +49,12 @@ const LAPTOP = { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }
 const SMALL_PHONE = { width: 320, height: 568, deviceScaleFactor: 2, mobile: true };
 const TOKEN = 't'.repeat(43);
 const wait = ms => new Promise(r => setTimeout(r, ms));
+async function finishTraces(traces) {
+  return (await Promise.allSettled(traces)).map(result => {
+    if (result.status === 'rejected') throw result.reason;
+    return result.value;
+  });
+}
 // a deliberate second tap on a button that asks for one; a quicker one is a fumbled double tap the page ignores
 const SECOND_TAP_MS = 450;
 
@@ -675,15 +681,15 @@ async function unsentSayTrace({ chromePath = findChrome() } = {}) {
 const NOT_HEARD = 'the model did not answer this time, so nothing was saved. try again in a moment.';
 async function unheardKeepTrace({ chromePath = findChrome() } = {}) {
   const WORDS = 'making sure this app is really really fast';
-  const runs = [];
-  for (const [base, open] of [[CARDS.q1, '#bet .choice.other'], [CARDS.b1, '#bet .sayline .quiet']]) {
+  const cases = [[CARDS.q1, '#bet .choice.other'], [CARDS.b1, '#bet .sayline .quiet']];
+  return finishTraces(cases.map(([base, open]) => {
     const calls = [];
     const desk = cardDesk(base, async (action, { text }) => {
       calls.push({ action, text });
       if (calls.length === 1) return { card: gmCard.reply({ id: `${base.id}~r1`, base, text: NOT_HEARD }), keep: text };
       return { card: CARDS.b2 };
     });
-    runs.push(await onPhone(desk, chromePath, async (p) => {
+    return onPhone(desk, chromePath, async (p) => {
       await p.tap(open);
       await wait(250);
       await p.type(WORDS);
@@ -694,9 +700,8 @@ async function unheardKeepTrace({ chromePath = findChrome() } = {}) {
       await p.enter();
       await p.until(titled(CARDS.b2.title), 'the next card', 8000).catch(() => {});
       return { card: base.kind, words: WORDS, unheard, sent: await look(p), calls };
-    }));
-  }
-  return runs;
+    });
+  }));
 }
 
 // ---- a word to a teammate that did not send comes back, ready to send again -------------
@@ -748,15 +753,15 @@ async function talkFailTrace({ chromePath = findChrome() } = {}) {
 // The reply explains, so the card's own button is there once and still
 // works: two taps, and the desk is asked to do it or hears the yes.
 async function replyKeepsActionTrace({ chromePath = findChrome() } = {}) {
-  const runs = [];
-  for (const [base, label, armed] of [[CARDS.b1, 'do it', 'tap again to start'], [CARDS.yes, 'yes', 'tap again to say yes']]) {
+  const cases = [[CARDS.b1, 'do it', 'tap again to start'], [CARDS.yes, 'yes', 'tap again to say yes']];
+  return finishTraces(cases.map(([base, label, armed]) => {
     const did = [];
     const desk = cardDesk(base, async (action, { card }) => {
       if (action === 'say') return { card: replyTo(card) };
       did.push(action);
       return { card: CARDS.b2, ack: 'sent.' };
     });
-    runs.push(await onPhone(desk, chromePath, async (p, send) => {
+    return onPhone(desk, chromePath, async (p, send) => {
       await p.tap('#bet .sayline .quiet');
       await wait(250);
       await p.type('what do you mean?');
@@ -774,9 +779,8 @@ async function replyKeepsActionTrace({ chromePath = findChrome() } = {}) {
         while (!did.length && Date.now() < end) await wait(16);
       } catch (err) { error = err.message; }
       return { card: base.id, label, after_reply, did, error };
-    }));
-  }
-  return runs;
+    });
+  }));
 }
 
 // ---- the small orb on any card goes back to the big one -----------------------------------
@@ -787,8 +791,7 @@ async function replyKeepsActionTrace({ chromePath = findChrome() } = {}) {
 // it asked for a new card; then a tap on the big orb. On the calm line the
 // idea lands while the owner is on the big orb, and waits there.
 async function orbHomeTrace({ chromePath = findChrome() } = {}) {
-  const runs = [];
-  for (const from of ['idea', 'calm', 'yes']) {
+  const run = (from) => {
     let asked = 0;
     let landed = false;
     const first = from === 'idea' ? CARDS.b1 : from === 'yes' ? CARDS.yes : CARDS.calm;
@@ -796,7 +799,7 @@ async function orbHomeTrace({ chromePath = findChrome() } = {}) {
       if (action === 'orb') { asked += 1; return { card: card === CARDS.calm && landed ? CARDS.b1 : CARDS.b2 }; }
       return { card };
     }, { queue: () => (landed ? 1 : 0), needs: () => (from === 'yes' ? 2 : 0) });
-    runs.push(await onPhone(desk, chromePath, async (p) => {
+    return onPhone(desk, chromePath, async (p) => {
       const place = () => p.run("(function () { var h = document.querySelector('#bet h1'); return { has_card: document.body.classList.contains('has-card'), big_orb: getComputedStyle(document.querySelector('.stage')).display !== 'none' && getComputedStyle(document.getElementById('orb')).visibility !== 'hidden', line: document.getElementById('line').textContent, title: document.body.classList.contains('has-card') && h ? h.textContent : null }; })()");
       await p.tap(from === 'calm' ? '#orb' : '#lava');
       await p.until("!document.body.classList.contains('has-card')", 'the big orb', 4000).catch(() => {});
@@ -809,9 +812,10 @@ async function orbHomeTrace({ chromePath = findChrome() } = {}) {
       await wait(300);
       const tapped = { ...(await place()), asked };
       return { from, home, stayed, tapped };
-    }));
-  }
-  return runs;
+    });
+  };
+  const runs = await finishTraces([run('idea'), run('calm')]);
+  return [...runs, await run('yes')];
 }
 
 // ---- the team opened from the big orb closes back to it ------------------------------------------
