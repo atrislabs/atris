@@ -1,5 +1,7 @@
 # MAP notes: the deep map with rg shortcuts and code refs
 
+- Endpoint speed checks: `commands/perf.js:6` (`perfCommand`), `lib/perf.js:24` (`measure`), `lib/perf.js` (`summarize`, `rankRuns`), `lib/perf-html.js:3` (`renderHtml`); runtime coverage in `test/perf.test.js`.
+
 The short routing table is `atris/MAP.md`. This page points to one note per area, each with refs that name the file and the function, plus `rg` search shortcuts. Open only the note your work touches. `atris doc-health` checks every ref in these notes and `atris doc-health --fix-refs` pins old line refs to their function names.
 
 - How `bin/atris.js` routes commands, the plain-English entry, flag parsing, chat and the ax app. Open [cli-entry.md](map/cli-entry.md) when you change how a command is dispatched, parsed or named.

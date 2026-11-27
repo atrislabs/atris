@@ -641,6 +641,7 @@ function showHelpAll() {
   console.log('  report     - Weekly block: landings, journal completions, and Career XP');
   console.log('  xp         - Show Career XP and contribution graph');
   console.log('  analytics  - Show recent productivity from journals');
+  console.log('  perf       - measure endpoint speed and open a ranked report');
   console.log('  revisions  - show possible human revisions after atris-assisted landings');
   console.log('  tree hash  - hash the live agent text tree (--json for manifest)');
   console.log('  search     - Search workspace memory (atris search <keyword>)');
@@ -2979,6 +2980,9 @@ if (command === 'guide') {
     const verbose = process.argv.includes('--verbose') || process.argv.includes('-v');
     statusCmd(isQuick, isJson, verbose);
   }
+} else if (command === 'perf') {
+  require('../commands/perf').perfCommand(process.argv.slice(3))
+    .catch(err => { console.error(`perf: ${err.message}`); process.exitCode = 1; });
 } else if (command === 'analytics') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
