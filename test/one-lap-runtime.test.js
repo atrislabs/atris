@@ -184,7 +184,11 @@ printf 'committed lap-marker.txt\n'
 function fakeValidatorScript() {
   return `#!/bin/sh
 set -eu
+# The scout pack call answers with an empty pack. Tell it apart by its prompt,
+# not its model: unattended Claude runs default to Haiku too (8b089cae0), so
+# the validator also arrives with --model claude-haiku-5-5.
 case "$*" in
+  *"independent validator"*) ;;
   *"--model claude-haiku-5-5"*)
     printf '{}\n'
     exit 0

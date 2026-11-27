@@ -38,7 +38,7 @@ test('engines: what can run here, local and cloud, each with a reason when it ca
   const cloud = list.find((e) => e.id === 'atris-fast');
   assert.equal(cloud.kind, 'cloud');
   assert.equal(cloud.available, false, 'the Atris models need a sign-in');
-  assert.match(cloud.reason, /atris login/);
+  assert.equal(cloud.reason, 'This computer is signed out of Atris. Sign it in again.');
   assert.equal(team.listEngines({ isInstalled: () => false, authToken: () => 'token' }).find((e) => e.id === 'atris-fast').available, true);
   assert.equal(list.find((e) => e.id === 'atris-agent-1').available, false);
   for (const engine of list) for (const key of ['id', 'name', 'kind', 'available']) assert.ok(key in engine, key);
@@ -55,13 +55,13 @@ test('settings: one default model, stored in the project atris config; an unavai
   assert.equal(JSON.parse(fs.readFileSync(path.join(ctx.root, 'atris', '.config'), 'utf8')).feed.default_engine, 'codex');
 });
 
-test('settings: a member\'s own roster line, else the feed default, else the workspace default', (t) => {
+test('settings: a member\'s own roster line, else the feed default, else the house pick', (t) => {
   const ctx = project(t, ['scout', 'writer'], { engine: null });
   const workspace = team.memberEngine(ctx.root, 'writer');
-  assert.equal(workspace.source, 'workspace');
+  assert.equal(workspace.source, 'house');
   fs.writeFileSync(path.join(ctx.root, 'atris', '.config'), JSON.stringify({ feed: { default_engine: 'codex' } }));
-  fs.writeFileSync(path.join(ctx.root, 'atris', 'ROSTER.md'), '# roster\n\n## team\n- scout: claude\n');
-  assert.deepEqual([team.memberEngine(ctx.root, 'scout').id, team.memberEngine(ctx.root, 'scout').source], ['claude', 'member']);
+  fs.writeFileSync(path.join(ctx.root, 'atris', 'ROSTER.md'), '# roster\n\n## team\n- scout: haiku\n');
+  assert.deepEqual([team.memberEngine(ctx.root, 'scout').id, team.memberEngine(ctx.root, 'scout').source], ['haiku', 'member']);
   assert.deepEqual([team.memberEngine(ctx.root, 'writer').id, team.memberEngine(ctx.root, 'writer').source], ['codex', 'feed']);
 });
 
@@ -252,7 +252,7 @@ test('emit: ideas go through the propose rules; progress and results only from t
   const accept = feed.listCards(ctx.root, { env: ctx.env }).cards.find((c) => c.source.id === idea.card.source.id && /:accept$/.test(c.id));
   assert.ok(accept && accept.needs_decision);
   assert.equal(accept.proof.status, 'unverified', 'no receipt, so not verified');
-  assert.deepEqual(team.readEvents(ctx.root).map((e) => e.type), ['idea', 'progress', 'result']);
+  assert.deepEqual(team.readEvents(ctx.root).map((e) => e.type), ['idea', 'decision', 'progress', 'result']);
   assert.equal(done.event.member, 'scout');
 });
 
@@ -274,7 +274,7 @@ test('emit: the same stream reads from atris channel feed when there is no hoste
 
 // ------------------------------------------------------------ more on scroll
 
-test('more: a scroll ping to up to three ON members, with the person\'s taste in their brief', async (t) => {
+test('more: the person asks up to three ON members for more, with the person\'s taste in their brief', async (t) => {
   const ctx = project(t, ['scout', 'writer', 'closer', 'extra']);
   const yes = propose(ctx, { title: 'Call the warm leads today' }).card;
   feed.decide(ctx.root, yes.id, 'approve', { note: 'more like this', env: ctx.env, deps: ctx.deps });
@@ -286,7 +286,7 @@ test('more: a scroll ping to up to three ON members, with the person\'s taste in
   ctx.spawned.length = 0;
   const out = feed.requestMoreIdeas(ctx.root, { env: ctx.env, deps: ctx.deps });
   assert.ok(out.requested >= 1 && out.requested <= 3);
-  assert.ok(ctx.thinkers.length === 1 && ctx.thinkers[0].names.length <= 3 && ctx.thinkers[0].reason === 'scroll');
+  assert.ok(ctx.thinkers.length === 1 && ctx.thinkers[0].names.length <= 3 && ctx.thinkers[0].reason === 'more', 'a person asking for more, never held to what the feed may start by itself');
   assert.equal(feed.readRuns(ctx.root).filter((e) => e.kind === 'ping').length, 0, 'thinking never uses the work queue');
   const brief = team.pingBrief(ctx.root, 'extra', 'scroll');
   assert.match(brief, /said yes to these[\s\S]*Call the warm leads today \(owner said: more like this\)/);

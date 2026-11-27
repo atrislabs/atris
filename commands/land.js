@@ -1086,7 +1086,10 @@ function landCommand(args = []) {
       let policy = null;
       try { policy = require('../lib/autoland').readPolicy(owner); } catch { policy = null; }
       const suitesRaw = Number(policy && policy.green_landing_local_suites);
+      const { receiptGateSetting, checkSecondsSetting } = require('../lib/land-receipt-gate');
       const result = landStaleGreenBranches(root, {
+        receipts: receiptGateSetting(policy),
+        checkSeconds: checkSecondsSetting(policy),
         ttlDays,
         base,
         dryRun: args.includes('--dry-run'),
@@ -1102,6 +1105,7 @@ function landCommand(args = []) {
       });
       if (json) console.log(JSON.stringify(result, null, 2));
       else console.log(`green landing: ${summaryLine(result)}`);
+      if (!json && result.waiting_pile) console.log(result.waiting_pile.line);
       return 0;
     } catch (err) {
       return finishLandError(err, json);

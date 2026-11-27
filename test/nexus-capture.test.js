@@ -7,7 +7,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { nexusCommand } = require('../commands/nexus');
-const { guessName, refFor } = require('../commands/nexus-capture');
+const { guessName, refFor, permalinkOf, reasonRef } = require('../commands/nexus-capture');
 
 const NOW = new Date(2026, 10, 16, 21);
 const RAE = '11111111-1111-4111-8111-111111111111';
@@ -330,4 +330,213 @@ test('reading a name out of messy text', () => {
     const emails = (text.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || []);
     assert.equal(guessName(text, emails), want, JSON.stringify(text));
   }
+});
+
+// ---- --why and --source-url: the reason note the Chrome extension also writes ----
+
+const VID = 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=95s&si=abc&list=PL1&utm_source=x#frag';
+
+test('--why with --source-url sends the exact extension note as private words, with no source_url and no public fields', async () => {
+  const { code, out, server } = await run(['capture', '--name', 'Rae Sample', '--why', 'her talk\n on pricing   fits our ask', '--source-url', VID]);
+  assert.equal(code, 0, out);
+  assert.equal(server.state.captures.length, 1);
+  const sent = server.state.captures[0];
+  assert.equal(sent.words, 'Why reach out: her talk on pricing fits our ask\nSource: https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=95s');
+  assert.equal(sent.source, 'command_line', 'command_line keeps the store from treating the page as a public profile');
+  assert.equal(sent.name, 'Rae Sample');
+  for (const key of ['source_url', 'note', 'group_name', 'email', 'linkedin_url', 'x', 'website']) assert.equal(sent[key], undefined, key);
+  assert.match(sent.ref, /^cli-why-[0-9a-f]{40}$/);
+  assert.equal(server.state.calls[0].retries, 0);
+  for (const call of server.state.calls) assert.ok(!/pricing|youtube/i.test(call.path), `no words in the address: ${call.path}`);
+  assert.match(out, /reason and the page are kept as a private note/);
+  assert.match(out, /Source: https:\/\/www\.youtube\.com\/watch\?v=dQw4w9WgXcQ&t=95s/);
+});
+
+test('--why alone saves just the Why line; the --json answer says what was kept', async () => {
+  const { code, out, server } = await run(['capture', '--json', '--name', 'Rae Sample', '--why', 'asked about hiring']);
+  assert.equal(code, 0, out);
+  assert.equal(server.state.captures[0].words, 'Why reach out: asked about hiring');
+  const data = JSON.parse(out);
+  assert.equal(data.saved, true);
+  assert.equal(data.why, 'asked about hiring');
+  assert.equal(data.source_url, null);
+  assert.equal(data.name_from, 'flag');
+});
+
+test('--why with --person pins the card and takes its name from it; an unknown id saves nothing', async () => {
+  const server = backend();
+  const done = await run(['capture', '--person', RAE_TWO, '--why', 'pricing talk'], server);
+  assert.equal(done.code, 0, done.out);
+  assert.equal(server.state.captures[0].person_id, RAE_TWO);
+  assert.equal(server.state.captures[0].name, 'Rae Sample');
+  const missing = await run(['capture', '--person', '33333333-3333-4333-8333-333333333333', '--why', 'pricing talk']);
+  assert.equal(missing.code, 1);
+  assert.equal(missing.server.state.captures.length, 0);
+});
+
+test('a name that could be two cards asks first with --why too, and the pick keeps the same note', async () => {
+  const server = backend({ capture: (_body, n) => (n === 1 ? { ok: true, status: 200, data: twoChoices() } : undefined) });
+  const asked = await run(['capture', '--name', 'Rae Sample', '--why', 'pricing talk'], server);
+  assert.equal(asked.code, 3);
+  assert.equal(JSON.parse(asked.out).needs_choice, true);
+  const picked = await run(['capture', '--name', 'Rae Sample', '--person', RAE, '--why', 'pricing talk']);
+  assert.equal(picked.code, 0);
+  assert.equal(picked.server.state.captures[0].words, server.state.captures[0].words);
+  assert.notEqual(picked.server.state.captures[0].ref, server.state.captures[0].ref, 'a pinned card is its own save');
+});
+
+test('--why misuse is refused before any call, and ordinary capture is unchanged', async () => {
+  for (const args of [
+    ['capture', '--why', 'pricing talk'],
+    ['capture', '--name', 'Rae Sample', '--why', '   '],
+    ['capture', '--name', 'Rae Sample', '--why', 'pricing talk', 'more text'],
+    ['capture', '--name', 'Rae Sample', '--source-url', VID, MESSY],
+    ['capture', '--name', 'Rae Sample', '--why', 'pricing talk', '--source-url', 'javascript:alert(1)'],
+    ['capture', '--name', 'Rae Sample', '--why', 'pricing talk', '--source-url', 'not a link'],
+  ]) {
+    const r = await run(args);
+    assert.equal(r.code, 2, args.join(' '));
+    assert.equal(r.server.state.calls.length, 0, args.join(' '));
+  }
+  const plain = await run(['capture', MESSY]);
+  assert.equal(plain.server.state.captures[0].words, MESSY);
+  assert.match(plain.server.state.captures[0].ref, /^cli-[0-9a-f]{40}$/);
+});
+
+test('a retry or another second of the same video makes the same ref; a different reason or person does not', () => {
+  const at95 = permalinkOf(VID);
+  const at300 = permalinkOf('https://youtu.be/dQw4w9WgXcQ?t=5m');
+  assert.equal(at95.key, at300.key);
+  const ref = (reason, page, pid = '') => reasonRef('Rae Sample', reason, page.key, pid, false);
+  assert.equal(ref('pricing talk', at95), ref('pricing talk', at300));
+  assert.equal(ref('pricing talk', at95), reasonRef(' rae  sample ', 'Pricing Talk'.toLowerCase(), at95.key, '', false));
+  assert.notEqual(ref('pricing talk', at95), ref('hiring question', at95));
+  assert.notEqual(ref('pricing talk', at95), ref('pricing talk', at95, RAE));
+  assert.notEqual(ref('pricing talk', at95), ref('pricing talk', permalinkOf('https://example.com/a')));
+});
+
+test('page links are kept clean and meaningful, as the extension keeps them', () => {
+  const url = (raw) => permalinkOf(raw).url;
+  assert.equal(url('https://m.youtube.com/watch?v=dQw4w9WgXcQ&feature=share'), 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  assert.equal(url('https://youtu.be/dQw4w9WgXcQ?si=xyz&t=1h2m3s'), 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=3723s');
+  assert.equal(url('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=0'), 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  assert.equal(url('https://www.youtube.com/live/dQw4w9WgXcQ?pp=1'), 'https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+  assert.equal(url('https://www.youtube.com/embed/dQw4w9WgXcQ?start=42'), 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s');
+  assert.equal(url('https://www.youtube.com/shorts/dQw4w9WgXcQ?t=9'), 'https://www.youtube.com/shorts/dQw4w9WgXcQ');
+  assert.equal(url('https://www.youtube.com/@samplechannel/videos?view=0'), 'https://www.youtube.com/@samplechannel');
+  assert.equal(url('https://youtube.com/channel/UCabc123/featured'), 'https://www.youtube.com/channel/UCabc123');
+  assert.equal(url('https://user:pw@Example.COM/post/1?utm_source=x&id=2#top'), 'https://example.com/post/1');
+  for (const bad of ['ftp://example.com/a', 'data:text/html,hi', 'javascript:alert(1)', 'example.com', '']) assert.ok(permalinkOf(bad).error, bad);
+});
+
+test('broken percent codes and unsupported YouTube identities refuse with one JSON object before any call', async () => {
+  for (const page of [
+    'https://www.youtube.com/%E0%A4%A',
+    'https://www.youtube.com/@bad%ZZ',
+    'https://www.youtube.com/watch?v=%E0%A4%A',
+    'https://youtu.be/%ZZ',
+    'https://example.com/%E0%A4%A',
+    'https://youtube.com/watch?v=bad',
+    'https://music.youtube.com/watch?v=bad',
+    'https://youtu.be/bad',
+    'https://youtube.com/shorts/bad',
+    'https://youtube.com/embed/bad',
+    'https://youtube.com/live/bad',
+    'https://youtu.be/dQw4w9WgXcQ/extra',
+    'https://youtube.com/watch/extra?v=dQw4w9WgXcQ',
+    'https://music.youtube.com/live/dQw4w9WgXcQ/extra',
+    'https://youtube.com/playlist?list=PL123&si=tracking',
+    'https://music.youtube.com/playlist?list=PL456',
+    'https://youtube.com/watch?list=PL123',
+  ]) {
+    const r = await run(['capture', '--json', '--name', 'Rae Sample', '--why', 'pricing talk', '--source-url', page]);
+    assert.equal(r.code, 2, page);
+    assert.equal(r.out.split('\n').length, 1, page);
+    assert.equal(JSON.parse(r.out).ok, false, page);
+    assert.match(JSON.parse(r.out).error, /page link.*nothing was saved/i, page);
+    assert.equal(r.err, '', page);
+    assert.equal(r.server.state.calls.length, 0, page);
+  }
+});
+
+test('the CLI process returns a clean JSON refusal for broken percent decoding', (t) => {
+  const fs = require('node:fs');
+  const cwd = fs.mkdtempSync(require('node:path').join(require('node:os').tmpdir(), 'nexus-capture-cli-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const { spawnSync } = require('node:child_process');
+  const path = require('node:path');
+  const result = spawnSync(process.execPath, [path.join(__dirname, '../bin/atris.js'), 'nexus', 'capture', '--json',
+    '--name', 'Rae Sample', '--why', 'pricing talk', '--source-url', 'https://www.youtube.com/%E0%A4%A'], { cwd, encoding: 'utf8', timeout: 10000 });
+  assert.ifError(result.error);
+  assert.equal(result.status, 2, result.stderr);
+  assert.equal(result.stderr, '');
+  assert.equal(result.stdout.trim().split('\n').length, 1);
+  assert.equal(JSON.parse(result.stdout).ok, false);
+});
+
+test('music YouTube videos keep their identity and share retry refs with regular YouTube', async () => {
+  const saved = [];
+  for (const page of [
+    'https://music.youtube.com/watch?v=dQw4w9WgXcQ&t=95&si=tracking&list=PL123#top',
+    'https://youtu.be/dQw4w9WgXcQ?t=300',
+    'https://music.youtube.com/watch?v=abcdefghijk&feature=share',
+  ]) {
+    const r = await run(['capture', '--json', '--name', 'Rae Sample', '--why', 'pricing talk', '--source-url', page]);
+    assert.equal(r.code, 0, r.out);
+    saved.push(r.server.state.captures[0]);
+  }
+  assert.equal(saved[0].words, 'Why reach out: pricing talk\nSource: https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=95s');
+  assert.equal(saved[0].ref, saved[1].ref);
+  assert.notEqual(saved[0].ref, saved[2].ref);
+  assert.match(saved[2].words, /watch\?v=abcdefghijk$/);
+});
+
+test('--why retry refs include every explicit identity hint, normalize equivalents and ignore hints on a pinned card', async () => {
+  const save = async (flags) => {
+    const r = await run(['capture', '--json', '--name', 'Rae Sample', '--why', 'pricing talk', '--source-url', VID, ...flags]);
+    assert.equal(r.code, 0, r.out);
+    return r.server.state.captures[0].ref;
+  };
+  const base = await save([]);
+  for (const [flag, one, equivalent, other] of [
+    ['--email', 'rae@example.com', ' RAE@EXAMPLE.COM ', 'other@example.com'],
+    ['--linkedin', 'https://www.linkedin.com/in/rae-sample/', 'http://linkedin.com/in/RAE-SAMPLE?trk=tracking#top', 'https://www.linkedin.com/in/other'],
+    ['--company', 'Sample Co', ' sample   CO ', 'Other Co'],
+  ]) {
+    const ref = await save([flag, one]);
+    assert.notEqual(ref, base, flag);
+    assert.equal(ref, await save([flag, equivalent]), flag);
+    assert.notEqual(ref, await save([flag, other]), flag);
+    const pinned = await save(['--person', RAE, flag, one]);
+    assert.equal(pinned, await save(['--person', RAE, flag, other]), flag);
+    assert.equal(pinned, await save(['--person', RAE]), flag);
+    assert.notEqual(pinned, await save(['--person', RAE_TWO, flag, one]), flag);
+  }
+  const hints = ['--email', 'rae@example.com', '--linkedin', 'https://linkedin.com/in/rae', '--company', 'Sample Co'];
+  const combined = await save(hints);
+  for (let i = 1; i < hints.length; i += 2) {
+    const changed = [...hints];
+    changed[i] = i === 1 ? 'other@example.com' : i === 3 ? 'https://linkedin.com/in/other' : 'Other Co';
+    assert.notEqual(combined, await save(changed), hints[i - 1]);
+  }
+  assert.equal(await save(['--linkedin', 'linkedin.com/in/%52ae']), await save(['--linkedin', 'https://uk.linkedin.com/in/rae/']));
+  assert.equal(reasonRef('Rae Sample', 'pricing talk', '', RAE, false), reasonRef('R. Sample', 'Pricing  Talk', '', RAE.toUpperCase(), false));
+});
+
+test('--why refuses overlong reasons with the limit, preserves the boundary and counts Unicode characters', async () => {
+  for (const char of ['x', '😀']) {
+    const accepted = await run(['capture', '--json', '--name', 'Rae Sample', '--why', char.repeat(1000)]);
+    assert.equal(accepted.code, 0, accepted.out);
+    assert.equal(JSON.parse(accepted.out).why, char.repeat(1000));
+    assert.equal(JSON.parse(accepted.out).text_cut, false);
+    const refused = await run(['capture', '--json', '--name', 'Rae Sample', '--why', char.repeat(1001)]);
+    assert.equal(refused.code, 2);
+    assert.equal(refused.out.split('\n').length, 1);
+    assert.equal(JSON.parse(refused.out).ok, false);
+    assert.match(JSON.parse(refused.out).error, /--why.*1000 characters.*nothing was saved/);
+    assert.equal(refused.server.state.calls.length, 0);
+  }
+  const spaced = await run(['capture', '--json', '--name', 'Rae Sample', '--why', `  ${'x '.repeat(500)}\n`]);
+  assert.equal(spaced.code, 0, spaced.out);
+  assert.equal(JSON.parse(spaced.out).why, 'x '.repeat(500).trim());
 });

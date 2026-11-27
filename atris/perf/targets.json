@@ -1,0 +1,17 @@
+[
+  {
+    "name": "atris",
+    "url": "https://atris.ai",
+    "weight": 1
+  },
+  {
+    "name": "evals",
+    "url": "https://evals.atris.ai",
+    "weight": 1
+  },
+  {
+    "name": "backend",
+    "url": "https://atrisos.onrender.com/health",
+    "weight": 1
+  }
+]

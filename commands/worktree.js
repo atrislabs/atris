@@ -101,6 +101,10 @@ function printStatus(args) {
 }
 
 function startWorktree(args) {
+  const started = process.hrtime.bigint();
+  const timing = (step) => {
+    if (process.env.ATRIS_TIMING === '1') console.error(`timing: ${step} ${Number(process.hrtime.bigint() - started) / 1e6 | 0}ms elapsed`);
+  };
   const root = repoRoot();
   const member = readFlag(args, '--member');
   const agent = readFlag(args, '--agent');
@@ -118,7 +122,8 @@ function startWorktree(args) {
 
   const force = hasFlag(args, '--force');
   const now = new Date();
-  const flights = inFlightAgentFlights({ root, now });
+  const flights = inFlightAgentFlights({ root, now, localRemote: true });
+  timing('flight check');
   const active = flights.filter((flight) => flight.kind === 'worktree');
   const repoName = path.basename(findPrimaryRoot(root));
   console.log(`flights: ${active.length} active agent ${active.length === 1 ? 'worktree' : 'worktrees'} for ${repoName}`);
@@ -153,6 +158,7 @@ function startWorktree(args) {
     return 2;
   }
   const { path: target, branch, base } = created;
+  timing('copy created');
 
   if (created.reapedBeforeStart.length) {
     console.log(`cleanup: reaped ${created.reapedBeforeStart.length} completed ${created.reapedBeforeStart.length === 1 ? 'worktree' : 'worktrees'}`);
@@ -180,6 +186,9 @@ function startWorktree(args) {
   if (counts && (counts.staged || counts.unstaged || counts.untracked)) {
     console.log(`note: primary checkout is dirty staged=${counts.staged} unstaged=${counts.unstaged} untracked=${counts.untracked}`);
   }
+  // A nudge, never a stop: prints only when the pile is over the map's limit.
+  const pileNotice = require('../lib/waiting-pile').startNotice(root, { base });
+  if (pileNotice) console.log(pileNotice);
   console.log(`path: ${target}`);
   console.log(`branch: ${branch}`);
   console.log(`${member ? 'member' : 'agent'}: ${owner}`);
@@ -192,6 +201,7 @@ function startWorktree(args) {
   }
   console.log(`base: ${base}`);
   console.log(`next: cd ${target}`);
+  timing('start complete');
   return 0;
 }
 
@@ -228,14 +238,18 @@ function recordPendingShip(root, { branch, targetRef, number }) {
 }
 
 // The atris check receipt for the code in this copy right now, if one exists
-// and still matches it (lib/check-receipt.js).
+// and still holds once its plan is worked out again (lib/check-recompute.js).
 function shipCheckReceipt(root) {
-  const { codeIdentity, findReceiptForTree, matchReceipt } = require('../lib/check-receipt');
+  const { codeIdentity, findReceiptForTree } = require('../lib/check-receipt');
   const found = findReceiptForTree(root, codeIdentity(root).tree);
   if (!found) return { verdict: 'none', line: 'no --verify and no atris check receipt for this code' };
-  const match = matchReceipt(root, found.receipt);
+  let ownMap = null;
+  try { ownMap = require('../lib/check-plan').loadMap(root); } catch (error) {
+    return { verdict: 'none', line: `atris check receipt does not match: ${String(error.message || error).split('\n')[0]}` };
+  }
+  const match = require('../lib/check-recompute').recheckReceipt(root, found.receipt, { workingMap: ownMap });
   if (!match.ok) return { verdict: 'none', line: `atris check receipt does not match: ${match.why}` };
-  return { verdict: found.receipt.verdict, line: `atris check receipt ${found.receipt.verdict} (${path.relative(root, found.file)})` };
+  return { verdict: match.verdict, line: `atris check receipt ${match.verdict} (${path.relative(root, found.file)})` };
 }
 
 function shipWorktree(args) {
@@ -807,6 +821,7 @@ function guide() {
   console.log('A shipped copy that has to stay loses its build output (.next, test caches, Python bytecode, node_modules/.cache) unless another program runs in it.');
   console.log('Below 25 GB free, a start skips the workspace sweep for 30 minutes after one that found nothing (ATRIS_WORKTREE_SWEEP_COOLDOWN_MIN=0 always sweeps).');
   console.log('The sweep reports abandoned copies with unsaved work (idle 7 days). With --rescue it saves one to commits on a new atris-rescue/ branch, pushes it, and removes the copy only after origin has it; it removes a copy only when it can prove every byte is saved, and anything unusual keeps the copy for a person. The timer never rescues. Rescues are logged in .atris/state/worktree_removals.jsonl.');
+  console.log('Start prints "N changes are waiting to land here. Clear those first." when more than waiting_limit (atris/checks.json, default 10) finished changes wait to land. It is a nudge: it never blocks the start or changes its exit code.');
   console.log('Use `atris worktree status` to see all worktrees and dirty counts.');
   console.log('Use `atris worktree doctor` to see what every copy really costs and what a prune would free.');
   return 0;

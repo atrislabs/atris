@@ -8,6 +8,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { hasNodeSqlite: probeNodeSqlite } = require('./helpers/node-sqlite');
 const { withTaskReadyResult } = require('./helpers/task-result');
+const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -20,8 +21,10 @@ function runCli(args, { cwd, env, timeout = 30000 } = {}) {
     cwd,
     encoding: 'utf8',
     timeout,
+    // A person runs this flow. Without the scrub, an agent shell running the
+    // suite leaks its session marker and the sweep refuses to accept for it.
     env: {
-      ...process.env,
+      ...scrubAgentEnv(process.env),
       ATRIS_SKIP_UPDATE_CHECK: '1',
       NODE_NO_WARNINGS: '1',
       ...(env || {}),

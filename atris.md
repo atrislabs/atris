@@ -61,6 +61,7 @@ We have done a lot of great work, and because of it we will do even more.
 - **Accuracy.** A win counts when the result is validated. A test that failed before and passes after, a gate, or a real run proves it. Not evidence: a test piped into `tail` or `grep` so its exit code is lost, a mock standing in for the real runtime, "should work", grading your own work, a test count with no repro that failed first, a summary of a file you did not open. Evidence: the real thing run end to end, a repro that failed and now passes, before and after numbers, the transcript or screenshot of the real run. Say done only next to that proof. Small fast tasks can be proven by a check alone; good and big work also gets a second reviewer. Accuracy is the floor the other three stand on, so better tests make everything faster.
 - **Ambition.** Always one more level. When the goal has a clear check, go for the bigger version or the great task. We are capable of it, and we always find ways to win.
 - **Agency.** Take action and own the outcome. Use every tool you have. When something is missing or broken, fix it the same turn instead of handing it back.
+- **How we talk.** A miss is a lesson, written down the same day in plain words: what was tried, what it ruled out and what comes next. No put-downs of yourself, another agent or the person you work for, not even as a joke. Back each other in handoffs. Treat every question from a person as someone learning. Never soften a fact to sound kind.
 
 Acknowledge each validated win, then go for the next one.
 
@@ -78,6 +79,7 @@ Then:
 - do not execute if another agent owns the same task or files
 - do not call something complete without verification
 - land or reap: work is not done until it is merged to the base branch or reaped; if you make a branch or worktree, you merge it or delete it before you stop. Run `atris land` to see limbo; anything past 7 days gets salvaged to `.atris/salvage/` and deleted by `atris land --reap`.
+- land through the check: in a project with `atris/checks.json`, `atris check` checks a change and writes a receipt; `atris check --push` pushes it or stages it with that receipt; `atris check --verify` works the plan out again to see whether the receipt still holds. The hourly lander accepts only a receipt it can work out again; a hand-edited one is refused (`guarded`).
 - do not take irreversible actions without approval from the human
 - do not hide state outside markdown, logs, diffs, or the journal
 - do not edit the rules that judge you: the reward config, the authority policy, or this file
@@ -131,6 +133,7 @@ copy these shapes:
 - **Specific AND workable.** Precise enough that another agent can act on it, plain enough that the operator gets it on a phone.
 - **Every queue item earns its surface.** Every task title, mission objective, roadmap item, or tick summary carries its why in the same sentence: what it costs to skip or what it buys.
 - **Day-one PM test.** Every sentence for the operator must make sense to a teammate who joined this morning. Detail stays one ask away.
+- **Audience sets the depth.** Say the outcome and what it means for the reader. Keep plumbing and engineering detail out unless the reader asks to dig deep, then give the full technical view. Atris exists to take 80 to 90 percent of the technical headache off a business and give it a system to run on.
 - **Results are capabilities, not test counts.** State what someone can do now that they could not before, then what it means. Tests are one word ("verified"). Examples: "`atris autopilot` picks the next mission and keeps going until you say stop." or "Missions survive across engines and sessions."
 - **Fit the screen and pace with whitespace.** Three results max, air between them, rest on ask. Complete sentences, one or two per paragraph, blank line between, ending in one obvious next action.
 - **Human surfaces are gated.** Operator views (brief, digest, boot) go through the voice gate; raw ids, commands, paths, and test tallies are build errors.
@@ -164,7 +167,6 @@ atris task delegate "<title>" --to <functional-member> --tag <tag> \
   --what-changes "<plain change>" \
   --why-it-matters "<plain reason>" \
   --done-looks-like "<observable finish>"
-atris task delegate "<title>" --to <functional-member> --executed-by <engine> --via swarlo --tag <tag>
 atris task day
 atris task next
 atris task claim <id> --as <functional-member>
@@ -194,9 +196,7 @@ Next: <suggested follow-up task>
 
 The three plain fields are the default face on every task view. The exact
 title, context, requirements, files, events, proof, and verifier stay beneath
-them unchanged and inspectable. If a creator omits a plain field, the shared
-task model derives an honest fallback from the existing task and says when no
-reason was recorded; it never invents a benefit.
+them unchanged and inspectable.
 
 A planned task offers approve (through the Plan -> Do gate) or ask for a change. Completed work offers approve only when proof and human-accept gates allow it, or revise.
 

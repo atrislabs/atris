@@ -20,7 +20,7 @@ rg "recoverCommand|classifyRecovery|RECOVERY_CATALOG|missionLockRecords|HUMAN_BL
 - **Entry points:** `bin/atris.js` (`loop` help + routing), `commands/loop-front.js` (`loopFront` sends `loop wiki` to `loopAtris`), `commands/wiki.js` (`wiki loop` alias)
 - **Handlers:** `commands/loop.js` (report builder + STATUS/log refresh), `lib/wiki.js` (stale/orphan/suggestion helpers)
 - **Help:** `bin/atris.js` (`showLoopHelp`) prints usage without ensuring wiki scaffold or writing status/log files
-- **Dispatch:** `bin/atris.js:3095-3093` routes `loop --help`, `loop -h`, and `loop help` to `showLoopHelp` before `loopFront`
+- **Dispatch:** `bin/atris.js:3057-3059` routes `loop --help`, `loop -h`, and `loop help` to `showLoopHelp` before `loopFront`
 - **How it works:**
 - `atris loop wiki` ensures the wiki scaffold exists, analyzes current pages, then rewrites `atris/wiki/STATUS.md`
 - appends a deterministic `LOOP` entry to `atris/wiki/log.md`
@@ -113,8 +113,8 @@ rg "recoverCommand|classifyRecovery|RECOVERY_CATALOG|missionLockRecords|HUMAN_BL
 - **Summary table:** `commands/run.js:438` (cycleTimings forEach): per-cycle phase duration table
 - **Post-cycle clean:** `commands/run.js:559` (cleanAtris call): self-heal MAP.md refs
 - **Post-cycle push:** `commands/run.js:393` (execSync git push): disabled with `--no-push`
-- **Routing:** `bin/atris.js:120-138` (command dispatch + flag parsing)
-- **Help text:** `bin/atris.js:501` (showHelpShort first-minute doors) · `bin/atris.js:786` (showHelp --all/--json)
+- **Routing:** `bin/atris.js:118-129` (command dispatch + flag parsing)
+- **Help text:** `bin/atris.js:486` (showHelpShort first-minute doors) · `bin/atris.js:772` (showHelp --all/--json)
 - **Known commands:** `lib/known-commands.js:3` (knownCommands array)
 - **Constants:** `DEFAULT_MAX_CYCLES = 5`, `PHASE_TIMEOUT = 600000` (10 min per phase)
 - **Flags:**
@@ -170,7 +170,7 @@ rg "recoverCommand|classifyRecovery|RECOVERY_CATALOG|missionLockRecords|HUMAN_BL
 **Purpose:** First-minute talk for the next pasteable command. Two spoken lines. No fake yes/no.
 
 - **Command:** `commands/next.js` (`nextCommand`) speaks first-minute via `speakNext` (`commands/next.js`)
-- **Help:** `commands/next.js:21` prints `Usage: atris next [--json]`. `bin/atris.js:2636` routes `next` to that command. `bin/atris.js` (`showNextHelp`) stays for `atris atris --help`
+- **Help:** `commands/next.js:21` prints `Usage: atris next [--json]`. `bin/atris.js:2595` routes `next` to that command. `bin/atris.js` (`showNextHelp`) stays for `atris atris --help`
 - **Look:** empty folder and inited rooms reuse `buildFirstMinute` / `freshMinuteJson`. `--json` is `atris.one_lap.v1` with `next_action`. Exit 0. Headless. `ATRIS_NO_INTERACTIVE=1` never prompts
 - **Explicit verbs:** `yes` / `no` / `skip` still act on a next-moves card. Skip talks first-minute (`speakCard`). No `Do it?` line
 - **Leftover:** quoted `next hi` is a look (`lib/first-minute.js` `LEFTOVER_LOOK_VERBS`)

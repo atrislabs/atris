@@ -44,8 +44,9 @@ test('init writes FOR_AGENTS and the AGENTS adapter breadcrumb', () => {
     assert.equal(fs.existsSync(forAgentsPath), true);
     const forAgentsContent = fs.readFileSync(forAgentsPath, 'utf8');
     assert.ok(forAgentsContent.trim().length > 0);
-    assert.match(forAgentsContent, /what changes, why it matters, and\nwhat done looks like/i);
-    assert.match(forAgentsContent, /exact title, files, commands, requirements,\nevents, proof, and approval rules/i);
+    assert.match(forAgentsContent, /what changes, why it matters and what done looks like/i);
+    assert.match(forAgentsContent, /exact title, files, commands, requirements, events, proof and approval rules/i);
+    assert.match(forAgentsContent, /atris doctor --live/);
 
     const agentsPath = path.join(tempDir, 'AGENTS.md');
     const agentsContent = fs.readFileSync(agentsPath, 'utf8');

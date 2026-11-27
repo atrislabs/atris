@@ -7,6 +7,10 @@ How to drive the running product. Code navigation lives in `atris/MAP.md`; this 
 | Goal | Command | Ref |
 |---|---|---|
 | One prompt, JSON out (agent default) | `ax --print "<message>"` | ax:4751, 3546-3590 |
+| Streaming NDJSON for Desktop/tools | `ax --print --output-format stream-json "<message>"` | `runStreamJsonTurn` |
+| Resume / continue workspace session | `ax --continue` · `ax --resume [id]` | `lib/ax-sessions.js` |
+| Read-only Plan mode & bounds | `ax --plan` · `--max-turns <N>` · `--allowedTools <csv>` | `lib/ax-local-tools.js` |
+| Inline `@file` & `@dir/` context | `Fix @src/app.js:10-40` + Tab `@` completion | `lib/ax-context.js` |
 | One prompt at a tier | `ax --fast\|--pro\|--max\|--rapid\|--alpha "<msg>"` | ax:4732-4744 |
 | Auto-pick lane, JSON includes `auto_lane`/`auto_reason` | `ax --auto --print "<msg>"` | ax:4850-4852 |
 | Gate the turn on a shell verifier | `ax --verify "<cmd>" "<msg>"` | ax:4721-4730 |
@@ -54,6 +58,12 @@ Registry: `CHAT_COMMANDS` ax:1167-1188 · parser ax:1219-1228 · dispatch ax:126
 | `/status` | runtime health block |
 | `/context` | turns, chars, est. tokens |
 | `/new` `/clear` | fresh conversation id, wipe history |
+| `/compact [focus]` | compact history into a structured summary |
+| `/cost` | show turns, tokens, context meter and credits |
+| `/plan [on\|off]` | toggle read-only plan mode |
+| `/diff` `/undo` | show colorized session diffs / rewind last turn checkpoint |
+| `/sessions [id]` `/export [file]` | list or resume saved workspace sessions / export markdown |
+| `/mcp` | inspect configured `.mcp.json` / `.atris/mcp.json` servers |
 | `/log <note>` | append to today's journal |
 | `/today` `/now` | tail today's journal / head of `atris/now.md` |
 | `/auto` | toggle safe git-push bypass |

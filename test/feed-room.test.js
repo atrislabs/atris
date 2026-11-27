@@ -135,6 +135,191 @@ test('react: toggles for the caller, shows who and mine, only the five, and move
   assert.ok(reacts.length >= 5, 'every tap is in the events log');
 });
 
+function snapshot(root) {
+  const out = {};
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile()) out[path.relative(root, full)] = fs.readFileSync(full).toString('base64');
+    }
+  };
+  walk(root);
+  return out;
+}
+
+const FAKE_KEY = `sk-test-${'0123456789abcdef'.repeat(3)}`;
+
+test('reply and say: on a project linked to a business, a person\'s key is refused before any write and never posted', (t) => {
+  const ctx = project(t, ['scout']);
+  const post = say(ctx, 'scout', 'Which supplier should we call first?', { ask: true }).card;
+  const posted = [];
+  const deps = { ...ctx.deps, board: (event) => posted.push(event) };
+  const before = snapshot(ctx.root);
+  const refused = (e) => e.status === 400 && e.message === 'That looks like it holds a password or key, so it was not saved.';
+  assert.throws(() => room.reply(ctx.root, post.id, `the login is ${FAKE_KEY}`, { env: ctx.env, deps }), refused);
+  assert.throws(() => room.reply(ctx.root, post.id, 'password: "hunter2-not-real"', { env: ctx.env, deps }), refused);
+  assert.throws(() => room.say(ctx.root, { text: `new key ${FAKE_KEY}`, env: ctx.env, deps }), refused);
+  assert.deepEqual(snapshot(ctx.root), before, 'no comment, note, event or member log was written');
+  assert.deepEqual(posted, []);
+  // Ordinary words still save and post, including ones that name a key or a password.
+  const fine = [
+    'Yes, call the Fremont supplier first.',
+    'The key point is speed, and the password reset page can wait.',
+    'Fixed in 523d8abeb, see the change.',
+    'https://atris.ai/pricing?plan=pro&ref=feed',
+    'https://github.com/atrislabs/atris/pull/1995',
+  ];
+  for (const text of fine) assert.equal(room.reply(ctx.root, post.id, text, { env: ctx.env, deps }).reply.text, text);
+  assert.equal(room.say(ctx.root, { text: 'Our API key lives in the vault, never paste it here.', env: ctx.env, deps }).card.title.length > 0, true);
+  assert.equal(posted.length, fine.length + 1);
+});
+
+test('reply: on a project not linked to a business, a long code in a comment stays on this computer and is kept', (t) => {
+  const ctx = project(t, ['scout']);
+  const post = say(ctx, 'scout', 'Which change fixed the checkout?', { ask: true }).card;
+  const hash = '523d8abeb1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6';
+  const out = room.reply(ctx.root, post.id, `It was ${hash}`, { env: ctx.env });
+  assert.equal(out.reply.text, `It was ${hash}`);
+});
+
+test('talk --member: a person\'s key is refused before the model is asked or anything is written', async (t) => {
+  const ctx = project(t, ['scout']);
+  const post = say(ctx, 'scout', 'Which supplier should we call first?', { ask: true }).card;
+  const before = snapshot(ctx.root);
+  await assert.rejects(
+    team.askMember(ctx.root, { member: 'scout', cardId: post.id, text: `try ${FAKE_KEY}`, env: ctx.env, deps: ctx.deps }),
+    (e) => e.status === 400 && /password or key/.test(e.message),
+  );
+  assert.deepEqual(snapshot(ctx.root), before);
+  assert.equal(ctx.turns.length, 0, 'no model was asked');
+});
+
+test('reply and say: on a project not linked to a business, a key is refused too; a hash and a document link still save', (t) => {
+  const ctx = project(t, ['scout']);
+  const post = say(ctx, 'scout', 'Where is the spring plan?', { ask: true }).card;
+  const before = snapshot(ctx.root);
+  const refused = (e) => e.status === 400 && e.code === 'holds_key' && e.message === 'That looks like it holds a password or key, so it was not saved.';
+  assert.throws(() => room.reply(ctx.root, post.id, `the login is ${FAKE_KEY}`, { env: ctx.env, deps: ctx.deps }), refused);
+  assert.throws(() => room.reply(ctx.root, post.id, 'DB_PASSWORD=notreal99', { env: ctx.env, deps: ctx.deps }), refused);
+  assert.throws(() => room.say(ctx.root, { text: `new key ${FAKE_KEY}`, env: ctx.env, deps: ctx.deps }), refused);
+  assert.deepEqual(snapshot(ctx.root), before, 'nothing was written');
+  const fine = [
+    'It is in https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit?usp=sharing',
+    'Fixed in 523d8abeb1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6.',
+    'Order 550e8400-e29b-41d4-a716-446655440000 shipped.',
+  ];
+  for (const text of fine) assert.equal(room.reply(ctx.root, post.id, text, { env: ctx.env, deps: ctx.deps }).reply.text, text);
+});
+
+test('reply on a linked project: a commit or a document link now saves and posts', (t) => {
+  const ctx = project(t, ['scout']);
+  const post = say(ctx, 'scout', 'Which change fixed the checkout?', { ask: true }).card;
+  const posted = [];
+  const deps = { ...ctx.deps, board: (event) => posted.push(event) };
+  const text = 'It was 523d8abeb1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6, notes in https://www.notion.so/Team-Plan-1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d';
+  assert.equal(room.reply(ctx.root, post.id, text, { env: ctx.env, deps }).reply.text, text);
+  assert.equal(posted.length, 1);
+});
+
+test('talk on a task card: a person\'s key is refused before the message is saved or a model is asked', async (t) => {
+  const ctx = project(t, ['scout']);
+  const card = idea(ctx, 'scout', 'Call the ten oldest leads');
+  const before = snapshot(ctx.root);
+  await assert.rejects(
+    feed.talk(ctx.root, card.id, `here is the login ${FAKE_KEY}`, { env: ctx.env, deps: ctx.deps }),
+    (e) => e.status === 400 && e.code === 'holds_key' && /password or key/.test(e.message),
+  );
+  assert.deepEqual(snapshot(ctx.root), before, 'no member log or event was written');
+  assert.equal(feed.listMessages(ctx.root, card.id, { env: ctx.env }).messages.length, 0, 'no message was saved');
+  assert.equal(ctx.turns.length, 0, 'no model was asked');
+  // A message with a commit and a document link still goes through.
+  const out = await feed.talk(ctx.root, card.id, 'Start from 523d8abeb1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6 and https://docs.google.com/document/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit', { env: ctx.env, deps: ctx.deps });
+  assert.ok(out.message);
+  assert.equal(ctx.turns.length, 1);
+});
+
+test('cli: feed talk and feed reply with a key exit 1 with the short reason and never print the key', (t) => {
+  const ctx = project(t, ['scout']);
+  const card = idea(ctx, 'scout', 'Call the ten oldest leads');
+  const post = say(ctx, 'scout', 'Where is the spring plan?', { ask: true }).card;
+  const { spawnSync } = require('node:child_process');
+  const BIN = path.join(__dirname, '..', 'bin', 'atris.js');
+  // No model tool counts as installed here, so even a regression could never ask one.
+  const env = { ...ctx.env, HOME: ctx.dir, ATRIS_FEED_BOARD: '0', ATRIS_FEED_INSTALLED: 'nothing-installed' };
+  for (const args of [['talk', card.id, `use ${FAKE_KEY}`], ['reply', post.id, `use ${FAKE_KEY}`], ['say', `use ${FAKE_KEY}`]]) {
+    const run = spawnSync(process.execPath, [BIN, 'feed', ...args], { cwd: ctx.root, env, encoding: 'utf8' });
+    assert.equal(run.status, 1, args[0]);
+    assert.match(run.stderr, /^error: That looks like it holds a password or key, so it was not saved\.$/m, args[0]);
+    assert.doesNotMatch(run.stdout + run.stderr, /sk-test-/, args[0]);
+  }
+});
+
+test('propose and emit: a key in --detail or --proof is refused before anything is written; a hash in detail is fine', (t) => {
+  const ctx = project(t, ['scout']);
+  assert.throws(
+    () => feed.proposeCard(ctx.root, { as: 'scout', title: 'Rotate the shop login', why: 'Old logins leak', detail: `current is ${FAKE_KEY}`, env: ctx.env }),
+    (e) => e.status === 400 && e.code === 'holds_key' && e.field === 'detail',
+  );
+  assert.equal(list(ctx).cards.filter((c) => c.title === 'Rotate the shop login').length, 0);
+  const kept = feed.proposeCard(ctx.root, { as: 'scout', title: 'Undo the checkout change', why: 'It broke card payments', detail: 'Reverts 523d8abeb1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6', env: ctx.env });
+  assert.ok(kept.card);
+  feed.decide(ctx.root, kept.card.id, 'approve', { env: ctx.env, deps: ctx.deps });
+  const status = () => require('../lib/task-db').getTask(ctx.db, kept.card.source.id).status;
+  const was = status();
+  assert.throws(
+    () => team.emit(ctx.root, { as: 'scout', type: 'result', card: kept.card.id, proof: `ran it with ${FAKE_KEY}`, env: ctx.env, deps: ctx.deps }),
+    (e) => e.status === 400 && e.code === 'holds_key' && e.field === 'proof',
+  );
+  assert.equal(status(), was, 'the work was not finished');
+  team.emit(ctx.root, { as: 'scout', type: 'result', card: kept.card.id, proof: 'Reverted 523d8abeb1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6; checkout passed.', env: ctx.env, deps: ctx.deps });
+  assert.equal(status(), 'review');
+});
+
+test('scrub-keys: counts saved keys without printing them, replaces them in place, and never posts', (t) => {
+  const ctx = project(t, ['scout']);
+  const post = say(ctx, 'scout', 'Where is the spring plan?', { ask: true }).card;
+  room.reply(ctx.root, post.id, 'It is in the shared folder.', { env: ctx.env, deps: ctx.deps });
+  // What an earlier version saved: a key in a comment, a post, an event and a member log.
+  const feedDir = path.join(ctx.root, '.atris', 'state', 'feed');
+  const socialFile = path.join(feedDir, 'social.json');
+  const social = JSON.parse(fs.readFileSync(socialFile, 'utf8'));
+  social[post.id].replies.push({ id: 'aaaaaaaaaaaa', by: 'user:owner', text: `the login is ${FAKE_KEY}`, at: new Date().toISOString() });
+  fs.writeFileSync(socialFile, JSON.stringify(social));
+  fs.appendFileSync(path.join(feedDir, 'posts.jsonl'), `${JSON.stringify({ id: 'bbbbbbbbbbbb', by: 'user:owner', kind: 'post', text: `key ${FAKE_KEY}`, at: new Date().toISOString() })}\n`);
+  fs.appendFileSync(path.join(feedDir, 'events.jsonl'), `${JSON.stringify({ id: 'cccccccccccc', member: 'the owner', type: 'reply', text: `the login is ${FAKE_KEY}` })}\n`);
+  const logDir = path.join(ctx.root, 'atris', 'team', 'scout', 'logs');
+  fs.mkdirSync(logDir, { recursive: true });
+  fs.appendFileSync(path.join(logDir, '2026-11-17.md'), `## The owner replied on a card\n- said: the login is ${FAKE_KEY}\n- card: ${post.id}\n`);
+  const { spawnSync } = require('node:child_process');
+  const BIN = path.join(__dirname, '..', 'bin', 'atris.js');
+  const posted = [];
+  const env = { ...ctx.env, HOME: ctx.dir, ATRIS_FEED_BOARD: '0' };
+  const before = snapshot(ctx.root);
+  const dry = spawnSync(process.execPath, [BIN, 'feed', 'scrub-keys', '--dry-run', '--json'], { cwd: ctx.root, env, encoding: 'utf8' });
+  assert.equal(dry.status, 0, dry.stderr);
+  assert.doesNotMatch(dry.stdout + dry.stderr, /sk-test-/);
+  const counted = JSON.parse(dry.stdout);
+  assert.deepEqual(counted.found, { comments: 1, posts: 1, events: 1, member_logs: 1 });
+  assert.equal(counted.replaced, 0);
+  assert.deepEqual(snapshot(ctx.root), before, 'a dry run changes nothing');
+  const text = spawnSync(process.execPath, [BIN, 'feed', 'scrub-keys'], { cwd: ctx.root, env, encoding: 'utf8' });
+  assert.equal(text.status, 0, text.stderr);
+  assert.match(text.stdout, /^replaced 4: 1 comment, 1 post, 1 event and 1 member log entries\.$/m);
+  assert.doesNotMatch(text.stdout + text.stderr, /sk-test-/);
+  for (const file of Object.keys(snapshot(ctx.root))) {
+    assert.doesNotMatch(fs.readFileSync(path.join(ctx.root, file), 'utf8'), /sk-test-/, file);
+  }
+  const { MARKER } = require('../lib/feed-scrub');
+  assert.ok(JSON.parse(fs.readFileSync(socialFile, 'utf8'))[post.id].replies.some((r) => r.text === MARKER));
+  assert.ok(JSON.parse(fs.readFileSync(socialFile, 'utf8'))[post.id].replies.some((r) => r.text === 'It is in the shared folder.'), 'other comments stay');
+  assert.match(fs.readFileSync(path.join(logDir, '2026-11-17.md'), 'utf8'), new RegExp(`^- \\${MARKER.slice(0, -1)}\\]$`, 'm'));
+  assert.match(fs.readFileSync(path.join(logDir, '2026-11-17.md'), 'utf8'), /- card: /, 'other log lines stay');
+  const again = require('../lib/feed-scrub').scrubKeys(ctx.root, { dryRun: true });
+  assert.equal(again.total, 0, 'a second run finds nothing');
+  assert.deepEqual(posted, []);
+});
+
 test('reply: the newest three show, oldest first, with the total; members write plainly; limits hold', (t) => {
   const ctx = project(t, ['scout', 'writer']);
   const post = say(ctx, 'scout', 'Does anyone know which candle sold best last week?', { ask: true }).card;
@@ -191,7 +376,7 @@ test('ask round: members post, ask, reply and react, streamed like ideas, within
   ctx.deps.turn = streaming([
     'POST', 'TEXT: Three buyers came back twice this month, which made my day.', 'END',
     'ASK', 'TEXT: Does anyone know which candle sold best last week?', 'END',
-    'REPLY 1: Nice work, the buyers will notice the speed.',
+    'REPLY 1: IDEA: Show the faster page to returning buyers first, they will notice the speed.',
     'REACT 1: 🔥', '',
   ].join('\n'), prompts);
   const events = await askRound(ctx, 'scout');
@@ -225,15 +410,17 @@ test('ask round: members post, ask, reply and react, streamed like ideas, within
   assert.equal(stored.replies[0].by, 'agent:scout');
   assert.deepEqual(stored.reactions['🔥'], ['agent:scout']);
 
+  // The owner speaks, so scout may add to the card again (never twice in a row on one card).
+  room.reply(ctx.root, theirs.id, 'Good to hear.', { env: ctx.env });
   // The next thought: an ask, and every limit (own item, no such item, too many).
   ctx.deps.turn = streaming([
     'ASK', 'TEXT: Which day do buyers like a reminder best?', 'END',
     'REACT 1: 👍', 'REACT 2: 😂', 'REACT 2: 👀',
-    'REPLY 9: Hello there.', 'REPLY 2: Thanks for the update, it shows.', 'REPLY 2: A third reply is one too many.', '',
+    'REPLY 9: IDEA: Hello there.', 'REPLY 2: FOUND: The update shows for every buyer now. FROM: the shop notes', 'REPLY 2: IDEA: A third reply is one too many.', '',
   ].join('\n'), prompts);
   const again = await askRound(ctx, 'scout');
   assert.match(prompts[1], /\[1\] scout \(you\): Three buyers came back/);
-  assert.match(prompts[1], /\[2\] writer: The soap page[^\n]*\n {4}scout \(you\) replied: Nice work/);
+  assert.match(prompts[1], /\[2\] writer: The soap page[^\n]*\n {4}scout \(you\) replied \(Idea\): Show the faster page/);
   assert.equal(again.find((e) => e.type === 'card_done').card.kind, 'ask');
   assert.equal(again.filter((e) => e.type === 'card_changed').length, 2);
   assert.equal(again.filter((e) => e.type === 'card_dropped').length, 0, 'replies and reactions are dropped quietly');
@@ -241,7 +428,9 @@ test('ask round: members post, ask, reply and react, streamed like ideas, within
   for (const why of ['a reaction to item 1: Not on your own item.', 'a reaction to item 2: At most 2 reactions in one go.',
     'a reply to item 9: There is no item 9.', 'a reply to item 2: At most 2 replies in one go.']) assert.ok(lines.includes(why), why);
   const card = feed.readCard(ctx.root, theirs.id, { env: ctx.env });
-  assert.equal(card.reply_count, 2);
+  assert.equal(card.reply_count, 3);
+  assert.deepEqual(card.replies.map((r) => r.kind || null), ['idea', null, 'found']);
+  assert.equal(card.replies[2].source, 'the shop notes');
   assert.deepEqual(card.reactions.map((r) => r.emoji), ['😂', '🔥']);
   // A reaction a member already gave is left as it is, not taken off
   // (writer's note is item 3 now: scout's ask and post are newer).

@@ -208,6 +208,19 @@ test('atris channel <name> "what to do" --task <key>: posts a task others can cl
   assert.match(h.stdout.join('\n'), /posted task smoke-2 to #experiments/);
 });
 
+test('a separate answer carries the original question ID and checks the saved link', async () => {
+  const h = harness();
+  assert.equal(await channelCommand(['general', 'Measured 15 ms', '--as', 'amara', '--reply-to', 'q2'], h.deps), 0);
+  assert.deepEqual(h.calls.find(c => c.method === 'POST').body,
+    { content: 'Measured 15 ms', agent_id: 'agent-amara-id', reply_to_post_id: 'q2' });
+  const original = fakeServer();
+  const old = harness({ handler: (path, options) => options.method === 'POST'
+    ? { ok: true, status: 201, data: { post_id: 'already-saved' } } : original(path, options) });
+  assert.equal(await channelCommand(['general', 'Done', '--reply-to', 'q2'], old.deps), 1);
+  assert.match(old.stderr.join(' '), /posted but the server did not confirm/);
+  assert.equal(old.calls.filter(c => c.method === 'POST').length, 1);
+});
+
 // ── members post as themselves ──────────────────────────────
 
 test('--as <member> looks the member up and sends its agent id with the post', async () => {

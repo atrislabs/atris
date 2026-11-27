@@ -15,6 +15,12 @@ const { apiRequestJson, getApiBaseUrl } = require('./utils/api');
 const missionRuntime = require('./lib/mission-runtime-loop');
 const { loadOverrides, pickLane } = require('./lib/ax-auto-lane');
 const { buildToolResultBody } = require('./lib/tool-result-encode');
+const axLocalTools = require('./lib/ax-local-tools');
+const axSessions = require('./lib/ax-sessions');
+const axContext = require('./lib/ax-context');
+const axExt = require('./lib/ax-ext');
+const { runWriter1, buildSwapHandoff, createFlowSession, runFlowTurn } = require('./lib/writer-1');
+const axCommands = require('./lib/ax-commands');
 
 const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
 const BACKEND = {
@@ -79,7 +85,7 @@ const ANSI = {
   magenta: '\x1b[35m'
 };
 
-const TIER_COLORS = { alpha: '\x1b[93m', rapid: '\x1b[33m', fast: '\x1b[32m', pro: '\x1b[36m', max: '\x1b[35m' };
+const TIER_COLORS = { alpha: '\x1b[93m', rapid: '\x1b[33m', fast: '\x1b[32m', pro: '\x1b[36m', max: '\x1b[35m', 'writer-1': '\x1b[95m', flow: '\x1b[96m' };
 
 // Extend backend_api by adding one row here. Keep mutating endpoints narrow;
 // any non-get method is approval-gated before the HTTP request is made.
@@ -105,6 +111,16 @@ const MODEL_ALIASES = Object.freeze({
   fast: 'fast',
   pro: 'pro',
   max: 'max',
+  neon: 'max',
+  'gemini-4-neon': 'max',
+  'gemini-4-neon-high': 'max',
+  'writer-1': 'writer-1',
+  writer: 'writer-1',
+  flow: 'flow',
+  cowrite: 'flow',
+  'co-write': 'flow',
+  terra: 'model:openai:gpt-6.1-terra',
+  'gpt-6.1-terra': 'model:openai:gpt-6.1-terra',
   rapid: 'rapid',
   alpha: 'alpha',
 });
@@ -124,6 +140,9 @@ const MODEL_CHOICES = Object.freeze([
   { mode: 'model:xai:grok-4.6', label: 'Grok 4.6' },
   { mode: 'model:openrouter:deepseek/deepseek-v4.1-flash', label: 'DeepSeek V4.1 Flash' },
   { mode: 'model:openrouter:z-ai/glm-5.3-flash', label: 'GLM 5.3 Flash' },
+  { mode: 'writer-1', label: 'Writer-1 (Terra + Neon + Atris Fast)' },
+  { mode: 'flow', label: 'Writer-1 Flow (Co-write with Neon)' },
+  { mode: 'model:openai:gpt-6.1-terra', label: 'GPT-6.1 Terra' },
 ].map(choice => Object.freeze(choice)));
 
 function squashModelName(value) {
@@ -165,9 +184,11 @@ function modelChoiceList(currentMode, options = {}) {
 
 function modelForMode(mode) {
   if (String(mode || '').startsWith('model:')) return mode.slice('model:'.length);
+  if (mode === 'flow' || mode === 'cowrite' || mode === 'co-write') return 'atris:writer-1:flow';
+  if (mode === 'writer-1' || mode === 'writer') return 'atris:writer-1';
   if (mode === 'code-fast') return CODE_FAST.model;
   if (mode === 'mercury') return 'inception:mercury-3-preview-1002';
-  if (mode === 'max') return 'atris:max';
+  if (mode === 'max' || mode === 'neon') return 'atris:max';
   if (mode === 'alpha') return 'atris:alpha';
   if (mode === 'rapid') return 'atris:rapid';
   return mode === 'fast' ? 'atris:fast' : 'atris:pro';
@@ -219,9 +240,11 @@ function tierLabel(mode) {
     const choice = MODEL_CHOICES.find(item => item.mode === mode);
     return choice ? choice.label : mode.slice('model:'.length);
   }
+  if (mode === 'flow' || mode === 'cowrite' || mode === 'co-write') return 'Atris Flow';
+  if (mode === 'writer-1' || mode === 'writer') return 'Atris Writer-1';
   if (mode === 'code-fast') return 'Atris Code Fast';
   if (mode === 'mercury') return 'mercury 3 (test model)';
-  if (mode === 'max') return 'Atris 2 Max';
+  if (mode === 'max' || mode === 'neon') return 'Atris 2 Max';
   if (mode === 'alpha') return 'Atris Alpha';
   if (mode === 'rapid') return 'Atris Rapid';
   if (mode === 'fast') return 'Atris 2 Fast';
@@ -1065,9 +1088,11 @@ function resolveRoute(message, options = {}) {
 
 function normalizeMode(mode) {
   if (String(mode || '').startsWith('model:')) return mode;
+  if (mode === 'flow' || mode === 'cowrite' || mode === 'co-write') return 'flow';
+  if (mode === 'writer-1' || mode === 'writer') return 'writer-1';
   if (mode === 'code-fast' || mode === 'code') return 'code-fast';
   if (mode === 'mercury') return 'mercury';
-  if (mode === 'max') return 'max';
+  if (mode === 'max' || mode === 'neon') return 'max';
   if (mode === 'alpha') return 'alpha';
   if (mode === 'rapid') return 'rapid';
   return mode === 'fast' ? 'fast' : 'pro';
@@ -1196,9 +1221,12 @@ function formatPrompt(mode, options = {}) {
   // Picked models show their short name: "claude-opus-5.5", not "model:openrouter:...".
   const short = tier.startsWith('model:') ? tier.split(/[:/]/).pop() : tier;
   const label = paint(short, [ANSI.bold, tierColor(tier)], options);
+  const tags = [];
+  if (options.planMode) tags.push('plan');
   const tag = approveModeTag(options.approveMode);
-  if (tag) {
-    return `${label} ${paint(`[${tag}]`, [ANSI.muted], options)} › `;
+  if (tag) tags.push(tag);
+  if (tags.length) {
+    return `${label} ${paint(`[${tags.join(' · ')}]`, [ANSI.muted], options)} › `;
   }
   return `${label} › `;
 }
@@ -1227,7 +1255,9 @@ const TIER_BLURBS = {
   rapid: 'cheap chat and first-hop tools',
   fast: 'quick answers, lowest latency',
   pro: 'deeper tool loop for real work',
-  max: 'highest reasoning for the hardest jobs',
+  max: 'highest reasoning for the hardest jobs (Neon)',
+  'writer-1': 'three-tier writing team (Terra gather, Neon write, Atris Fast grammar)',
+  flow: 'co-write in flow state with Neon (type "lock it" to finish)',
   alpha: 'experimental preview lane',
 };
 
@@ -1259,7 +1289,17 @@ const CHAT_COMMANDS = Object.freeze([
   { name: '/effort', description: 'set reasoning effort (none → xhigh)', type: 'effort' },
   { name: '/new', description: 'start a new conversation', type: 'clear' },
   { name: '/clear', description: 'reset the current conversation', type: 'clear' },
+  { name: '/compact', description: 'compact conversation history to free context', type: 'compact' },
   { name: '/context', description: 'show the conversation size', type: 'context' },
+  { name: '/cost', description: 'show turns, tokens, context meter and credits', type: 'cost' },
+  { name: '/plan', description: 'toggle read-only plan mode', type: 'plan' },
+  { name: '/diff', description: 'show colorized diffs from this session', type: 'diff' },
+  { name: '/undo', description: 'restore workspace files to before the last turn', type: 'undo' },
+  { name: '/sessions', description: 'list or switch saved workspace sessions', type: 'sessions' },
+  { name: '/mcp', description: 'show configured MCP servers and tools', type: 'mcp' },
+  { name: '/commands', description: 'list custom project/user slash commands', type: 'commands' },
+  { name: '/permissions', description: 'show active allow/deny tool rules', type: 'permissions' },
+  { name: '/export', description: 'export this session transcript to markdown', type: 'export' },
   { name: '/log', description: 'append a note to today\'s journal', type: 'log' },
   { name: '/today', description: 'show today\'s journal', type: 'today' },
   { name: '/now', description: 'show the current priorities', type: 'now' },
@@ -1359,6 +1399,15 @@ function runChatSlash(line, options = {}) {
   }
   const command = CHAT_COMMAND_BY_NAME.get(parsed.name);
   if (!command) {
+    const custom = axCommands.expandCustomSlashCommand(line, cwd);
+    if (custom) {
+      return {
+        type: 'custom',
+        command: custom.command,
+        prompt: custom.prompt,
+        output: `· /${custom.command.name} (${custom.command.source})`,
+      };
+    }
     return { type: 'unknown', output: `unknown command ${parsed.name}\n${chatMenu(options)}` };
   }
   if (command.type === 'help') {
@@ -1454,11 +1503,112 @@ function runChatSlash(line, options = {}) {
     const text = readTextHead(file);
     return { type: 'now', output: text || '· atris/now.md is missing' };
   }
+  if (command.type === 'plan') {
+    const want = parsed.arg.toLowerCase();
+    const nextPlan = want === 'on' ? true : want === 'off' ? false : !Boolean(options.planMode);
+    return {
+      type: 'plan',
+      planMode: nextPlan,
+      output: nextPlan
+        ? '· plan mode on (read-only: file edits and shell commands blocked)'
+        : '· plan mode off',
+    };
+  }
+  if (command.type === 'compact') {
+    const compacted = axContext.compactConversationHistory(options.history || [], parsed.arg);
+    if (!compacted.compactedTurns) {
+      return { type: 'compact', output: '· nothing to compact yet' };
+    }
+    return {
+      type: 'compact',
+      compacted,
+      output: `· compacted ${compacted.compactedTurns} turn${compacted.compactedTurns === 1 ? '' : 's'} (~${compacted.beforeTokens} -> ~${compacted.afterTokens} tokens)`,
+    };
+  }
+  if (command.type === 'cost') {
+    const ctx = estimateHistoryContext(options.history || []);
+    const windowTokens = 128000;
+    const pct = Math.min(100, Math.round((ctx.tokens / windowTokens) * 100));
+    const credits = Number(options.sessionCredits || 0);
+    const diffCount = Array.isArray(options.sessionDiffs) ? options.sessionDiffs.length : 0;
+    return {
+      type: 'cost',
+      output: `· ${ctx.turns} turn${ctx.turns === 1 ? '' : 's'} · ~${ctx.tokens} tokens (${pct}% of context) · ${credits} credits · ${diffCount} edit${diffCount === 1 ? '' : 's'}`,
+    };
+  }
+  if (command.type === 'diff') {
+    const diffs = Array.isArray(options.sessionDiffs) ? options.sessionDiffs : [];
+    if (!diffs.length) return { type: 'diff', output: '· no file edits in this session yet' };
+    const rendered = diffs.map((d) => axLocalTools.renderUnifiedDiff(d, { isTTY: options.isTTY })).join('\n\n');
+    return { type: 'diff', output: rendered };
+  }
+  if (command.type === 'undo') {
+    const restored = axLocalTools.restoreLatestCheckpoint(options.conversationId || 'default', { checkpointId: parsed.arg });
+    if (!restored.ok) return { type: 'undo', output: `· ${restored.error}` };
+    const summary = restored.restored.map((r) => `${r.action} ${r.file}`).join(', ') || 'no files changed';
+    return { type: 'undo', output: `· rewound checkpoint ${restored.checkpointId}: ${summary}` };
+  }
+  if (command.type === 'sessions') {
+    if (parsed.arg) {
+      const loaded = axSessions.loadSession(parsed.arg);
+      if (!loaded) return { type: 'sessions', output: `· session not found: ${parsed.arg}` };
+      return {
+        type: 'sessions',
+        loadedSession: loaded,
+        output: `· resumed ${loaded.id} (${loaded.turns} turn${loaded.turns === 1 ? '' : 's'} · ${loaded.title})`,
+      };
+    }
+    const list = axSessions.listSessions({ cwd, limit: 10 });
+    if (!list.length) return { type: 'sessions', output: '· no saved sessions for this workspace yet' };
+    const lines = list.map((s) => `  ${s.id}  ${s.turns}t  ${s.title}`);
+    return { type: 'sessions', output: ['saved sessions (use /sessions <id> to resume):', ...lines].join('\n') };
+  }
+  if (command.type === 'mcp') {
+    const configs = axExt.loadMcpServerConfigs(cwd);
+    if (!configs.length) return { type: 'mcp', output: '· no MCP servers configured (.mcp.json or .atris/mcp.json)' };
+    return {
+      type: 'mcp',
+      configs,
+      output: configs.map((c) => `  ${c.name}  ${c.command} ${(c.args || []).join(' ')}`.trimEnd()).join('\n'),
+    };
+  }
+  if (command.type === 'commands') {
+    const custom = axCommands.listCustomSlashCommands(cwd);
+    if (!custom.length) {
+      return { type: 'commands', output: '· no custom commands found (.atris/commands/*.md or .claude/commands/*.md)' };
+    }
+    return {
+      type: 'commands',
+      output: custom.map((c) => `  ${c.slash.padEnd(18)} ${c.description} (${c.source})`).join('\n'),
+    };
+  }
+  if (command.type === 'permissions') {
+    const perms = axLocalTools.loadPermissionSettings(cwd);
+    const lines = [];
+    if (perms.allow.length) lines.push(`allow: ${perms.allow.join(', ')}`);
+    if (perms.deny.length) lines.push(`deny: ${perms.deny.join(', ')}`);
+    if (!lines.length) return { type: 'permissions', output: '· no permission rules in .atris/settings.json or .claude/settings.json' };
+    return { type: 'permissions', output: lines.join('\n') };
+  }
+  if (command.type === 'export') {
+    const md = axSessions.exportSessionMarkdown({
+      id: options.conversationId || 'session',
+      cwd,
+      mode,
+      turns: Math.floor((options.history || []).length / 2),
+      history: options.history || [],
+    });
+    const outPath = path.resolve(cwd, parsed.arg || `ax-session-${Date.now().toString(36)}.md`);
+    fs.writeFileSync(outPath, md, 'utf8');
+    return { type: 'export', output: `· exported transcript to ${path.relative(cwd, outPath)}` };
+  }
   return { type: 'unknown', output: `unknown command ${parsed.name}\n${chatMenu(options)}` };
 }
 
-function chatCompleter(line) {
+function chatCompleter(line, cwd = process.cwd()) {
   const text = String(line || '');
+  const atHits = axContext.completeAtPath(text, cwd);
+  if (atHits) return atHits;
   const hits = filterChatCommands(text).map(command => command.name);
   return [hits, text];
 }
@@ -3102,17 +3252,40 @@ function buildPayload(message, options = {}) {
   const mode = normalizeMode(options.mode);
   const route = options.business ? 'local' : resolveRoute(message, options);
   const local = route !== 'cloud';
+  const useLocalExecutor = Boolean(options.localExecutor);
   const verifyCommand = String(options.verify || '').trim();
   const previousMessages = structuredHistory(options.history || []);
   const turnId = String(options.turnId || '').trim();
+  const localTools = [backendApiToolDescriptor()];
+  if (Array.isArray(options.mcpTools)) {
+    for (const tool of options.mcpTools) {
+      if (tool && tool.qualifiedName) {
+        localTools.push({
+          type: 'function',
+          function: {
+            name: tool.qualifiedName,
+            description: tool.description || `MCP tool ${tool.name} on ${tool.server}`,
+            parameters: tool.inputSchema || { type: 'object', properties: {} },
+          },
+        });
+      }
+    }
+  }
   const payload = {
     message: buildMessage(message, options.history || []),
     model: modelForMode(mode),
     max_turns: local ? (mode === 'rapid' ? 6 : mode === 'fast' ? 16 : 24) : 1,
     verify_command: verifyCommand || 'true',
-    local_tools: [backendApiToolDescriptor()]
+    local_tools: localTools
   };
+  if (useLocalExecutor && !local) {
+    payload.max_turns = mode === 'rapid' ? 6 : mode === 'fast' ? 16 : 24;
+  }
+  if (Number.isInteger(Number(options.maxTurns)) && Number(options.maxTurns) > 0) {
+    payload.max_turns = Number(options.maxTurns);
+  }
   if (mode === 'mercury' && options.diffuse) payload.diffuse = true;
+  if (options.planMode) payload.permission_mode = 'plan';
   if (previousMessages.length) {
     payload.previous_messages = previousMessages;
   }
@@ -3141,7 +3314,8 @@ function buildPayload(message, options = {}) {
     // Atris memory (what they told Atris, and remember/save). Business turns
     // keep the shape they have today and name no surface.
     payload.surface = 'cli';
-    if (local) payload.workspace_path = options.cwd || process.cwd();
+    if (local || useLocalExecutor) payload.workspace_path = options.cwd || process.cwd();
+    if (useLocalExecutor) payload.local_executor = true;
   }
   if (options.connectionContext) {
     payload.connection_context = options.connectionContext;
@@ -3154,6 +3328,7 @@ function buildPayload(message, options = {}) {
     // and a workspace or tool list would route the turn away from it.
     delete payload.local_tools;
     delete payload.workspace_path;
+    delete payload.local_executor;
     payload.max_turns = 1;
   }
   return payload;
@@ -3292,11 +3467,17 @@ function handleEvent(event, state, output) {
   if (event.type === 'tool_call_request') {
     flushPendingText(state, output);
     const args = event.args || {};
-    const cloudBlock = { tool: `cloud:${args.type || event.name || 'tool'}`, input: { command: args.command, path: args.path } };
+    const toolLabel = event.name === 'local_file_op'
+      ? (args.type || 'local_file_op')
+      : `cloud:${args.type || event.name || 'tool'}`;
+    const cloudBlock = { tool: toolLabel, input: { command: args.command, path: args.path } };
     if (state.lastAux === 'result' && state.inAuxBlock) output.write('\n');
     writeAuxLine(state, output, formatToolCallLine(cloudBlock, output));
     state.lastAux = 'call';
     if (state.progress && state.progress.setVerb) state.progress.setVerb(verbForTool(args.type || event.name));
+    if (typeof state.onEvent === 'function') {
+      state.onEvent({ type: 'tool_call', tool: toolLabel, input: args, id: event.call_id || event.id });
+    }
     if (state.relay) {
       // Relayed calls run sequentially: the backend awaits each tool-result
       // before continuing its loop, so a promise chain preserves order.
@@ -3308,6 +3489,21 @@ function handleEvent(event, state, output) {
             flushPendingText(state, output);
             writeAuxLine(state, output, formatAuxRow('receipt', result.receipt, output));
             state.lastAux = 'receipt';
+          }
+          if (result && result.diff && result.diff.patch) {
+            flushPendingText(state, output);
+            writeAuxLine(state, output, axLocalTools.renderUnifiedDiff(result.diff, { isTTY: output && output.isTTY }));
+            state.lastAux = 'diff';
+          }
+          if (typeof state.onEvent === 'function') {
+            state.onEvent({
+              type: 'tool_result',
+              tool_use_id: event.call_id || event.id,
+              tool: toolLabel,
+              status: result && result.status,
+              diff: result && result.diff ? result.diff : undefined,
+              is_error: Boolean(result && result.status === 'error'),
+            });
           }
           return result;
         })
@@ -3388,13 +3584,20 @@ function isTurnInterruptedError(error) {
 
 async function postTurn(message, options = {}) {
   const startedAt = Date.now();
+  const cwd = options.cwd || process.cwd();
   let route = options.business ? 'local' : resolveRoute(message, options);
+  let downgradedLocalToCloud = false;
   if (route === 'local' && !options.business && !pinLocalCheckout(options)
     && !(await localBackendReachable())) {
     route = 'cloud';
+    downgradedLocalToCloud = true;
   }
   const local = route !== 'cloud';
   const endpointRoute = options.business ? 'cloud' : route;
+  const enableLocalExecutor = Boolean(
+    options.localExecutor === true
+    || (downgradedLocalToCloud && !options.forceCloud && options.disableLocalExecutor !== true)
+  );
   const token = authToken();
   const turnId = options.turnId || createTurnId();
   const shouldSendConnectionContext = options.connectionContext
@@ -3405,15 +3608,32 @@ async function postTurn(message, options = {}) {
     ? await buildConnectionContext({ token, localWorkspace: local })
     : null);
   const connectionUserId = !local && isLoopbackBackend({ route: endpointRoute }) ? authUserId() : '';
-  const payload = buildPayload(message, { ...options, route, connectionContext, connectionUserId, turnId });
+  const payload = buildPayload(message, {
+    ...options,
+    cwd,
+    route,
+    localExecutor: enableLocalExecutor,
+    connectionContext,
+    connectionUserId,
+    turnId,
+  });
   const postData = JSON.stringify(payload);
   const output = options.output || process.stdout;
-  const timeoutMs = postTurnTimeoutMs(payload, { business: options.business, local });
+  const timeoutMs = postTurnTimeoutMs(payload, { business: options.business, local: local || enableLocalExecutor });
   const turnUrl = new URL(backendUrl({ route: endpointRoute }));
   const transport = turnUrl.protocol === 'https:' ? https : http;
+  const checkpoint = axLocalTools.createCheckpointContext({
+    sessionId: options.conversationId || 'default',
+    turnId,
+  });
+  const sessionGrants = options.sessionGrants instanceof Set ? options.sessionGrants : new Set();
+  const mcpConfigMap = new Map(axExt.loadMcpServerConfigs(cwd).map((c) => [c.name, c]));
   const state = {
     events: [],
     errors: [],
+    diffs: [],
+    checkpointId: checkpoint.checkpointId,
+    onEvent: typeof options.onEvent === 'function' ? options.onEvent : null,
     output: '',
     pendingText: '',
     wroteText: false,
@@ -3436,8 +3656,17 @@ async function postTurn(message, options = {}) {
     relay: {
       chain: Promise.resolve(),
       execute: async (name, args) => {
+        const preHook = await axExt.runLifecycleHooks('PreToolUse', {
+          tool: name,
+          op: args && (args.type || args.op),
+          args,
+        }, { cwd });
+        if (preHook && preHook.blocked) {
+          return { status: 'error', error: preHook.reason || 'Blocked by PreToolUse hook', denied: true };
+        }
+        let toolResult;
         if (name === BACKEND_API_TOOL_NAME) {
-          return executeBackendApiTool(args, {
+          toolResult = await executeBackendApiTool(args, {
             input: options.input,
             output,
             approveBackendApi: options.approveBackendApi,
@@ -3446,9 +3675,36 @@ async function postTurn(message, options = {}) {
             getApiBaseUrl: options.getApiBaseUrl,
             timeoutMs: options.backendApiTimeoutMs,
           });
+        } else if (options.business) {
+          toolResult = await options.business.executor(name, args);
+        } else if (name === 'local_file_op') {
+          toolResult = await axLocalTools.executeLocalFileOp(args, {
+            cwd,
+            approveMode: options.approveMode || 'stage',
+            planMode: Boolean(options.planMode),
+            allowedTools: options.allowedTools,
+            sessionGrants,
+            checkpoint,
+            diffs: state.diffs,
+            requestApproval: options.approveLocalTool,
+          });
+        } else if (String(name || '').startsWith('mcp__')) {
+          const parts = String(name).split('__');
+          const serverName = parts[1];
+          const toolName = parts.slice(2).join('__');
+          const serverCfg = mcpConfigMap.get(serverName);
+          toolResult = serverCfg
+            ? await axExt.callMcpServerTool(serverCfg, toolName, args)
+            : { status: 'error', error: `Unknown MCP server: ${serverName}` };
+        } else {
+          toolResult = { status: 'error', error: `unsupported relayed tool: ${name || '?'}` };
         }
-        if (options.business) return options.business.executor(name, args);
-        return { status: 'error', error: `unsupported relayed tool: ${name || '?'}` };
+        await axExt.runLifecycleHooks('PostToolUse', {
+          tool: name,
+          op: args && (args.type || args.op),
+          status: toolResult && toolResult.status,
+        }, { cwd }).catch(() => {});
+        return toolResult;
       },
       post: (callId, result) => {
         if (options.business) {
@@ -3519,6 +3775,9 @@ async function postTurn(message, options = {}) {
           try {
             const event = parseSseBlock(block);
             handleEvent(event, state, output);
+            if (event && typeof state.onEvent === 'function' && event.type !== 'tool_call_request') {
+              state.onEvent(event);
+            }
             if (event && event.type === 'result') {
               flushPendingText(state, output);
               if (state.resultOutput) state.output = state.resultOutput;
@@ -3708,8 +3967,98 @@ async function postCodeFastTurn(message, options = {}) {
   });
 }
 
+async function postWriter1Turn(message, options = {}) {
+  const output = options.output || process.stdout;
+  const showProgress = options.showProgress !== false;
+  const contextHint = Array.isArray(options.history) && options.history.length
+    ? options.history.slice(-4).map((h) => `${h.role}: ${String(h.content || '').slice(0, 400)}`).join('\n')
+    : '';
+  const result = await runWriter1(message, {
+    cwd: options.cwd || process.cwd(),
+    contextHint,
+    stageRunner: options.stageRunner,
+    skipGather: options.skipGather,
+    skipEdit: options.skipEdit,
+    onStage: (evt) => {
+      if (!showProgress) return;
+      if (evt.phase === 'start') {
+        output.write(`${paint(`· ${evt.stage.name} (${evt.stage.tier} · ${evt.stage.model})...`, [ANSI.muted], output)}\n`);
+      } else if (evt.phase === 'done') {
+        const extra = evt.guard ? ` · ${evt.guard.reason}` : '';
+        output.write(`${paint(`· ${evt.stage.name} done (${formatDuration(evt.durationMs)})${extra}`, [ANSI.muted], output)}\n`);
+      } else if (evt.phase === 'fallback') {
+        output.write(`${paint(`· ${evt.stage.name} skipped (${evt.error})`, [ANSI.muted], output)}\n`);
+      }
+    },
+  });
+  if (showProgress && result.output) {
+    output.write(`\n${result.output}\n`);
+  }
+  return {
+    output: result.output,
+    durationMs: result.durationMs,
+    events: [],
+    stages: result.stages,
+    editGuard: result.editGuard,
+    slop: result.slop,
+  };
+}
+
+async function postFlowTurn(message, options = {}) {
+  const output = options.output || process.stdout;
+  const showProgress = options.showProgress !== false;
+  const cwd = options.cwd || process.cwd();
+  const flowSession = options.flowSession || createFlowSession();
+  const persist = options.persistFlow !== undefined
+    ? Boolean(options.persistFlow)
+    : (!process.env.NODE_TEST_CONTEXT && insideWorkspaceCwd(cwd));
+  const result = await runFlowTurn(message, flowSession, {
+    cwd,
+    persist,
+    stageRunner: options.stageRunner,
+    skipGather: options.skipGather,
+    skipEdit: options.skipEdit,
+    onStage: (evt) => {
+      if (!showProgress) return;
+      if (evt.phase === 'start' && evt.stage.name === 'gather') {
+        output.write(`${paint(`· quiet fact check (${evt.stage.model})...`, [ANSI.muted], output)}\n`);
+      } else if (evt.phase === 'done' && evt.stage.name === 'edit' && evt.guard) {
+        output.write(`${paint(`· grammar pass (${formatDuration(evt.durationMs)}) · ${evt.guard.reason}`, [ANSI.muted], output)}\n`);
+      }
+    },
+  });
+  if (showProgress && result.output) {
+    if (result.phase === 'beat' && (result.line || result.next)) {
+      if (result.line) output.write(`${paint(result.line, [ANSI.bold], output)}\n\n`);
+      if (result.next) output.write(`${paint(result.next, [ANSI.accent], output)}\n`);
+    } else {
+      output.write(`${result.output}\n`);
+    }
+    if (result.saved && result.saved.draftFile) {
+      output.write(`${paint(`· saved ${path.relative(cwd, result.saved.draftFile)} + record.md`, [ANSI.muted], output)}\n`);
+    }
+  }
+  return {
+    output: result.output,
+    durationMs: result.durationMs,
+    events: [],
+    phase: result.phase,
+    line: result.line,
+    next: result.next,
+    beatCount: result.beatCount,
+    stages: result.stages,
+    editGuard: result.editGuard,
+    slop: result.slop,
+    craft: result.craft,
+    saved: result.saved,
+  };
+}
+
 function turnFunctionForMode(mode) {
-  return normalizeMode(mode) === 'code-fast' ? postCodeFastTurn : postTurn;
+  const normalized = normalizeMode(mode);
+  if (normalized === 'flow') return postFlowTurn;
+  if (normalized === 'writer-1') return postWriter1Turn;
+  return normalized === 'code-fast' ? postCodeFastTurn : postTurn;
 }
 
 async function runHeadlessTurn(message, options = {}) {
@@ -3725,14 +4074,25 @@ async function runHeadlessTurn(message, options = {}) {
     : {};
 
   try {
-    const result = await turnFunction(message, {
+    const cwd = options.cwd || process.cwd();
+    const customCmd = axCommands.expandCustomSlashCommand(message, cwd);
+    const expanded = axContext.expandAtMentions(customCmd ? customCmd.prompt : message, cwd);
+    const result = await turnFunction(expanded.prompt, {
       mode,
-      cwd: options.cwd || process.cwd(),
+      cwd,
       route: options.route,
+      forceLocal: options.forceLocal,
+      forceCloud: options.forceCloud,
       business: options.business,
       verify: options.verify,
       reasoningEffort: options.reasoningEffort,
       diffuse: options.diffuse,
+      planMode: options.planMode,
+      approveMode: options.approveMode,
+      maxTurns: options.maxTurns,
+      allowedTools: options.allowedTools,
+      conversationId: options.conversationId,
+      history: options.history,
       stderr: options.stderr,
       output: sink,
       showProgress: false,
@@ -3760,6 +4120,128 @@ async function runHeadlessTurn(message, options = {}) {
   }
 }
 
+async function runStreamJsonTurn(message, options = {}) {
+  const mode = normalizeMode(options.mode || 'pro');
+  const cwd = options.cwd || process.cwd();
+  const startedAt = Date.now();
+  const out = options.streamOutput || process.stdout;
+  const emit = (obj) => {
+    try {
+      out.write(`${JSON.stringify(obj)}\n`);
+    } catch {}
+  };
+
+  let history = Array.isArray(options.history) ? [...options.history] : [];
+  let sessionId = options.conversationId || axSessions.createSessionId();
+  if (options.continueSession) {
+    const latest = axSessions.latestSessionForCwd(cwd);
+    if (latest) {
+      sessionId = latest.id;
+      history = [...latest.history];
+    }
+  } else if (options.resumeSessionId) {
+    const loaded = axSessions.loadSession(options.resumeSessionId);
+    if (loaded) {
+      sessionId = loaded.id;
+      history = [...loaded.history];
+    }
+  }
+
+  const customCmd = axCommands.expandCustomSlashCommand(message, cwd);
+  const expanded = axContext.expandAtMentions(customCmd ? customCmd.prompt : message, cwd);
+  const memory = process.env.AX_NO_PROJECT_MEMORY === '1' ? { files: [], summary: '' } : axContext.loadProjectMemory(cwd);
+
+  emit({
+    type: 'system_init',
+    session_id: sessionId,
+    model: modelForMode(mode),
+    cwd,
+    permission_mode: options.planMode ? 'plan' : (options.approveMode === 'auto' ? 'bypassPermissions' : 'default'),
+    slash_commands: CHAT_COMMANDS.map((c) => c.name),
+    context_files: memory.files,
+    attachments: expanded.attachments.map((a) => a.path),
+  });
+
+  const sink = bufferedOutput();
+  const turnFunction = options.turnFunction || turnFunctionForMode(mode);
+  try {
+    const result = await turnFunction(expanded.prompt, {
+      mode,
+      cwd,
+      history,
+      conversationId: sessionId,
+      route: options.route,
+      forceLocal: options.forceLocal,
+      forceCloud: options.forceCloud,
+      business: options.business,
+      verify: options.verify,
+      reasoningEffort: options.reasoningEffort,
+      diffuse: options.diffuse,
+      planMode: options.planMode,
+      approveMode: options.approveMode,
+      maxTurns: options.maxTurns,
+      allowedTools: options.allowedTools,
+      output: sink,
+      showProgress: false,
+      onEvent: (ev) => {
+        if (!ev || !ev.type) return;
+        if (ev.type === 'result') return;
+        emit(ev);
+      },
+    });
+    const outputText = String((result && result.output) || '').trim();
+    const durationMs = Number((result && result.durationMs) || 0) || (Date.now() - startedAt);
+    const diffs = Array.isArray(result && result.diffs) ? result.diffs : [];
+    const credits = creditsFromState(result || {});
+    const receipt = {
+      ...(receiptFromState(result || {}) || {}),
+      session_id: sessionId,
+      model: modelForMode(mode),
+      diffs,
+      checkpoint_id: result && result.checkpointId ? result.checkpointId : undefined,
+      success: true,
+    };
+    if (!options.turnFunction) {
+      try {
+        axSessions.appendSessionRecord(sessionId, {
+          type: 'turn',
+          cwd,
+          mode,
+          user: message,
+          assistant: outputText,
+          durationMs,
+          credits: credits || 0,
+          diffs,
+        });
+      } catch {}
+    }
+    emit({ type: 'receipt', receipt });
+    const finalEvent = {
+      type: 'result',
+      ok: true,
+      session_id: sessionId,
+      model: modelForMode(mode),
+      output: outputText,
+      durationMs,
+      diffs,
+    };
+    emit(finalEvent);
+    return finalEvent;
+  } catch (error) {
+    const errEvent = {
+      type: 'result',
+      ok: false,
+      session_id: sessionId,
+      model: modelForMode(mode),
+      output: '',
+      durationMs: Date.now() - startedAt,
+      error: String((error && error.message) || error || 'stream turn failed'),
+    };
+    emit(errEvent);
+    return errEvent;
+  }
+}
+
 async function chat(options = {}) {
   let mode = normalizeMode(options.mode);
   const cwd = options.cwd || process.cwd();
@@ -3768,10 +4250,34 @@ async function chat(options = {}) {
   const logger = createRunLogger({ cwd, mode, kind: 'play', output: baseOutput });
   const output = logger ? logger.output : baseOutput;
   const history = [];
+  const sessionDiffs = [];
+  const sessionGrants = new Set();
+  let sessionCredits = 0;
+  let flowSession = options.flowSession || createFlowSession();
   let lastCompactionNotice = 0;
-  let conversationId = options.conversationId || `ax-${process.pid}-${Date.now().toString(36)}`;
+  let conversationId = options.conversationId || axSessions.createSessionId();
+  if (options.continueSession) {
+    const latest = axSessions.latestSessionForCwd(cwd);
+    if (latest) {
+      conversationId = latest.id;
+      history.push(...latest.history);
+      sessionDiffs.push(...(latest.diffs || []));
+      sessionCredits = Number(latest.credits || 0);
+      if (latest.mode && !options.mode) mode = normalizeMode(latest.mode);
+    }
+  } else if (options.resumeSessionId) {
+    const loaded = axSessions.loadSession(options.resumeSessionId);
+    if (loaded) {
+      conversationId = loaded.id;
+      history.push(...loaded.history);
+      sessionDiffs.push(...(loaded.diffs || []));
+      sessionCredits = Number(loaded.credits || 0);
+      if (loaded.mode && !options.mode) mode = normalizeMode(loaded.mode);
+    }
+  }
   const session = {
     approveMode: options.autoApprove || options.approveMode === 'auto' ? 'auto' : 'stage',
+    planMode: Boolean(options.planMode),
     reasoningEffort: options.reasoningEffort || null,
   };
   let turnInFlight = false;
@@ -3781,6 +4287,16 @@ async function chat(options = {}) {
 
   output.write(`${formatHeader({ mode, cwd, chat: true, reasoningEffort: session.reasoningEffort }, output)}\n\n`);
   if (logger) output.write(`${formatAuxRow('log', formatPathSubject(logger.path, output), output)}\n\n`);
+  if (history.length > 0 && (options.continueSession || options.resumeSessionId)) {
+    output.write(`${paint(`· resumed session ${conversationId} (${Math.floor(history.length / 2)} turns)`, [ANSI.muted], output)}\n\n`);
+  }
+  if (!options.turnFunction && process.env.AX_NO_PROJECT_MEMORY !== '1') {
+    const mem = axContext.loadProjectMemory(cwd);
+    if (mem.files.length) {
+      output.write(`${paint(`· context: ${mem.files.join(', ')}`, [ANSI.muted], output)}\n`);
+    }
+    axExt.runLifecycleHooks('SessionStart', { sessionId: conversationId, mode }, { cwd }).catch(() => {});
+  }
   maybeWriteAtrisGoalBanner(output, cwd);
 
   const runtimePreflight = new Set();
@@ -3788,7 +4304,7 @@ async function chat(options = {}) {
     const endpointRoute = routeForTurn === 'local' ? 'local' : 'cloud';
     const key = `${normalizeMode(mode)}:${endpointRoute}`;
     if (runtimePreflight.has(key)) return true;
-    if (options.skipRuntimePreflight || options.turnFunction || options.business || normalizeMode(mode) === 'code-fast') {
+    if (options.skipRuntimePreflight || options.turnFunction || options.business || normalizeMode(mode) === 'code-fast' || normalizeMode(mode) === 'writer-1' || normalizeMode(mode) === 'flow') {
       runtimePreflight.add(key);
       return true;
     }
@@ -3826,20 +4342,65 @@ async function chat(options = {}) {
       cwd,
       mode,
       history,
+      conversationId,
+      sessionDiffs,
+      sessionCredits,
       approveMode: session.approveMode,
+      planMode: session.planMode,
       reasoningEffort: session.reasoningEffort,
       isTTY: output.isTTY,
     });
-    if (slash) {
+    let effectiveInput = trimmed;
+    if (slash && slash.type === 'custom') {
+      output.write(`${paint(slash.output, [ANSI.muted], output)}\n`);
+      effectiveInput = slash.prompt;
+    } else if (slash) {
       if (slash.type === 'exit') return true;
-      if (slash.mode) mode = slash.mode;
+      if (slash.mode) {
+        const previousMode = mode;
+        mode = slash.mode;
+        if (previousMode !== slash.mode && history.length > 0) {
+          const handoff = buildSwapHandoff(history, previousMode, slash.mode);
+          if (handoff) {
+            history.length = 0;
+            history.push({ role: 'assistant', content: handoff.summary });
+            slash.output = `${slash.output} · compacted ${handoff.compactedCount} turn${handoff.compactedCount === 1 ? '' : 's'} for clean swap`;
+          }
+        }
+      }
       if (slash.approveMode) session.approveMode = slash.approveMode;
+      if (typeof slash.planMode === 'boolean') session.planMode = slash.planMode;
       if (Object.prototype.hasOwnProperty.call(slash, 'reasoningEffort')) {
         session.reasoningEffort = slash.reasoningEffort;
       }
+      if (slash.type === 'compact' && slash.compacted && slash.compacted.compactedTurns) {
+        history.length = 0;
+        history.push(...slash.compacted.nextHistory);
+        if (!options.turnFunction) {
+          try {
+            axSessions.appendSessionRecord(conversationId, {
+              type: 'compact',
+              cwd,
+              mode,
+              digest: slash.compacted.digest,
+            });
+          } catch {}
+        }
+      }
+      if (slash.type === 'sessions' && slash.loadedSession) {
+        conversationId = slash.loadedSession.id;
+        history.length = 0;
+        history.push(...slash.loadedSession.history);
+        sessionDiffs.length = 0;
+        sessionDiffs.push(...(slash.loadedSession.diffs || []));
+        sessionCredits = Number(slash.loadedSession.credits || 0);
+      }
       if (slash.type === 'clear') {
         history.length = 0;
-        conversationId = `ax-${process.pid}-${Date.now().toString(36)}`;
+        sessionDiffs.length = 0;
+        sessionCredits = 0;
+        flowSession = createFlowSession();
+        conversationId = axSessions.createSessionId();
       }
       if (slash.type === 'status') {
         const healthRoute = options.business
@@ -3969,15 +4530,24 @@ async function chat(options = {}) {
       lastCompactionNotice = compactedTurns;
       output.write(`${paint(`· context: ${compactedTurns} earlier turn${compactedTurns === 1 ? '' : 's'} compacted into a digest`, [ANSI.muted], output)}\n`);
     }
+    const expanded = axContext.expandAtMentions(effectiveInput, cwd);
+    if (expanded.attachments.length) {
+      for (const att of expanded.attachments) {
+        output.write(`${formatAuxRow('attach', `${att.path} (${att.lines} ${att.kind === 'dir' ? 'entries' : 'lines'})`, output)}\n`);
+      }
+    }
     let result;
     activeTurnController = new AbortController();
     turnInFlight = true;
     if (slashMenu) slashMenu.clear();
     try {
-      result = await turnFunction(trimmed, {
+      result = await turnFunction(expanded.prompt, {
         mode,
         cwd,
         history,
+        flowSession,
+        persistFlow: options.persistFlow,
+        stageRunner: options.stageRunner,
         input,
         output,
         route,
@@ -3985,9 +4555,15 @@ async function chat(options = {}) {
         verify: options.verify,
         reasoningEffort: session.reasoningEffort,
         diffuse: options.diffuse,
+        planMode: session.planMode,
+        approveMode: session.approveMode,
+        maxTurns: options.maxTurns,
+        allowedTools: options.allowedTools,
+        sessionGrants,
         conversationId,
         turnId,
         approveBackendApi: options.approveBackendApi,
+        approveLocalTool: options.approveLocalTool,
         apiRequestJson: options.apiRequestJson,
         loadCredentials: options.loadCredentials,
         getApiBaseUrl: options.getApiBaseUrl,
@@ -4037,7 +4613,12 @@ async function chat(options = {}) {
       });
       writeWorkspaceApprovalHints(cwd, turnStartedAt, output);
     }
-    output.write(`${formatDoneLine(result.durationMs, creditsFromState(result))}\n`);
+    const turnCredits = creditsFromState(result);
+    if (turnCredits) sessionCredits += turnCredits;
+    if (Array.isArray(result && result.diffs) && result.diffs.length) {
+      sessionDiffs.push(...result.diffs);
+    }
+    output.write(`${formatDoneLine(result.durationMs, turnCredits)}\n`);
     const goalLine = options.turnFunction ? '' : formatGoalStatusLine(currentAtrisGoal(cwd), output);
     if (goalLine) output.write(`${goalLine}\n`);
     output.write('\n');
@@ -4063,6 +4644,20 @@ async function chat(options = {}) {
       ...(receipt && receipt.task_preview ? { task_preview: receipt.task_preview } : {}),
       ...(approvalRequest ? { approval_request: approvalRequest } : {}),
     });
+    if (!options.turnFunction) {
+      try {
+        axSessions.appendSessionRecord(conversationId, {
+          type: 'turn',
+          cwd,
+          mode,
+          user: trimmed,
+          assistant: assistantContent,
+          durationMs: Number(result && result.durationMs) || 0,
+          credits: turnCredits || 0,
+          diffs: Array.isArray(result && result.diffs) ? result.diffs : [],
+        });
+      } catch {}
+    }
     return false;
   };
 
@@ -4075,7 +4670,27 @@ async function chat(options = {}) {
     return;
   }
 
-  const rl = readline.createInterface({ input, output: baseOutput, completer: chatCompleter });
+  const rl = readline.createInterface({ input, output: baseOutput, completer: (line) => chatCompleter(line, cwd) });
+  if (!options.approveLocalTool) {
+    options.approveLocalTool = ({ op, target }) => new Promise((resolve) => {
+      const controller = new AbortController();
+      pendingApprovalAbort = controller;
+      const settle = (raw) => {
+        if (pendingApprovalAbort === controller) pendingApprovalAbort = null;
+        const ans = String(raw || '').trim().toLowerCase();
+        if (ans === 'a' || ans === 'always') return resolve('always');
+        if (ans === 's' || ans === 'session') return resolve('session');
+        if (ans === 'y' || ans === 'yes') return resolve('allow');
+        resolve('deny');
+      };
+      controller.signal.addEventListener('abort', () => settle('n'), { once: true });
+      try {
+        rl.question(paint(`allow ${op} ${target}? [y]es / [s]ession / [a]lways / [n]o: `, [ANSI.warn], baseOutput), { signal: controller.signal }, settle);
+      } catch {
+        settle('n');
+      }
+    });
+  }
   if (!options.approveBackendApi) {
     // Mid-turn approvals must reuse the chat's readline: a second interface on
     // the same stdin double-consumes keypresses and corrupts both prompts.
@@ -4097,7 +4712,7 @@ async function chat(options = {}) {
       }
     });
   }
-  const promptOptions = () => ({ isTTY: baseOutput.isTTY, approveMode: session.approveMode });
+  const promptOptions = () => ({ isTTY: baseOutput.isTTY, approveMode: session.approveMode, planMode: session.planMode });
   const detachHotkey = attachApproveModeHotkey(rl, session, () => formatPrompt(mode, promptOptions()));
   slashMenu = attachSlashMenu(rl, baseOutput, { isActive: () => !turnInFlight });
   const exitSignal = Symbol('chat exit');
@@ -4116,7 +4731,7 @@ async function chat(options = {}) {
   });
   const onClose = () => requestExit();
   rl.on('close', onClose);
-  const ask = () => new Promise(resolve => {
+  const ask = (promptOverride) => new Promise(resolve => {
     let settled = false;
     const settle = value => {
       if (settled) return;
@@ -4126,7 +4741,7 @@ async function chat(options = {}) {
     };
     pendingAsk = settle;
     try {
-      rl.question(formatPrompt(mode, promptOptions()), settle);
+      rl.question(promptOverride || formatPrompt(mode, promptOptions()), settle);
     } catch (_) {
       settle(exitSignal);
     }
@@ -4134,7 +4749,17 @@ async function chat(options = {}) {
 
   try {
     while (true) {
-      const line = await ask();
+      let line = await ask();
+      if (line === exitSignal) break;
+      // Multiline continuation when a line ends with a trailing backslash.
+      while (typeof line === 'string' && line.endsWith('\\')) {
+        const nextLine = await ask(paint('… ', [ANSI.muted], baseOutput));
+        if (nextLine === exitSignal) {
+          line = exitSignal;
+          break;
+        }
+        line = `${line.slice(0, -1)}\n${nextLine}`;
+      }
       if (line === exitSignal || await runLine(line)) break;
     }
   } finally {
@@ -4143,6 +4768,9 @@ async function chat(options = {}) {
     detachHotkey();
     rl.removeListener('close', onClose);
     if (!rl.closed) rl.close();
+    if (!options.turnFunction) {
+      axExt.runLifecycleHooks('Stop', { sessionId: conversationId, mode }, { cwd }).catch(() => {});
+    }
     if (logger) logger.close(0);
   }
 }
@@ -4916,8 +5544,14 @@ async function main() {
     args.splice(modelIdx, 2);
   }
 
-  const explicitLane = modelLane || (args.includes('--code-fast') || args.includes('--code')
-    ? 'code-fast'
+  const explicitLane = modelLane || (args.includes('--flow')
+    ? 'flow'
+    : args.includes('--writer-1')
+      ? 'writer-1'
+    : args.includes('--neon')
+      ? 'max'
+    : args.includes('--code-fast') || args.includes('--code')
+      ? 'code-fast'
     : args.includes('--mercury')
       ? 'mercury'
     : args.includes('--max')
@@ -4968,8 +5602,56 @@ async function main() {
   const listGrants = args.includes('--grants');
   if (listGrants) args.splice(args.indexOf('--grants'), 1);
 
-  const autoApprove = args.includes('--auto-approve');
-  if (autoApprove) args.splice(args.indexOf('--auto-approve'), 1);
+  const skipPermissions = args.includes('--dangerously-skip-permissions');
+  if (skipPermissions) args.splice(args.indexOf('--dangerously-skip-permissions'), 1);
+
+  const autoApprove = skipPermissions || args.includes('--auto-approve');
+  if (args.includes('--auto-approve')) args.splice(args.indexOf('--auto-approve'), 1);
+
+  const planMode = args.includes('--plan');
+  if (planMode) args.splice(args.indexOf('--plan'), 1);
+
+  const continueSession = args.includes('--continue') || args.includes('-c');
+  if (args.includes('--continue')) args.splice(args.indexOf('--continue'), 1);
+  if (args.includes('-c')) args.splice(args.indexOf('-c'), 1);
+
+  let resumeSessionId = '';
+  const resumeIdx = args.findIndex((a) => a === '--resume' || a === '-r');
+  if (resumeIdx !== -1) {
+    const nextVal = args[resumeIdx + 1];
+    if (nextVal && !nextVal.startsWith('-')) {
+      resumeSessionId = String(nextVal).trim();
+      args.splice(resumeIdx, 2);
+    } else {
+      resumeSessionId = '__latest__';
+      args.splice(resumeIdx, 1);
+    }
+  }
+
+  let outputFormat = 'json';
+  const formatIdx = args.indexOf('--output-format');
+  if (formatIdx !== -1) {
+    outputFormat = String(args[formatIdx + 1] || 'json').trim().toLowerCase();
+    args.splice(formatIdx, 2);
+  }
+
+  let maxTurns = null;
+  const maxTurnsIdx = args.indexOf('--max-turns');
+  if (maxTurnsIdx !== -1) {
+    const parsedMax = Number(args[maxTurnsIdx + 1]);
+    if (Number.isInteger(parsedMax) && parsedMax > 0) maxTurns = parsedMax;
+    args.splice(maxTurnsIdx, 2);
+  }
+
+  let allowedTools = null;
+  const allowedToolsIdx = args.indexOf('--allowedTools');
+  if (allowedToolsIdx !== -1) {
+    allowedTools = String(args[allowedToolsIdx + 1] || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    args.splice(allowedToolsIdx, 2);
+  }
 
   let reasoningEffort = null;
   const effortIdx = args.indexOf('--effort');
@@ -5019,7 +5701,7 @@ async function main() {
     args.splice(firstPositionalIdx, 1);
   }
   const prompt = args
-    .filter(arg => !['--auto', '--auto-approve', '--max', '--fast', '--rapid', '--alpha', '--mercury', '--diffuse', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--print', '--headless', '--local', '--cloud', '--help', '-h', '--effort'].includes(arg))
+    .filter(arg => !['--auto', '--auto-approve', '--dangerously-skip-permissions', '--flow', '--writer-1', '--neon', '--max', '--fast', '--rapid', '--alpha', '--mercury', '--diffuse', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--print', '--headless', '--local', '--cloud', '--help', '-h', '--effort'].includes(arg))
     .join(' ')
     .trim();
 
@@ -5170,8 +5852,40 @@ async function main() {
     }
 
     if (printMode) {
-      const payload = prompt
-        ? await runHeadlessTurn(prompt, {
+      let effectivePrompt = prompt;
+      if (!effectivePrompt && !process.stdin.isTTY) {
+        try {
+          effectivePrompt = fs.readFileSync(0, 'utf8').trim();
+        } catch {}
+      }
+      if (outputFormat === 'stream-json') {
+        const finalEv = effectivePrompt
+          ? await runStreamJsonTurn(effectivePrompt, {
+            mode,
+            cwd: process.cwd(),
+            route: route === 'auto' ? undefined : route,
+            forceLocal,
+            forceCloud,
+            business,
+            verify,
+            reasoningEffort,
+            diffuse,
+            planMode,
+            approveMode: autoApprove ? 'auto' : 'stage',
+            maxTurns,
+            allowedTools,
+            continueSession: continueSession || resumeSessionId === '__latest__',
+            resumeSessionId: resumeSessionId && resumeSessionId !== '__latest__' ? resumeSessionId : '',
+          })
+          : { ok: false, error: 'missing prompt' };
+        const code = finalEv && finalEv.ok ? 0 : 1;
+        process.exitCode = code;
+        process.stdout.write('', () => process.exit(code));
+        setTimeout(() => process.exit(code), 3000).unref();
+        return;
+      }
+      const payload = effectivePrompt
+        ? await runHeadlessTurn(effectivePrompt, {
           mode,
           cwd: process.cwd(),
           route: route === 'auto' ? undefined : route,
@@ -5182,13 +5896,18 @@ async function main() {
           autoPick,
           reasoningEffort,
           diffuse,
+          planMode,
+          approveMode: autoApprove ? 'auto' : 'stage',
+          maxTurns,
+          allowedTools,
         })
         : { ok: false, model: modelForMode(mode), output: '', durationMs: 0, error: 'missing prompt' };
       // Drain stdout before exiting: process.exit right after a large write
       // truncates piped output at the 64KB pipe buffer (same class as BCK-1306).
       const code = payload.ok ? 0 : 1;
       process.exitCode = code;
-      process.stdout.write(`${JSON.stringify(payload)}\n`, () => process.exit(code));
+      const lineOut = outputFormat === 'text' ? `${payload.output || payload.error || ''}\n` : `${JSON.stringify(payload)}\n`;
+      process.stdout.write(lineOut, () => process.exit(code));
       setTimeout(() => process.exit(code), 3000).unref();
       return;
     }
@@ -5204,6 +5923,11 @@ async function main() {
         verify,
         auto: autoEnabled,
         autoApprove,
+        planMode,
+        maxTurns,
+        allowedTools,
+        continueSession: continueSession || resumeSessionId === '__latest__',
+        resumeSessionId: resumeSessionId && resumeSessionId !== '__latest__' ? resumeSessionId : '',
         reasoningEffort,
         diffuse,
       });
@@ -5358,7 +6082,11 @@ module.exports = {
   postApprovalExecution,
   postCodeFastTurn,
   postTurn,
+  postWriter1Turn,
+  postFlowTurn,
   postTurnTimeoutMs,
+  buildSwapHandoff,
+  createFlowSession,
   readApprovalStore,
   removeStoredApproval,
   renderStreamingMarkdown,
@@ -5366,6 +6094,7 @@ module.exports = {
   resolveRoute,
   REASONING_EFFORTS,
   runHeadlessTurn,
+  runStreamJsonTurn,
   runBenchmark,
   runSelfTest,
   runtimeReadyForChat,

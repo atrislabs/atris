@@ -171,6 +171,23 @@ test('fresh init creates the six-member starter team with a safe customer lead',
   }
 });
 
+test('init twice leaves one Project Context section per member card', (t) => {
+  const dir = makeTempDir();
+  t.after(() => cleanupTempDir(dir));
+  const card = (m) => path.join(dir, 'atris', 'team', m, 'MEMBER.md');
+  fs.writeFileSync(path.join(dir, 'package.json'), '{}');
+  for (const m of ['executor', 'navigator']) { // shipped cards lack a Workflow heading, so seed one
+    fs.mkdirSync(path.dirname(card(m)), { recursive: true });
+    fs.writeFileSync(card(m), '---\n\n## Workflow\n');
+  }
+  const [first, second] = [1, 2].map(() => runInit(['--yes', '--verbose'], { cwd: dir }));
+  assert.match(first.stdout, /Injected project patterns/);
+  assert.doesNotMatch(second.stdout, /Injected project patterns/);
+  for (const m of ['executor', 'navigator', 'validator']) {
+    assert.equal(fs.readFileSync(card(m), 'utf8').match(/^## Project Context$/gm).length, 1, m);
+  }
+});
+
 test('force init and update preserve extra members in an existing workspace', () => {
   const dir = makeTempDir();
   try {

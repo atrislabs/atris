@@ -1102,7 +1102,15 @@ const DEFAULT_REVISIONS_DAYS = 14;
 
 function isAgentCommitBody(body) {
   const markers = AGENT_TRAILER_MARKERS.map((m) => m.toLowerCase());
-  for (const line of String(body || '').split(/\r?\n/)) {
+  const lines = String(body || '').split(/\r?\n/);
+  // The Atris line goes on every save, a person's too; "Atris-Made-By: person"
+  // says a person typed it, unless a named agent also signed.
+  if (lines.some((line) => /^\s*atris-made-by\s*:\s*person\s*$/i.test(line))) {
+    return lines.some((line) => /^\s*co-authored-by\s*:/i.test(line)
+      && !/atris-builder\[bot\]/i.test(line)
+      && (markers.some((m) => line.toLowerCase().includes(m)) || /\[bot\]@users\.noreply\.github\.com/i.test(line)));
+  }
+  for (const line of lines) {
     if (!/^\s*co-authored-by\s*:/i.test(line)) continue;
     const lower = line.toLowerCase();
     if (markers.some((m) => lower.includes(m))) return true;

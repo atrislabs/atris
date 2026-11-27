@@ -4,7 +4,6 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
 const { memberProcessPrompt, currentWorkPrompt } = require('../lib/member-context');
@@ -25,30 +24,20 @@ const {
 } = require('../lib/brief-ledger');
 const {
   resolveClaudeRunnerModel,
-  resolvePinnedRunnerModel,
-  runnerModelFor,
   resolveClaudeRunnerBin,
   resolveClaudeRunnerCommandTemplate,
   buildRunnerCommand,
   codexJsonEventsCommand,
   CLAUDE_SLIM_ARGS,
   slimLaunchSpendStop,
-  RUNNER_PROFILE_DEFS,
-  RUNNER_PROFILE_ALIASES,
-  RUNNER_PROFILE_NAMES,
 } = require('../lib/runner-command');
 const {
-  resolveEngineForRoleWithPreference,
   engineFailureHealthStatus,
-  engineStallReason,
   engineRegistryView,
-  recordEngineRunHealth,
   setEngineHealth,
 } = require('../lib/engine-registry');
-const { appendRosterRun, parseRunUsage } = require('../lib/roster-runs');
+const { parseRunUsage } = require('../lib/roster-runs');
 const {
-  FUNCTIONAL_MEMBER_TOPICS,
-  listWorkspaceMemberSlugs,
   normalizeOwnerSlug,
   resolveFunctionalOwner,
 } = require('../lib/functional-owner');
@@ -77,7 +66,6 @@ const {
 const { compactMissionLedger } = require('../lib/mission-ledger-compact');
 const autolandLib = require('../lib/autoland');
 const { gateForHuman, landingWhyClause } = require('../lib/voice-gate');
-const { operatorReady, hasAgentJargon } = require('./autoland');
 const {
   MISSION_INSPECT_FIELDS,
   readFieldsFlag,
@@ -89,11 +77,8 @@ const {
 } = require('../lib/inspect-fields');
 const {
   displayNumber,
-  meaningfulWords,
   nextRecordNumber,
   recordMatchesRef,
-  shortRecordLabel,
-  shortRecordRef,
 } = require('../lib/short-name');
 const {
   runCloudMissionCommand,
@@ -183,7 +168,6 @@ const {
   MISSION_RUN_BOOLEAN_FLAGS,
   DEFAULT_MISSION_RUN_OWNER_SLUGS,
   missionRunInputRequired,
-  askLine,
   removeValueFlag,
   missionRunOwnerRef,
   missionRunArgsWithOwner,
@@ -1794,6 +1778,20 @@ function missionBlockerReceiptLine(blocker) {
     : `blocker filed as ${blocker.taskId}, no engine ready: ${blocker.reason}`;
 }
 
+// A run the round limit ended before its time ran out says so, in the record and on screen.
+// Seen 2026-11-17: three 3-hour runs stopped at 36 rounds after about 1.5 hours, still read
+// "running", and nothing said why.
+function roundLimitEnding(reason, budgetSeconds, elapsedSeconds, rounds) {
+  const left = Number(budgetSeconds || 0) - Number(elapsedSeconds || 0);
+  if (reason !== 'max-ticks-reached' || !(left > 60)) return null;
+  const minutesLeft = Math.round(left / 60);
+  return {
+    rounds,
+    minutes_left: minutesLeft,
+    line: `Stopped early: the round limit (${rounds}) was reached with ${minutesLeft} minute${minutesLeft === 1 ? '' : 's'} of the time left.`,
+  };
+}
+
 function missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason = null, continuationGoal = null, ticks = [], createdNext = null, blocker = null) {
   const changed = missionRunChangedText(mission, ranTicks, effectiveMaxTicks, ticks, createdNext);
   const reason = missionHumanReasonText(mission, changed);
@@ -2052,7 +2050,7 @@ function missionFromArgs(args) {
     '--native-goal-objective',
     '--visible-goal-status',
     '--visible-goal-objective',
-  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--duplicate', '--no-verify', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--preflight', '--no-preflight', '--room-preflight', '--no-room-preflight', '--manual-ack', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot'])
+  ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--shared-checkout', '--duplicate', '--no-verify', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--preflight', '--no-preflight', '--room-preflight', '--no-room-preflight', '--manual-ack', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot'])
     .filter((part) => String(part || '').trim() !== '...');
   const objective = objectiveParts.join(' ').trim();
   if (!objective) {
@@ -2094,7 +2092,10 @@ function missionFromArgs(args) {
     exitMissionError('mission start got more than one --yes-lock, so it is not clear which seal applies; nothing started', 2, wantsJson(args));
   }
   const handoffSeal = String(process.env.ATRIS_HANDOFF_YES_LOCK || '').trim();
-  const yesLocks = readYesLockSeal(handoffSeal || readFlag(args, '--yes-lock', ''), wantsJson(args));
+  // A run woken by a handoff runs under the fixed handoff seal, kind and all,
+  // as Atris made it; the environment only says that it was woken.
+  const flagSeal = readYesLockSeal(handoffSeal || readFlag(args, '--yes-lock', ''), wantsJson(args));
+  const yesLocks = handoffSeal ? require('../lib/yes-lock').handoffSeal() : flagSeal;
   const yesLockParent = yesLocks.length
     ? String((handoffSeal ? process.env.ATRIS_HANDOFF_YES_LOCK_PARENT : readFlag(args, '--yes-lock-parent', '')) || '').trim()
     : '';
@@ -3419,7 +3420,10 @@ function startMission(args, options = {}) {
   // lock (or none): the reused job would run without it. It gets a fresh
   // job under the lock instead. (Codex review rounds 3 and 4 on #1483.)
   const twinCandidate = hasFlag(args, '--duplicate') ? null : findActiveTwinMission(mission.objective, mission.owner);
-  if (twinCandidate && lockCovered(twinCandidate, mission)) {
+  const separateCheckout = twinCandidate && (twinCandidate.worktree_root || twinCandidate.worktree?.path);
+  const sharedCheckoutConflict = hasFlag(args, '--shared-checkout') && separateCheckout
+    && path.resolve(separateCheckout) !== path.resolve(process.cwd());
+  if (twinCandidate && !sharedCheckoutConflict && lockCovered(twinCandidate, mission)) {
     const twin = twinCandidate;
     const requestedDestination = mission.drive?.destination || '';
     if (requestedDestination && twin.drive?.destination && requestedDestination !== twin.drive.destination) {
@@ -5961,6 +5965,16 @@ function missionProtectedLaneHold(mission, root = process.cwd()) {
   return hold ? { pause_reason: hold.pause_reason } : null;
 }
 
+// The seal a tick runs under: the job's own sealed owner steps, else, when the
+// member's standing mission has words the owner has not confirmed, the fixed
+// unconfirmed seal (lib/standing-text.js).
+function missionTickSeal(mission, cwd) {
+  const steps = (mission.yes_locks && mission.yes_locks.steps) || [];
+  if (steps.length) return steps;
+  const root = mission.worktree_root || mission.worktree?.path || cwd;
+  return require('../lib/standing-text').unconfirmedSeal(mission, root, path.join(require('../lib/state-home').atrisHome(), 'state')) || [];
+}
+
 function campaignApprovedLane(root, campaignId, lane) {
   try {
     const { openCampaignStore } = require('../lib/campaign-store');
@@ -8042,7 +8056,9 @@ function buildPreloadedMemberContextLines(mission, root = process.cwd()) {
       sections.push(`### Member Soul (atris/team/${owner}/SOUL.md)`, soulMd);
     }
     if (missionMd) {
-      sections.push(`### Member Standing Mission (atris/team/${owner}/MISSION.md)`, missionMd);
+      const unconfirmed = !require('../lib/standing-text').standingConfirmed(owner, baseRoot).confirmed
+        ? ', with words the owner has not confirmed, so it gives you no say over landing, publishing, sending or spending' : '';
+      sections.push(`### Member Standing Mission (atris/team/${owner}/MISSION.md${unconfirmed})`, missionMd);
     }
     try {
       const skillsDir = path.join(teamMemberDir, 'skills');
@@ -8105,8 +8121,11 @@ function buildPreloadedMemberContextLines(mission, root = process.cwd()) {
   ];
 }
 
-function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd = process.cwd()) {
+function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd = process.cwd(), runRound = null) {
   const sharedProcess = memberProcessPrompt(cwd);
+  const baseRoot = mission.worktree_root || mission.worktree?.path || cwd;
+  const owner = String(mission.owner || '').trim();
+  const forbidsLanding = require('../lib/member-save-work').memberForbidsLanding(owner, mission.objective, baseRoot);
   const pingLines = pings.length
     ? [
       ``,
@@ -8138,7 +8157,9 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
   // The person is waiting on this member's answer in the feed: that comes first.
   const feedTalkLines = require('../lib/feed-core').talkBriefLines(cwd, mission.owner);
   const lines = [
-    `# Mission Tick ${tickIndex}/${maxTicks}`,
+    // Seen 2026-11-17: "61/60" set the mission's whole-life count over this run's guard,
+    // which reads as a run past its limit. Say each number for what it is.
+    runRound ? `# Mission Tick ${tickIndex} (round ${runRound} of at most ${maxTicks} in this run)` : `# Mission Tick ${tickIndex}/${maxTicks}`,
     ...(feedTalkLines.length ? ['', ...feedTalkLines] : []),
     ...pingLines,
     ``,
@@ -8170,6 +8191,9 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     `- Write the tick summary in operator language: what changed and what it buys or costs in plain words, with no flags, task ids, or code identifiers.`,
     `- Propose the next needle-mover: include a \`next_push: <one concrete feature or optimization to build next>\` line in your receipt so the team compounds exponentially.`,
     ``,
+    ...(forbidsLanding ? [
+    `If there is no useful next step, say so and stop.`,
+    ] : [
     `## No claimable work? Work the backstop ladder`,
     `If the mission and task state offer no claimable work, inspect these rungs in order. Pick the FIRST rung with real fuel and do ONE bounded slice:`,
     `1. A failing or flaky test in this repo: fix it.`,
@@ -8177,15 +8201,20 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     `3. One unblocked item from the atris/TODO.md backlog.`,
     `4. Debloat: remove dead code or docs, with grep proof that nothing references what you remove.`,
     `If every rung is dry, report what you checked and why no safe slice exists. Do not hold or invent progress.`,
+    ]),
     ``,
     `## Proof rule`,
     `Verification must be a real invocation of the changed surface. Run the actual CLI command or endpoint and paste the command, an output excerpt, and its exit code. Self-description such as "it works now" is never proof. If you changed a CLI behavior, run that CLI command for real and show its output.`,
     ``,
+    ...(forbidsLanding ? [
+    `Leave your work as files, do not commit, push or merge.`,
+    ] : [
     `## Landing rule`,
     `Safe-lane work (internal code, tests, docs, and proofs) must be committed and pushed or landed WITHOUT asking a human. Protected lanes (external sends, payments, credentials, auth/CSP/iframe/sandbox surfaces, and deletes of user data) are never self-landed: file a decision card instead.`,
-    `The objective's own limits win over this rule: if it says do not commit, touch only certain files, or leave something alone, do exactly that.`,
+    `The objective's own limits win over this rule: if it says do not commit, touch only certain files, or leave something alone, do exactly that. The member's standing mission limits win too.`,
     `After landing a ladder-sourced slice, append a judge card to atris/status/for-you.md in this SHIPPED format:`,
     missionShippedCard(),
+    ]),
     ``,
     `## Constraints`,
     `- Lane = ${frozen.lane}: stay inside that lane.`,
@@ -8446,7 +8475,7 @@ function spawnGenericRunnerTick(mission, opts) {
     }
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: missionTickSeal(mission, cwd), stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
     } catch (error) {
       resolve({
         ok: false,
@@ -8632,7 +8661,7 @@ function spawnClaudeTick(mission, opts) {
   return new Promise((resolve) => {
     let gitGuard;
     try {
-      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
+      gitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: missionTickSeal(mission, cwd), stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
     } catch (error) {
       resolve({
         ok: false,
@@ -9686,10 +9715,10 @@ async function executeMissionRunTicksPhase(context) {
       } else if (tickAtris2Runner) {
         // Build before consuming direction or allocating the guard: a shared
         // process read error must leave operator pings available for retry.
-        const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pendingMissionPings(mission), cwd);
+        const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, cycleTickLimit, frozen, pendingMissionPings(mission), cwd, ticks.length + 1);
         let atris2GitGuard = null;
         try {
-          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: (mission.yes_locks && mission.yes_locks.steps) || [], stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
+          atris2GitGuard = prepareMissionGitGuard({ root: cwd, tags: missionProtectedTags(mission, cwd), missionId: mission.id, yesLockSeal: missionTickSeal(mission, cwd), stateDir: path.join(require('../lib/state-home').atrisHome(), 'state') });
         } catch (error) {
           result = {
             ...result,
@@ -9770,7 +9799,7 @@ async function executeMissionRunTicksPhase(context) {
           }
         }
       } else {
-        const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, effectiveMaxTicks, frozen, pendingMissionPings(mission), cwd);
+        const prompt = buildTickPrompt(tickRuntimeMission, tickIdx, cycleTickLimit, frozen, pendingMissionPings(mission), cwd, ticks.length + 1);
         let sessionMode = sessionId ? 'resume' : 'set';
         let useId = sessionId || pendingSessionId;
         const pingDrain = consumeMissionPings(mission, cwd);
@@ -9859,7 +9888,8 @@ async function executeMissionRunTicksPhase(context) {
           // when status is "allowed". Only a non-allowed status is a cooldown;
           // treating an allowed resetsAt as one pauses every timed run after
           // tick 1 with rate-limit-exceeded-wall.
-          lastRateLimit = claudeResult.rate_limit_info.status === 'allowed' ? null : claudeResult.rate_limit_info;
+          // "allowed_warning" (seen live 2026-11-17 at 75% of the weekly window) still runs.
+          lastRateLimit = /^allowed/i.test(String(claudeResult.rate_limit_info.status || '')) ? null : claudeResult.rate_limit_info;
           rateLimitedEngineId = lastRateLimit ? tickEngineId : null;
         }
         if (claudeResult.aborted) { pauseReason = 'aborted-during-claude'; break; }
@@ -10496,10 +10526,17 @@ function completeMissionRunPhase(context) {
       ? String(mission.status)
       : (pauseReason || (ticks.length >= effectiveMaxTicks ? 'max-ticks-reached' : 'run-returned'));
     detachedDriverLifecycle?.setExitReason(finalDriverReason);
+    const earlyStop = roundLimitEnding(finalDriverReason, effectiveBudgetContract?.requested_seconds,
+      (Date.now() - startedAt) / 1000, ticks.length);
+    if (earlyStop) {
+      try { appendEvent('mission_run_round_limit', mission, { rounds: earlyStop.rounds, minutes_left: earlyStop.minutes_left }, cwd); } catch {}
+    }
+    const summaryLines = missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason, continuationGoal, ticks, createdNext, blocker);
+    if (earlyStop) summaryLines.splice(1, 0, `  ${earlyStop.line}`);
 
     printJsonOrText(
-      { ok: true, action: 'mission_run', mission, runner_override: runnerOverride ? finalRuntimeMission.run_runner_override : null, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, blocker, session_id: sessionId, summary_receipt: finalReceipt, budget_contract: effectiveBudgetContract, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, created_next: createdNext },
-      missionRunSummaryLines(mission, ranTicks, effectiveMaxTicks, finalReceipt, pauseReason, continuationGoal, ticks, createdNext, blocker),
+      { ok: true, action: 'mission_run', mission, runner_override: runnerOverride ? finalRuntimeMission.run_runner_override : null, ran_ticks: ranTicks, tick_count: ticks.length, ticks, pause_reason: pauseReason, blocker, session_id: sessionId, summary_receipt: finalReceipt, budget_contract: effectiveBudgetContract, worktree: summaryWorktree, atris_goal_state: atrisGoalState, codex_goal_state: codexGoalState, continuation_goal: continuationGoal, created_next: createdNext, early_stop: earlyStop },
+      summaryLines,
       asJson,
     );
   } catch (error) {
@@ -11994,6 +12031,7 @@ function missionCommand(args) {
 }
 
 module.exports = {
+  roundLimitEnding,
   isLiveInFlightMission,
   missionHaltedSince,
   keepOperatorHalt,

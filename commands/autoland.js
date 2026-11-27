@@ -1292,6 +1292,8 @@ function slowStepLine(receipt, thresholdMs = SLOW_STEP_MS) {
 // full verify took; 0 is a real value, a missing one stays missing.
 function greenVerdictRow(v) {
   const row = { branch: v.branch, action: v.action, reason: v.reason || null, detail: v.detail || null, failing: v.verify ? v.verify.failing : undefined };
+  // Not checked this run: what it was the last time it was.
+  if (v.was) row.was = v.was;
   if (v.verify && Number.isFinite(v.verify.duration_ms)) row.duration_ms = v.verify.duration_ms;
   // A failed check keeps its exit code and the line that says what broke,
   // so a red or could-not-tell row is never just a word.
@@ -1307,6 +1309,9 @@ function greenVerdictRow(v) {
   // A green second run keeps the first red in the receipt.
   if (v.verify && v.verify.rerun_of) row.rerun_of = v.verify.rerun_of;
   if (v.local_check) row.local_check = v.local_check;
+  // Where the change's check receipt came from, and the lander's own check time.
+  if (v.check_receipt) row.check_receipt = v.check_receipt;
+  if (v.check_seconds !== undefined) row.check_seconds = v.check_seconds;
   // How long the row waited for a busy machine, in words.
   if (v.waited) {
     row.waited = v.waited;
@@ -1545,7 +1550,10 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   if (policy.green_landing !== false) timed('green_landing', () => {
     try {
       const { landStaleGreenBranches, summaryLine, DEFAULT_LIMIT, localCheckSetting, holdLabelSetting, machineWaitSetting, scratchDirSetting } = require('../lib/land-green');
+      const { receiptGateSetting, checkSecondsSetting } = require('../lib/land-receipt-gate');
       const green = landStaleGreenBranches(root, {
+        receipts: receiptGateSetting(policy),
+        checkSeconds: checkSecondsSetting(policy),
         verifyCommand: policy.verify_command || undefined,
         limit: Number(policy.green_landing_limit) > 0 ? Number(policy.green_landing_limit) : DEFAULT_LIMIT,
         localCheck: localCheckSetting(policy),
@@ -1559,6 +1567,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
         candidates: green.candidates.length,
         merge_path: green.merge_path,
         local_check: green.local_check,
+        receipt_gate: green.receipt_gate,
         local_suites: green.local_suites,
         machine_wait: green.machine_wait,
         scratch_sweep: green.scratch_sweep,
@@ -1569,8 +1578,10 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
         handed_back: green.handed_back,
         red: green.red,
         could_not_tell: green.could_not_tell,
+        not_rechecked: green.not_rechecked,
         verdicts: green.verdicts.map(greenVerdictRow),
         summary: summaryLine(green),
+        waiting: green.waiting_pile ? green.waiting_pile.line : null,
       };
       state.green_landing = { at: green.at, ...receipt.green_landing };
     } catch (err) {

@@ -1,7 +1,7 @@
 ---
 name: design
 description: Frontend aesthetics policy. Use when building UI, components, landing pages, dashboards, or any frontend work. Prevents generic ai-generated look.
-version: 3.2.20
+version: 3.2.21
 allowed-tools: Read, Write, Edit, Bash, Glob
 tags:
   - design
@@ -39,9 +39,27 @@ Font alternatives: instead of Inter: Instrument Sans, Plus Jakarta Sans, Outfit.
 
 **Layout:** break the hero + 3 cards + footer template. no card-in-card nesting. no identical card grids. asymmetry is interesting. dramatic whitespace. use container queries for component-level responsiveness. fluid spacing with `clamp()`.
 
-**Motion:** one well-timed animation beats ten scattered ones. use exponential easing (`cubic-bezier(0.25, 1, 0.5, 1)`), never bounce/elastic. 150-300ms duration. only animate transform and opacity. always respect `prefers-reduced-motion`. no cursor-following lines, no meteor effects, no buttons that chase the cursor. no pulsing or glowing live-status dots, no looping ambient animations.
+**Motion:** every animation has a job: it shows where a thing went or confirms what just happened (a card dropping into its column [17:30], an icon changing with its state [09:45]). nothing else moves. where the design seed sets motion (a page load reveal, its own durations), the seed wins over this line. animate everything and the screen turns into a christmas tree; pick the few that need it and they stand out [18:00]. use exponential easing (`cubic-bezier(0.25, 1, 0.5, 1)`), never bounce/elastic. 150-300ms duration. only animate transform and opacity. always respect `prefers-reduced-motion`. no cursor-following lines, no meteor effects, no buttons that chase the cursor. no pulsing or glowing live-status dots, no looping ambient animations.
 
 **Interaction:** progressive disclosure: start simple, reveal complexity. optimistic UI: update immediately, sync later. every interactive element needs ALL states: default, hover, focus, active, disabled, loading, error, success. don't make every button primary.
+
+**Menus:** a menu grows out of the control that opened it, in the direction it opens: one that opens down and to the right grows down and to the right [09:15]. never from its own centre. no check reads this. open the menu and watch where it grows from. a submenu keeps a triangle of safe space between the pointer and the submenu so a diagonal move does not close it [09:00].
+
+**Pickers:** a list picker opens with its filter box focused: type to narrow, arrow keys to move. chosen items sit grouped at the top when it opens. an item you tick or untick stays where it is so a mistake can be undone without hunting for it; the list regroups only the next time it opens [10:45].
+
+**Tooltips:** every icon button says what it does on hover [11:45]. show the same tip on keyboard focus. the first tip waits about a second; move to the next control and its tip shows at once, the way the operating system does it [12:00]. wait longer where people already know the controls (a sidebar they use every day), shorter where they need to know right away [12:15].
+
+**Speed:** a tool used every day answers at once, like ink from a pen [16:15]. keep the data a screen needs on the device and send changes in the background. then a click never waits on a server and a read never shows a loading screen [15:30]. when a change fails to send, say so on the item it belongs to.
+
+**Fields and updates:** a field people ask for and then overuse lives one step deep and stays off the screen until it is set (a due date) [02:45]. one person answers for each item, even when several work on it [03:15]. a box for regular updates is small like a comment box and has no template: ask only for what the system cannot work out from its own data [03:45]. a short fixed health pick (on track, at risk, off track) lets someone scan a long list for where to look [04:15].
+
+**Themes:** a theme is three choices: accent, background and contrast. work out every other colour from those with math. people can then make it their own without making it ugly [18:15].
+
+**Agent surfaces:** people run several agent sessions at once. give each its own tab [26:00] and a state the person can read at a glance: working, waiting on them, done or stopped. Linear tried that state in a sidebar it did not pick [25:30]. a session that died or stopped early reads stopped and says why. it never keeps reading working. when an agent changes something, show the change and offer a summary of it [26:15]. open with a suggested next piece of work [26:30]. never an empty box.
+
+**Reviewing a change:** show a change as a story before a file list: group it by theme in an order that makes sense. the reader then approves the intent first and the detail second [30:15, 31:00]. count only the lines a person needs to read, leaving out tests and generated files. mark that number so nobody takes it for the full count [31:15, 31:45].
+
+Source for the bracketed times above: the Linear team and the host in Enrico Tartarotti's video "Behind the scenes of Linear's insane design" (youtu.be/icRjQePEa_A), read against its captions on 2026-11-26. Times are to the nearest 15 seconds. A line with no time is ours and not from the video. The video gives no millisecond numbers for any of these. Measure before you pick one. The picker [10:45] and data on the device [15:30] are the host describing Linear's product. None of these has a check. Each is a yes or no call for the reviewer.
 
 **Hover:** make elements feel inviting on hover (brighten, subtle scale 1.02-1.05). never fade out, shift, or hide content behind hover. hover doesn't exist on mobile. no hover lift: a translate-y shift or a scale past 1.05 on every card is the generated-card reflex; the shift breaks the never-move-content rule and the big grow reads as a template.
 
@@ -159,7 +177,10 @@ This skill compounds or it dies. The contract, every frontend session:
 
 - can you name the aesthetic in 2-3 words?
 - distinctive font, not default?
-- at least one intentional animation? zero pulsing/looping ones?
+- does every animation show where something went, confirm an action or come from the design seed? zero pulsing/looping ones?
+- do menus grow out of their trigger? does a picker open with its filter focused and leave a ticked row where it was?
+- does every icon button have a tooltip, slow on the first and instant on the next?
+- does any read of data already on the device show a loading screen? it should not.
 - background has depth? not claude beige?
 - hover states feel inviting, not confusing?
 - scrolling feels native?

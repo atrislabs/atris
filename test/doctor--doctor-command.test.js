@@ -199,5 +199,5 @@ test('doctorCommand prints usage and exits 0 on --help', (t) => {
   const code = doctorCommand(['--help']);
 
   assert.equal(code, 0);
-  assert.match(lines.join('\n'), /Usage: atris doctor \[--json\]/);
+  assert.match(lines.join('\n'), /Usage: atris doctor \[--live\] \[--json\]/);
 });

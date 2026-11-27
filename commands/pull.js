@@ -10,10 +10,12 @@ const { loadBusinesses, businessMatchesSlug } = require('./business');
 const { loadManifest, saveManifest, buildManifest, computeLocalHashes, threeWayCompare, isIgnoredSyncPath } = require('../lib/manifest');
 const { normalizeWikiOnlyPrefix } = require('../lib/wiki');
 const { emitSyncEvent, startTimer } = require('../lib/sync-telemetry');
+const { installLocalMerge, recoverInterruptedMerges } = require('../lib/local-merge-install');
 const { resolveSafeOutputDir } = require('../lib/workspace-safety');
 const {
   buildConflictReviewPacket,
   readBaseContent,
+  safeLineMerge,
   removeBaseContents,
   writeBaseContents,
   writeConflictReviewPacket,
@@ -31,10 +33,6 @@ function pruneEmptyParentDirs(filePath, stopDir) {
       break;
     }
   }
-}
-
-function isBusinessWorkspaceRoot(dir) {
-  return fs.existsSync(path.join(dir, '.atris', 'business.json')) && fs.existsSync(path.join(dir, 'atris'));
 }
 
 function normalizePullFilePath(filePath) {
@@ -382,6 +380,7 @@ async function pullBusiness(slug) {
   // Load manifest (last sync state)
   const manifest = loadManifest(resolvedSlug || slug);
   const timeSince = manifest ? _timeSince(manifest.last_sync) : null;
+  if (!dryRun) recoverInterruptedMerges(outputDir);
   const localFilesBeforePull = fs.existsSync(outputDir) ? computeLocalHashes(outputDir) : {};
   const manifestRootMatchesOutput = !manifest || !manifest.workspace_root || (() => {
     try {
@@ -679,6 +678,7 @@ async function pullBusiness(slug) {
   let deleted = 0;
   let conflictCount = 0;
   let unchangedCount = diff.unchanged.length;
+  const protectLocal = !force && failOnConflict;
   const conflictChanges = [];
   const conflictRemoteContents = {};
 
@@ -690,7 +690,35 @@ async function pullBusiness(slug) {
     if (!content && content !== '') continue;
     const localPath = path.join(outputDir, p.replace(/^\//, ''));
     fs.mkdirSync(path.dirname(localPath), { recursive: true });
-    fs.writeFileSync(localPath, content);
+    if (protectLocal) {
+      const expected = localFiles[p]?.hash;
+      let installed;
+      if (expected) {
+        installed = installLocalMerge(outputDir, localPath, expected, content);
+      } else {
+        try {
+          fs.writeFileSync(localPath, content, { flag: 'wx' });
+          installed = true;
+        } catch (error) {
+          if (error.code !== 'EEXIST') throw error;
+          // The local upload scan omits dotfiles. Reuse a matching copy or advance
+          // a verified base, while keeping an independently modified file for review.
+          if (fs.lstatSync(localPath).isFile()) {
+            installed = fs.readFileSync(localPath).equals(Buffer.from(content));
+            const baseHash = effectiveManifest?.files?.[p]?.hash;
+            if (!installed && baseHash) installed = installLocalMerge(outputDir, localPath, baseHash, content);
+          }
+        }
+      }
+      if (!installed) {
+        conflictRemoteContents[p] = content;
+        conflictChanges.push({ path: p, status: 'conflict_updated', action: 'review' });
+        conflictCount++;
+        continue;
+      }
+    } else {
+      fs.writeFileSync(localPath, content);
+    }
     const label = diff.newRemote.includes(p)
       ? 'new on computer'
       : diff.deletedLocal.includes(p)
@@ -713,8 +741,27 @@ async function pullBusiness(slug) {
       console.log(`  ! ${p.replace(/^\//, '')}  overwritten (--force)`);
       pulled++;
     } else {
-      // Save remote version alongside local
       const content = remoteContent[p];
+      if (failOnConflict && !noManifest && typeof content === 'string') {
+        const base = readBaseContent(outputDir, p);
+        const baseHash = effectiveManifest?.files?.[p]?.hash;
+        if (base !== null && crypto.createHash('sha256').update(base).digest('hex') === baseHash) {
+          const filePath = path.join(outputDir, p.replace(/^\//, ''));
+          let local;
+          try {
+            local = fs.readFileSync(filePath, 'utf8');
+          } catch (error) {
+            if (error.code !== 'ENOENT') throw error;
+          }
+          const merged = local === undefined ? null : safeLineMerge(base, local, content);
+          if (merged?.ok && installLocalMerge(outputDir, filePath, crypto.createHash('sha256').update(local).digest('hex'), merged.content)) {
+            console.log('  ' + p.replace(/^\//, '') + '  merged local and cloud edits');
+            pulled++;
+            continue;
+          }
+        }
+      }
+      // Preserve both versions when their changes cannot be combined.
       conflictRemoteContents[p] = content || '';
       conflictChanges.push({ path: p, status: 'conflict_updated', action: 'review' });
       if (content || content === '') {
@@ -738,7 +785,13 @@ async function pullBusiness(slug) {
 
     if (force || !localChanged) {
       const localPath = path.join(outputDir, p.replace(/^\//, ''));
-      fs.rmSync(localPath, { force: true });
+      if (protectLocal && !installLocalMerge(outputDir, localPath, localHash, null)) {
+        conflictRemoteContents[p] = '';
+        conflictChanges.push({ path: p, status: 'conflict_remote_deleted_local_updated', action: 'review' });
+        conflictCount++;
+        continue;
+      }
+      if (!protectLocal) fs.rmSync(localPath, { force: true });
       pruneEmptyParentDirs(localPath, outputDir);
       console.log(`  - ${p.replace(/^\//, '')}  deleted on computer`);
       deleted++;

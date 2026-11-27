@@ -79,7 +79,7 @@ class NotLive extends Error {}
 // Words and flags
 
 /** Flags from the raw words. Unknown flags are refused so a typo never changes anything. */
-function parse(rawArgs) {
+function parse(rawArgs, values = VALUES, switches = SWITCHES) {
   const words = [];
   const flags = {};
   for (let i = 0; i < rawArgs.length; i++) {
@@ -88,11 +88,11 @@ function parse(rawArgs) {
     const m = /^--([a-z][a-z-]*)(=([\s\S]*))?$/.exec(arg);
     if (!m) { words.push(arg); continue; }
     const key = m[1];
-    if (VALUES.has(key)) {
+    if (values.has(key)) {
       if (m[2] !== undefined) flags[key] = m[3];
       else if (i + 1 < rawArgs.length) flags[key] = String(rawArgs[++i]);
       else return { error: `--${key} needs a value.` };
-    } else if (SWITCHES.has(key)) {
+    } else if (switches.has(key)) {
       if (m[2] !== undefined) return { error: `--${key} takes no value.` };
       flags[key] = true;
     } else {
@@ -169,6 +169,29 @@ function findList(lists, query) {
     return name.includes(want) || want.includes(name) || parts.some((w) => name.split(' ').includes(w));
   });
   return { matches: [], close };
+}
+
+/** A list by name or id, or a stop with the close names printed. */
+function resolveList(lists, query, { json, out, err }) {
+  const found = findList(lists, query);
+  if (found.list) return found;
+  const several = found.matches.length > 1;
+  const close = found.close.slice(0, CLOSE_MOST);
+  const message = several
+    ? `${found.matches.length} of your lists are called that. Use the id.`
+    : `None of your saved lists is called ${quote(clean(query))}.`;
+  if (json) {
+    out({ ok: false, error: message, matches: close.map((l) => ({ id: String(l.id), name: clean(l.name) })) });
+    return { stop: 1 };
+  }
+  err(message);
+  if (close.length) {
+    err(several ? 'They are:' : 'Close ones:');
+    for (const l of close) err(`  ${clean(l.name)}${several ? `  ${l.id}` : ''}`);
+  } else if (!several) {
+    err('See them: atris nexus lists');
+  }
+  return { stop: 1 };
 }
 
 /** Every card on one saved list, a page at a time; only used to put names on drafts. */
@@ -296,28 +319,7 @@ async function run(ctx) {
   if (!token) return fail(ctx.notLoggedIn || 'Sign in first: atris login');
   const api = serviceApi(ctx.request, token);
 
-  // A list by name or id, or a stop with the close names.
-  const resolve = (lists, query) => {
-    const found = findList(lists, query);
-    if (found.list) return found;
-    const several = found.matches.length > 1;
-    const close = found.close.slice(0, CLOSE_MOST);
-    const message = several
-      ? `${found.matches.length} of your lists are called that. Use the id.`
-      : `None of your saved lists is called ${quote(clean(query))}.`;
-    if (json) {
-      out({ ok: false, error: message, matches: close.map((l) => ({ id: String(l.id), name: clean(l.name) })) });
-      return { stop: 1 };
-    }
-    err(message);
-    if (close.length) {
-      err(several ? 'They are:' : 'Close ones:');
-      for (const l of close) err(`  ${clean(l.name)}${several ? `  ${l.id}` : ''}`);
-    } else if (!several) {
-      err('See them: atris nexus lists');
-    }
-    return { stop: 1 };
-  };
+  const resolve = (lists, query) => resolveList(lists, query, { json, out, err });
 
   try {
     if (sub === 'lists') {
@@ -549,4 +551,4 @@ async function run(ctx) {
   }
 }
 
-module.exports = { SUBS, HELP, run, parse, findList, percent };
+module.exports = { SUBS, HELP, run, parse, findList, percent, serviceApi, myLists, resolveList, NotLive, clean, quote, whole, plural };

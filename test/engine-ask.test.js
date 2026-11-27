@@ -111,6 +111,116 @@ test('shared questions fan out with one model and jobs files may pin models inde
   }
 });
 
+test('jobs may request exactly fast service_tier for codex without changing absent behavior', () => {
+  const root = tempRoot();
+  try {
+    const parsed = parseEngineAskArgs(['--jobs', 'jobs.json'], {
+      root,
+      readFile: () => JSON.stringify([
+        { engine: 'codex', model: 'gpt-6-sol', effort: 'high', service_tier: 'fast', prompt: 'q' },
+        { engine: 'codex', model: 'gpt-6-sol', effort: 'high', prompt: 'q' },
+        { engine: 'cursor', prompt: 'q' },
+      ]),
+    });
+    const [fast, plain, cursor] = parsed.jobs;
+    assert.equal(fast.service_tier, 'fast');
+    for (const job of [plain, cursor, ...parseEngineAskArgs(['q', '--engine', 'codex'], { root }).jobs]) {
+      assert.equal(Object.hasOwn(job, 'service_tier'), false);
+    }
+    const fastArgs = buildReadOnlyEngineInvocation(fast.engine, fast.prompt, fast.model, fast).args;
+    const plainArgs = buildReadOnlyEngineInvocation(plain.engine, plain.prompt, plain.model, plain).args;
+    const tierIndex = fastArgs.indexOf('service_tier="fast"');
+    assert.ok(tierIndex > 0);
+    assert.equal(fastArgs[tierIndex - 1], '-c');
+    assert.deepEqual(fastArgs.filter((_, index) => index !== tierIndex - 1 && index !== tierIndex), plainArgs);
+    assert.ok(plainArgs.includes('model_reasoning_effort=high'));
+    assert.ok(!plainArgs.some((arg) => arg.startsWith('service_tier=')));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('unsupported service_tier values and engines fail before creating a receipt or launching', async () => {
+  const root = tempRoot();
+  const originalError = console.error;
+  const errors = [];
+  console.error = (line) => errors.push(line);
+  try {
+    const invalid = [
+      ...['Fast', ' fast', 'fast ', '', 'priority', 'default', null, false, 1, ['fast'], {}].map((service_tier) => ({
+        job: { engine: 'codex', prompt: 'q', service_tier },
+        error: /job 1 service_tier must be exactly "fast"/,
+      })),
+      ...Object.keys(require('../lib/runner-command').RUNNER_PROFILE_DEFS).filter((engine) => engine !== 'codex').map((engine) => ({
+        job: { engine, prompt: 'q', service_tier: 'fast' },
+        error: /job 1 service_tier is only supported for codex/,
+      })),
+    ];
+    for (const { job, error } of invalid) {
+      const readFile = () => JSON.stringify([job]);
+      assert.throws(() => parseEngineAskArgs(['--jobs', 'jobs.json'], { root, readFile }), error);
+      assert.throws(() => buildReadOnlyEngineInvocation(job.engine, job.prompt, '', job), /service_tier/);
+      const code = await runEngineAskCommand(['--jobs', 'jobs.json'], root, {
+        readFile,
+        createReceipt: () => assert.fail('invalid jobs must not create a receipt'),
+        executeAskJob: () => assert.fail('invalid jobs must not launch an engine'),
+      });
+      assert.equal(code, 2);
+      assert.match(errors.at(-1), error);
+    }
+    assert.deepEqual(fs.readdirSync(root), []);
+  } finally {
+    console.error = originalError;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('codex jobs forward the requested service_tier through the real launcher into each answer receipt', async () => {
+  const root = tempRoot();
+  const previousPath = process.env.PATH;
+  const originalLog = console.log;
+  const output = [];
+  console.log = (line) => output.push(String(line));
+  try {
+    const binDir = path.join(root, 'bin');
+    fs.mkdirSync(binDir);
+    fs.writeFileSync(path.join(binDir, 'codex'), [
+      `#!${process.execPath}`,
+      'process.stdout.write(JSON.stringify(process.argv.slice(2)));',
+      'if (process.argv.at(-1).endsWith("fail")) process.exitCode = 1;',
+    ].join('\n'), { mode: 0o755 });
+    process.env.PATH = `${binDir}${path.delimiter}${previousPath || ''}`;
+    fs.writeFileSync(path.join(root, 'jobs.json'), JSON.stringify([
+      { engine: 'codex', service_tier: 'fast', prompt: 'ok', label: 'fast' },
+      { engine: 'codex', prompt: 'ok', label: 'plain' },
+      { engine: 'codex', service_tier: 'fast', prompt: 'fail', label: 'failed' },
+    ]));
+    assert.equal(await runEngineAskCommand(['--jobs', 'jobs.json', '--json'], root), 1);
+    const receipt = JSON.parse(output.join('\n'));
+    const saved = JSON.parse(fs.readFileSync(path.join(root, receipt.receipt_path), 'utf8'));
+    assert.deepEqual(saved.answers, receipt.answers);
+    assert.deepEqual(receipt.answers.map((answer) => answer.status), ['answered', 'answered', 'failed']);
+    for (const answer of receipt.answers) {
+      const args = JSON.parse(answer.stdout);
+      if (answer.label === 'plain') {
+        assert.equal(Object.hasOwn(answer, 'service_tier'), false);
+        assert.ok(!args.some((arg) => arg.startsWith('service_tier=')));
+      } else {
+        assert.equal(answer.service_tier, 'fast');
+        const tierIndex = args.indexOf('service_tier="fast"');
+        assert.ok(tierIndex > 0);
+        assert.equal(args[tierIndex - 1], '-c');
+      }
+      assert.deepEqual(Object.keys(answer).filter((key) => key.includes('tier')), answer.label === 'plain' ? [] : ['service_tier']);
+    }
+  } finally {
+    console.log = originalLog;
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('claude and fable ask spawn env pins USER to the OS username when a parent set a display name', async () => {
   const osUser = os.userInfo().username;
   assert.ok(osUser);
@@ -723,6 +833,8 @@ test('engine command routes ask help without entering the build dispatcher', asy
     assert.match(output.join('\n'), /1-3600/);
     assert.match(output.join('\n'), /agy receives the same print deadline/);
     assert.match(output.join('\n'), /atris engine watch latest/);
+    assert.match(output.join('\n'), /codex job may also set "service_tier": "fast"/);
+    assert.match(output.join('\n'), /requested tier only; the provider tier is not confirmed/);
 
     output.length = 0;
     const generalCode = await engineCommand(['--help']);

@@ -10,7 +10,6 @@ models default to safe choices because that's what dominates training data. with
 - inter/roboto fonts
 - purple gradients on white
 - hero + 3 cards + testimonials + footer
-- zero animation
 - flat, lifeless backgrounds
 
 this is the "distribution center": statistically average, aesthetically dead.
@@ -138,7 +137,7 @@ gap: clamp(1.5rem, 4vw, 6rem);
 
 ## motion
 
-**avoid:** static pages with nothing moving, or the opposite: bouncing everything
+**avoid:** motion with no job, or bouncing everything
 
 **specific anti-patterns:**
 - cursor-following lines or elements
@@ -148,7 +147,7 @@ gap: clamp(1.5rem, 4vw, 6rem);
 - animations that swap styles endlessly without purpose (rotating shapes, morphing buttons)
 - bounce or elastic easing: they feel dated and tacky. real objects decelerate smoothly.
 
-**the move:** one well-timed animation beats ten scattered ones. page load with staggered reveals (50-100ms delays) creates more impact than hover effects on every button.
+**the move:** every animation has a job: it shows where a thing went or confirms what just happened. nothing else moves. animate everything and the screen turns into a christmas tree; pick the few that need it and they stand out. where the design seed sets motion, the seed wins. the menu, picker, tooltip and speed rules live in the design skill.
 
 **easing:** use exponential easing for natural deceleration:
 ```css
@@ -335,7 +334,7 @@ vary your choices. alternate themes. try different directions between projects.
 
 - can you name the aesthetic in 2-3 words?
 - did you pick a real font, not a default?
-- is there at least one intentional animation?
+- does every animation show where something went, confirm an action or come from the design seed?
 - does the background have depth?
 - do hover states feel inviting, not confusing?
 - does scrolling feel native?

@@ -29,16 +29,16 @@ const baseResult = {
 test('wake boot translates reason codes into plain English', () => {
   const output = render(baseResult);
   assert.ok(!output.includes('mission_missing_or_placeholder'), 'raw reason code must not leak to humans');
-  assert.ok(output.includes('no North Star yet'));
+  assert.ok(output.includes('not set yet'));
   assert.ok(output.includes('needs one thing from you'));
 });
 
-test('wake boot surfaces the ask, next step, and receipt', () => {
+test('wake boot surfaces the ask and next step in plain words', () => {
   const output = render(baseResult);
   assert.ok(output.includes('One thing from you:'));
-  assert.ok(output.includes(baseResult.ask));
+  assert.ok(output.includes('Add a clear purpose to atris/team/maze/MISSION.md.'));
   assert.ok(output.includes('edit atris/team/maze/MISSION.md'));
-  assert.ok(output.includes('member-wake-maze-x.json'));
+  assert.ok(!output.includes('member-wake-maze-x.json'));
 });
 
 test('every decision code in member.js renders as grammatical English', () => {

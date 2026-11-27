@@ -38,9 +38,11 @@ cd your-project
 atris init && atris
 ```
 
+Or tell your coding agent: "Set up https://github.com/atrislabs/atris". It follows [FOR_AGENTS.md](FOR_AGENTS.md).
+
 ## For Coding Agents
 
-**Read [`FOR_AGENTS.md`](FOR_AGENTS.md) first**: why agents adopt Atris, 60-second start, spread-it instructions.
+**Read [`FOR_AGENTS.md`](FOR_AGENTS.md) first**: why agents adopt Atris, the setup steps and what done means.
 
 If you're an agent, run:
 
@@ -369,6 +371,7 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 | `atris wiki` | Full wiki namespace: ingest, query, lint, search, log, and loop |
 | `atris receipt` | Save evidence from an agent run |
 | `atris channel` | The team's shared channels across computers: `atris channel <name>` reads, `atris channel <name> "message"` posts, `claim` and `done` take a task (`--business <slug>`, `--as <member>`) |
+| `atris tell` | Send one note or task to one team member with a receipt (saved, delivered, wakes); `atris tell status <id>` shows seen, picked up, or finished |
 | `atris pay` | Pay another Atris account in credits (100 credits = $1); `history`, `show`, `accept`, `cancel` |
 | `atris trust` | See an account's trust and the friends you share; `vouch` or `unvouch` for someone |
 | `atris experiments` | Run small experiments and compare results |

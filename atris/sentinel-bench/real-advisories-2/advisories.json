@@ -1,0 +1,489 @@
+[
+ {
+  "id": "GHSA-3m5p-2c4r-xxw2",
+  "cve": "CVE-2026-16732",
+  "split": "seen",
+  "class": "webhook-header",
+  "repo": "fastify/fastify",
+  "language": "JavaScript",
+  "repo_files": 395,
+  "advisory_url": "https://github.com/advisories/GHSA-3m5p-2c4r-xxw2",
+  "severity": "medium",
+  "advisory_title": "fastify vulnerable to X-Forwarded-* spoofing under trustProxy hop-count",
+  "published": "2026-09-02T15:14:06Z",
+  "vulnerable_commit": "268e439d9054985cd634d2c70f8fc5c4b438f31f",
+  "fix_commit": "8acfea7eada05383a7357e3eb21c2628416df280",
+  "fix_url": "https://github.com/fastify/fastify/commit/8acfea7eada05383a7357e3eb21c2628416df280",
+  "hole_file": "lib/request.js",
+  "hole_line": 53,
+  "also": [],
+  "hole": "A numeric trustProxy setting trusts X-Forwarded-* entries by hop count without checking the immediate peer, so a direct client can add enough forwarded hops to spoof its IP, host and protocol."
+ },
+ {
+  "id": "GHSA-4g9m-rffv-h6wq",
+  "cve": "CVE-2026-8621",
+  "split": "held-out",
+  "class": "signin",
+  "repo": "openclaw/crabbox",
+  "language": "TypeScript",
+  "repo_files": 350,
+  "advisory_url": "https://github.com/advisories/GHSA-4g9m-rffv-h6wq",
+  "severity": "high",
+  "advisory_title": "Crabbox: authentication bypass vulnerability that allows impersonation of others by spoofing identity headers",
+  "published": "2026-05-14T21:30:43Z",
+  "vulnerable_commit": "95cb30dc7dbaa1fef690a42ef6ac1cb6e307a191",
+  "fix_commit": "b657323f1d1c954cefc8444571fa6c45a8896e7f",
+  "fix_url": "https://github.com/openclaw/crabbox/commit/b657323f1d1c954cefc8444571fa6c45a8896e7f",
+  "hole_file": "worker/src/auth.ts",
+  "hole_line": 59,
+  "also": [
+   {
+    "file": "worker/src/auth.ts",
+    "line": 60
+   }
+  ],
+  "hole": "A caller with the shared (non-admin) bearer token gets its owner and org from the x-crabbox-owner and x-crabbox-org request headers, so it can act as any other owner or organization."
+ },
+ {
+  "id": "GHSA-5gpm-rgj3-9q76",
+  "cve": "CVE-2026-86043",
+  "split": "seen",
+  "class": "access",
+  "repo": "zalando/skipper",
+  "language": "Go",
+  "repo_files": 1974,
+  "advisory_url": "https://github.com/advisories/GHSA-5gpm-rgj3-9q76",
+  "severity": "high",
+  "advisory_title": "Skipper has OPA body-authz bypass: truncated_body mitigation fails open on chunked/HTTP-2 (incomplete fix GHSA-8qqm-fp2q-v734)",
+  "published": "2026-09-17T17:05:57Z",
+  "vulnerable_commit": "23752a2c34cbb7ff8678a261eeaa0f931de80c5d",
+  "fix_commit": "2cfceabaa6ff0af65b312dcb9bcbe84691b9d507",
+  "fix_url": "https://github.com/zalando/skipper/commit/2cfceabaa6ff0af65b312dcb9bcbe84691b9d507",
+  "hole_file": "filters/openpolicyagent/openpolicyagent.go",
+  "hole_line": 1258,
+  "also": [
+   {
+    "file": "filters/openpolicyagent/internal/envoy/skipperadapter.go",
+    "line": 26
+   }
+  ],
+  "hole": "When a request body is chunked or sent over HTTP/2 and is larger than the buffer, the policy check sees only the first part and is never told the body was cut, so a policy that inspects the body can be passed by putting the forbidden content past the limit."
+ },
+ {
+  "id": "GHSA-6mwv-4mrm-5p3m",
+  "cve": "CVE-2026-56678",
+  "split": "held-out",
+  "class": "ssrf",
+  "repo": "decolua/9router",
+  "language": "JavaScript",
+  "repo_files": 1193,
+  "advisory_url": "https://github.com/advisories/GHSA-6mwv-4mrm-5p3m",
+  "severity": "medium",
+  "advisory_title": "9router: Kiro region injection allows authenticated SSRF with Authorization header forwarding",
+  "published": "2026-09-23T18:12:30Z",
+  "vulnerable_commit": "f2a7ae20309b4af55023eb11d1c02f63be1b80d1",
+  "fix_commit": "126aa244c5b51b74ab8c7594e3418fcf4437bf6f",
+  "fix_url": "https://github.com/decolua/9router/commit/126aa244c5b51b74ab8c7594e3418fcf4437bf6f",
+  "hole_file": "src/lib/oauth/services/kiro.js",
+  "hole_line": 20,
+  "also": [
+   {
+    "file": "src/lib/oauth/services/kiro.js",
+    "line": 53
+   },
+   {
+    "file": "src/lib/oauth/services/kiro.js",
+    "line": 87
+   },
+   {
+    "file": "src/lib/oauth/services/kiro.js",
+    "line": 179
+   },
+   {
+    "file": "src/lib/oauth/services/kiro.js",
+    "line": 265
+   },
+   {
+    "file": "src/lib/oauth/providers.js",
+    "line": 863
+   }
+  ],
+  "hole": "The Kiro sign-in flow puts a caller-supplied region straight into the upstream host name (oidc.<region>.amazonaws.com), so a crafted region sends the request, with its credentials, to a host the caller picks."
+ },
+ {
+  "id": "GHSA-7j4w-x8x8-5mvg",
+  "cve": "CVE-2026-53476",
+  "split": "seen",
+  "class": "traversal",
+  "repo": "kubev2v/assisted-migration-agent",
+  "language": "Go",
+  "repo_files": 502,
+  "advisory_url": "https://github.com/advisories/GHSA-7j4w-x8x8-5mvg",
+  "severity": "critical",
+  "advisory_title": "Assisted Migration Agent: Path traversal in gzipped tarball handling enables arbitrary file write and remote code execution",
+  "published": "2026-06-10T15:31:33Z",
+  "vulnerable_commit": "bfcb914fe9d667e39c6172257a324ef63f7f18b8",
+  "fix_commit": "bcae0438ad8386321a300413d71c982a11b7b5b7",
+  "fix_url": "https://github.com/kubev2v/assisted-migration-agent/commit/bcae0438ad8386321a300413d71c982a11b7b5b7",
+  "hole_file": "internal/services/vddk.go",
+  "hole_line": 185,
+  "also": [],
+  "hole": "Tarball extraction checks each entry's path by name only and does not resolve symlinks it already created, so an entry under a symlink pointing at .. writes files outside the extraction folder."
+ },
+ {
+  "id": "GHSA-9q47-3cm2-2rp8",
+  "cve": null,
+  "split": "held-out",
+  "class": "signin",
+  "repo": "pyload/pyload",
+  "language": "Python",
+  "repo_files": 738,
+  "advisory_url": "https://github.com/advisories/GHSA-9q47-3cm2-2rp8",
+  "severity": "medium",
+  "advisory_title": "pyLoad: Rate-Limit Bypass and Audit-Log Spoofing via Trusted Client-Controlled `X-Forwarded-For` Header",
+  "published": "2026-10-09T17:09:12Z",
+  "vulnerable_commit": "2d03bea489d6cb4b1382ba3717f41c50bef261fa",
+  "fix_commit": "5dc6b628e2d8b9f42dde82f396e5b7a2b513f6d1",
+  "fix_url": "https://github.com/pyload/pyload/commit/5dc6b628e2d8b9f42dde82f396e5b7a2b513f6d1",
+  "hole_file": "src/pyload/webui/app/helpers.py",
+  "hole_line": 448,
+  "also": [
+   {
+    "file": "src/pyload/webui/app/helpers.py",
+    "line": 359
+   },
+   {
+    "file": "src/pyload/webui/app/blueprints/app_blueprint.py",
+    "line": 86
+   }
+  ],
+  "hole": "The login rate limit, API key checks and sign-in audit log take the client IP from the X-Forwarded-For header any caller can set, so an attacker gets a fresh rate-limit bucket per request and can forge the logged IP."
+ },
+ {
+  "id": "GHSA-c9w5-qp6m-m395",
+  "cve": "CVE-2026-9094",
+  "split": "seen",
+  "class": "access",
+  "repo": "casdoor/casdoor",
+  "language": "Go",
+  "repo_files": 831,
+  "advisory_url": "https://github.com/advisories/GHSA-c9w5-qp6m-m395",
+  "severity": "critical",
+  "advisory_title": "Casdoor: GetTokenExchangeToken bypass through lack of cross-organization JWT signature check",
+  "published": "2026-05-28T18:30:32Z",
+  "vulnerable_commit": "d14674e60e797b09ac617e4de37068050fdb978b",
+  "fix_commit": "d92b8568686ddc9723f14510671bd7ac712a80ab",
+  "fix_url": "https://github.com/casdoor/casdoor/commit/d92b8568686ddc9723f14510671bd7ac712a80ab",
+  "hole_file": "object/token_oauth.go",
+  "hole_line": 1341,
+  "also": [],
+  "hole": "Token exchange checks the subject token's signature with the requesting application's certificate and never checks the token's audience, so a token from one application or organization can be exchanged for a token of another."
+ },
+ {
+  "id": "GHSA-f8c7-rwf9-fmgm",
+  "cve": "CVE-2026-111057",
+  "split": "held-out",
+  "class": "access",
+  "repo": "mljar/mercury",
+  "language": "Python",
+  "repo_files": 347,
+  "advisory_url": "https://github.com/advisories/GHSA-f8c7-rwf9-fmgm",
+  "severity": "critical",
+  "advisory_title": "Mercury: Unauthenticated Remote Code Execution in /api/terminals - access control bypass",
+  "published": "2026-10-19T17:00:54Z",
+  "vulnerable_commit": "4dc524304a56af25e5878e081d1bfd485851e88f",
+  "fix_commit": "8c467129037ee9df269d543ac217ffd33b97bf3f",
+  "fix_url": "https://github.com/mljar/mercury/commit/8c467129037ee9df269d543ac217ffd33b97bf3f",
+  "hole_file": "mercury_app/block_handler.py",
+  "hole_line": 8,
+  "also": [],
+  "hole": "A missing comma joins two entries of the blocked-path list, so /api/terminals is not blocked and anyone can open a server shell without signing in."
+ },
+ {
+  "id": "GHSA-h5gx-45rj-2h5j",
+  "cve": "CVE-2026-50192",
+  "split": "seen",
+  "class": "secrets",
+  "repo": "kerberos-io/agent",
+  "language": "Go",
+  "repo_files": 243,
+  "advisory_url": "https://github.com/advisories/GHSA-h5gx-45rj-2h5j",
+  "severity": "medium",
+  "advisory_title": "Kerberos Hub private key (X-Kerberos-Hub-PrivateKey) leaked to cross-host redirect target due to redirect-following HTTP client without CheckRedirect",
+  "published": "2026-07-02T17:33:36Z",
+  "vulnerable_commit": "6318c613230cd36d0cae5f2a9c5c1492731a60ae",
+  "fix_commit": "51f1a52e170f21c1264c6de1dc781d5b5e2a5d09",
+  "fix_url": "https://github.com/kerberos-io/agent/commit/51f1a52e170f21c1264c6de1dc781d5b5e2a5d09",
+  "hole_file": "machinery/src/cloud/kerberos_hub.go",
+  "hole_line": 71,
+  "also": [
+   {
+    "file": "machinery/src/cloud/kerberos_hub.go",
+    "line": 73
+   }
+  ],
+  "hole": "The Hub upload sends the private key in a custom header with an HTTP client that follows redirects, and Go only strips standard auth headers on a cross-host redirect, so the key goes to whatever host the Hub URL redirects to."
+ },
+ {
+  "id": "GHSA-hrw6-wg82-cm62",
+  "cve": "CVE-2024-35178",
+  "split": "held-out",
+  "class": "secrets",
+  "repo": "jupyter-server/jupyter_server",
+  "language": "Python",
+  "repo_files": 338,
+  "advisory_url": "https://github.com/advisories/GHSA-hrw6-wg82-cm62",
+  "severity": "high",
+  "advisory_title": "Jupyter server on Windows discloses Windows user password hash",
+  "published": "2024-06-06T21:26:53Z",
+  "vulnerable_commit": "f1379164fa209bc4bfeadf43ab0e7f473b03a0ce",
+  "fix_commit": "79fbf801c5908f4d1d9bc90004b74cfaaeeed2df",
+  "fix_url": "https://github.com/jupyter-server/jupyter_server/commit/79fbf801c5908f4d1d9bc90004b74cfaaeeed2df",
+  "hole_file": "jupyter_server/utils.py",
+  "hole_line": 376,
+  "also": [
+   {
+    "file": "jupyter_server/utils.py",
+    "line": 387
+   }
+  ],
+  "hole": "The static file finder accepts absolute paths and checks they exist before checking they are inside the served folder, so on Windows a request for a UNC path makes the server connect out and hand over the user's password hash."
+ },
+ {
+  "id": "GHSA-hxpf-9xvq-wph8",
+  "cve": "CVE-2026-57496",
+  "split": "seen",
+  "class": "agent-tool",
+  "repo": "Labs64/NetLicensing-MCP",
+  "language": "Python",
+  "repo_files": 74,
+  "advisory_url": "https://github.com/advisories/GHSA-hxpf-9xvq-wph8",
+  "severity": "critical",
+  "advisory_title": "netlicensing-mcp: REST Path Traversal Bypasses Token Redaction",
+  "published": "2026-06-18T17:22:02Z",
+  "vulnerable_commit": "8f01239a8016befa31a4e4a90ecb6599763371b8",
+  "fix_commit": "b8fd0ea76d533202573eb24add9fb2fbd9331496",
+  "fix_url": "https://github.com/Labs64/NetLicensing-MCP/commit/b8fd0ea76d533202573eb24add9fb2fbd9331496",
+  "hole_file": "src/netlicensing_mcp/client.py",
+  "hole_line": 143,
+  "also": [
+   {
+    "file": "src/netlicensing_mcp/client.py",
+    "line": 153
+   },
+   {
+    "file": "src/netlicensing_mcp/client.py",
+    "line": 167
+   },
+   {
+    "file": "src/netlicensing_mcp/client.py",
+    "line": 182
+   }
+  ],
+  "hole": "Tool arguments from the model are pasted into REST paths, so an id of ../token reaches the token endpoint and skips the tool's API-key redaction, leaking the key to the model."
+ },
+ {
+  "id": "GHSA-jcxm-m3jx-f287",
+  "cve": "CVE-2026-28291",
+  "split": "held-out",
+  "class": "injection",
+  "repo": "steveukx/git-js",
+  "language": "TypeScript",
+  "repo_files": 313,
+  "advisory_url": "https://github.com/advisories/GHSA-jcxm-m3jx-f287",
+  "severity": "high",
+  "advisory_title": "simple-git Affected by Command Execution via Option-Parsing Bypass",
+  "published": "2026-04-13T16:35:37Z",
+  "vulnerable_commit": "1402490d14f4125b08f3b2d6c86d3baa0feae6fb",
+  "fix_commit": "1effd8e5012a5da05a9776512fac3e39b11f2d2d",
+  "fix_url": "https://github.com/steveukx/git-js/commit/1effd8e5012a5da05a9776512fac3e39b11f2d2d",
+  "hole_file": "simple-git/src/lib/plugins/block-unsafe-operations-plugin.ts",
+  "hole_line": 35,
+  "also": [],
+  "hole": "The unsafe-option guard blocks clone's -u (upload-pack) switch only in its plain form, so combined short flags like -vu or other spellings still pass a command for git to run."
+ },
+ {
+  "id": "GHSA-m98r-6667-4wq7",
+  "cve": "CVE-2026-44504",
+  "split": "seen",
+  "class": "access",
+  "repo": "aegra/aegra",
+  "language": "Python",
+  "repo_files": 375,
+  "advisory_url": "https://github.com/advisories/GHSA-m98r-6667-4wq7",
+  "severity": "high",
+  "advisory_title": "Aegra has cross-user run injection in /threads/{thread_id}/runs (IDOR)",
+  "published": "2026-05-07T01:49:51Z",
+  "vulnerable_commit": "d7d80c850010a9c5a3d2be59254c19b9eb0e25dd",
+  "fix_commit": "e1b2042254fd49072ca281bc35b3f2a3bed74b31",
+  "fix_url": "https://github.com/aegra/aegra/commit/e1b2042254fd49072ca281bc35b3f2a3bed74b31",
+  "hole_file": "libs/aegra-api/src/aegra_api/api/runs.py",
+  "hole_line": 53,
+  "also": [
+   {
+    "file": "libs/aegra-api/src/aegra_api/api/runs.py",
+    "line": 95
+   },
+   {
+    "file": "libs/aegra-api/src/aegra_api/api/runs.py",
+    "line": 314
+   }
+  ],
+  "hole": "Creating a run on a thread never checks that the thread belongs to the caller, so any signed-in user can start runs on another user's thread."
+ },
+ {
+  "id": "GHSA-mw3h-qjxj-6xg9",
+  "cve": "CVE-2026-53501",
+  "split": "held-out",
+  "class": "webhook-header",
+  "repo": "thumbor/thumbor",
+  "language": "Python",
+  "repo_files": 597,
+  "advisory_url": "https://github.com/advisories/GHSA-mw3h-qjxj-6xg9",
+  "severity": "high",
+  "advisory_title": "Thumbor has HMAC validation bypass via multiple .replace() calls when removing URL signature",
+  "published": "2026-07-31T18:51:54Z",
+  "vulnerable_commit": "68876715350c6c8f49c324e5515e64908830aed7",
+  "fix_commit": "e3ae3e2500537b4d735df4144129a649374bb70b",
+  "fix_url": "https://github.com/thumbor/thumbor/commit/e3ae3e2500537b4d735df4144129a649374bb70b",
+  "hole_file": "thumbor/handlers/imaging.py",
+  "hole_line": 89,
+  "also": [],
+  "hole": "The URL signature check strips the signature with str.replace, which removes every copy, so an attacker can put the valid signature elsewhere in a different URL and have it validate."
+ },
+ {
+  "id": "GHSA-rmxw-pq4x-3fvh",
+  "cve": "CVE-2026-54719",
+  "split": "seen",
+  "class": "access",
+  "repo": "goshs-labs/goshs",
+  "language": "Go",
+  "repo_files": 226,
+  "advisory_url": "https://github.com/advisories/GHSA-rmxw-pq4x-3fvh",
+  "severity": "high",
+  "advisory_title": "goshs: File-based .goshs ACL authorization bypass via the ?bulk zip-download route (unauthenticated read; residual of GHSA-wvhv-qcqf-f3cx)",
+  "published": "2026-07-28T21:59:48Z",
+  "vulnerable_commit": "dbe91ee404f6f004740ce16b4a8267b60f7725ae",
+  "fix_commit": "7cf911a26ace737e1a55b7dc073e307a25f7fd1d",
+  "fix_url": "https://github.com/goshs-labs/goshs/commit/7cf911a26ace737e1a55b7dc073e307a25f7fd1d",
+  "hole_file": "httpserver/updown.go",
+  "hole_line": 232,
+  "also": [],
+  "hole": "The bulk zip download checks only that each path stays in the web root, not the per-folder .goshs access rules, so files those rules protect or block can be downloaded without credentials."
+ },
+ {
+  "id": "GHSA-v667-gc2r-2xm7",
+  "cve": "CVE-2026-55445",
+  "split": "held-out",
+  "class": "signin",
+  "repo": "whyour/qinglong",
+  "language": "TypeScript",
+  "repo_files": 230,
+  "advisory_url": "https://github.com/advisories/GHSA-v667-gc2r-2xm7",
+  "severity": "critical",
+  "advisory_title": "Qinglong has an incomplete fix for CVE-2026-3965: Improper Authentication",
+  "published": "2026-08-20T18:36:59Z",
+  "vulnerable_commit": "ce599d306f81e3ebb0f6eaa5b540d701a6d4085d",
+  "fix_commit": "6bec52dca158481258315ba0fc2f11206df7b719",
+  "fix_url": "https://github.com/whyour/qinglong/commit/6bec52dca158481258315ba0fc2f11206df7b719",
+  "hole_file": "back/loaders/express.ts",
+  "hole_line": 123,
+  "also": [],
+  "hole": "The guard that blocks re-running first-time setup checks only /api/user/init, while /open/user/init skips sign-in and is rewritten to the same handler, so anyone can reset the admin login."
+ },
+ {
+  "id": "GHSA-vx32-xf7g-9ghr",
+  "cve": "CVE-2026-129237",
+  "split": "seen",
+  "class": "traversal",
+  "repo": "qbee-io/qbee-agent",
+  "language": "Go",
+  "repo_files": 240,
+  "advisory_url": "https://github.com/advisories/GHSA-vx32-xf7g-9ghr",
+  "severity": "medium",
+  "advisory_title": "qbee-agent: Docker Compose build context Zip Slip writes outside context directory",
+  "published": "2026-11-16T22:35:40Z",
+  "vulnerable_commit": "7248dfed1ba280eb22bcf89e4c345d07d30a6446",
+  "fix_commit": "eb7875f0a849cb33325956d0b75e27061d7a7fa3",
+  "fix_url": "https://github.com/qbee-io/qbee-agent/commit/eb7875f0a849cb33325956d0b75e27061d7a7fa3",
+  "hole_file": "app/utils/tar.go",
+  "hole_line": 92,
+  "also": [
+   {
+    "file": "app/utils/tar.go",
+    "line": 89
+   }
+  ],
+  "hole": "Tar extraction checks the target path with a plain string prefix, so an entry like ../context-evil/x (a sibling folder sharing the prefix) is written outside the destination."
+ },
+ {
+  "id": "GHSA-xgjr-7j9q-2h4r",
+  "cve": "CVE-2026-62361",
+  "split": "held-out",
+  "class": "injection",
+  "repo": "knadh/listmonk",
+  "language": "Go",
+  "repo_files": 502,
+  "advisory_url": "https://github.com/advisories/GHSA-xgjr-7j9q-2h4r",
+  "severity": "medium",
+  "advisory_title": "listmonk: SQL Injection in `/api/subscribers/export` bypasses table access control, leaking admin password hashes and SMTP credentials",
+  "published": "2026-11-06T18:15:17Z",
+  "vulnerable_commit": "e3499cf722155a11b8ca1a2baec3c09a61b9e1ed",
+  "fix_commit": "c0a6525009a65265230185f16e8674dcc83aa024",
+  "fix_url": "https://github.com/knadh/listmonk/commit/c0a6525009a65265230185f16e8674dcc83aa024",
+  "hole_file": "internal/core/subscribers.go",
+  "hole_line": 249,
+  "also": [],
+  "hole": "The subscriber export runs the caller's SQL filter without the table allowlist check the search path applies, so a user allowed to filter by SQL can read any table, including admin password hashes and mail settings."
+ },
+ {
+  "id": "GHSA-xgm2-5f3f-mvvc",
+  "cve": "CVE-2026-59897",
+  "split": "seen",
+  "class": "webhook-header",
+  "repo": "honojs/hono",
+  "language": "TypeScript",
+  "repo_files": 490,
+  "advisory_url": "https://github.com/advisories/GHSA-xgm2-5f3f-mvvc",
+  "severity": "medium",
+  "advisory_title": "Hono: API Gateway v1 adapter can drop a distinct repeated request header value during de-duplication",
+  "published": "2026-07-21T18:18:13Z",
+  "vulnerable_commit": "cd3f6f7194f0e5c9d4b26ae0cf232018d0f388fc",
+  "fix_commit": "aa921770d09bc35970362d5a2630a878f6d982fd",
+  "fix_url": "https://github.com/honojs/hono/commit/aa921770d09bc35970362d5a2630a878f6d982fd",
+  "hole_file": "src/adapter/aws-lambda/handler.ts",
+  "hole_line": 488,
+  "also": [
+   {
+    "file": "src/adapter/aws-lambda/handler.ts",
+    "line": 611
+   }
+  ],
+  "hole": "The API Gateway v1 adapter drops a repeated header value when it is a substring of a value already set, so the app sees a different header list than the gateway forwarded."
+ },
+ {
+  "id": "GHSA-xvq9-wjp8-hwqf",
+  "cve": "CVE-2026-105800",
+  "split": "held-out",
+  "class": "ssrf",
+  "repo": "i18next/i18next-http-backend",
+  "language": "JavaScript",
+  "repo_files": 137,
+  "advisory_url": "https://github.com/advisories/GHSA-xvq9-wjp8-hwqf",
+  "severity": "low",
+  "advisory_title": "i18next-http-backend incomplete URL validation permits SSRF",
+  "published": "2026-10-06T15:33:33Z",
+  "vulnerable_commit": "08cb05d3ef8396cb74ab9d6885f4c3ddb43bfbf3",
+  "fix_commit": "07e028862b25d0b9251bf3cafb92be2d35285f85",
+  "fix_url": "https://github.com/i18next/i18next-http-backend/commit/07e028862b25d0b9251bf3cafb92be2d35285f85",
+  "hole_file": "lib/utils.js",
+  "hole_line": 35,
+  "also": [
+   {
+    "file": "lib/utils.js",
+    "line": 62
+   }
+  ],
+  "hole": "The language and namespace checks allow ':' and '//', so when the load path starts with the placeholder a value like http:127.0.0.1:8080 turns the request URL into one on another host."
+ }
+]

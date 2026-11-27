@@ -58,7 +58,9 @@ function lockedJob(steps) {
   }
   const run = (cmd, cwd = root) => spawnSync('sh', ['-c', cmd], { cwd, env: { ...guard.env, ...GIT_ENV, PATH: guard.env.PATH }, encoding: 'utf8' });
   const lockFiles = NEW_API ? [path.join(stateDir, 'yes-locks', `${id}.json`)] : [path.join(root, '.atris', 'state', 'yes-locks', `${id}.json`)];
-  const approve = step => (NEW_API ? yesLock.approveYesLock(stateDir, id, step, seal) : yesLock.approveYesLock(root, id, step));
+  // the owner answers the newest card on the step, which names its command's hash
+  const card = step => yesLock.askedYesLocks(stateDir, id).filter(c => c.step === step).pop() || {};
+  const approve = step => (NEW_API ? yesLock.approveYesLock(stateDir, id, step, seal, undefined, { hash: card(step).hash }) : yesLock.approveYesLock(root, id, step));
   return { base, root, remote, git, run, approve, lockFiles, cleanup: () => guard.cleanup() };
 }
 

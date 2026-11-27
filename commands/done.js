@@ -13,7 +13,6 @@ const {
   buildFirstMinute,
   firstTalkBuildCommand,
   firstTalkBuilder,
-  folderName,
   humanStarterTask,
   isFreshWorkspace,
   listBuiltSince,

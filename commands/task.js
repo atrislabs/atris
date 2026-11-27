@@ -8,7 +8,6 @@ const http = require('http');
 const crypto = require('crypto');
 const { execSync } = require('node:child_process');
 const path = require('path');
-const os = require('os');
 const { hasFlag } = require('../lib/arg-parser');
 const { buildNextWorkContext, reconcileTaskRows, projectGoalAge } = require('../lib/next-work-context');
 const { argsWantHelp } = require('../lib/noninteractive');
@@ -18,8 +17,6 @@ const {
   printCliJson,
 } = require('../lib/cli-json');
 const {
-  taskProofState,
-  LOCAL_SUCCESS_PROOF_EXAMPLE,
   unrunNamedProofCommandIssue,
 } = require('../lib/task-proof');
 const {
@@ -46,7 +43,7 @@ const {
   taskApprovalControls,
   approvalLines,
 } = require('../lib/task-explanation');
-const { extractReceiptEvidence, RECEIPT_PATH_PATTERN } = require('../lib/receipt-evidence');
+const { extractReceiptEvidence } = require('../lib/receipt-evidence');
 const escapeRegExp = require('../lib/escape-regexp');
 const { writeFileAtomic } = require('../lib/json-file');
 const reviewIntegrity = require('../lib/review-integrity');
@@ -55,7 +52,6 @@ const {
   normalizeOwnerSlug,
   resolveFunctionalOwner: resolveFunctionalTaskOwner,
 } = require('../lib/functional-owner');
-const { operatorReady, hasAgentJargon, explainResult } = require('./autoland');
 const {
   TASK_INSPECT_FIELDS,
   readFieldsFlag,
@@ -110,7 +106,6 @@ const {
   TASK_BOARD_COLUMNS,
   getTaskDb,
   warnIfTaskTitleNeedsOperatorWhy,
-  taskUsageText,
   taskUsageLines,
   help,
   flag,
@@ -159,7 +154,6 @@ const {
   positional,
   taskFromProjection,
   taskRef,
-  normalizeTaskLookupRef,
   taskLookupRefs,
   resolveProjectionTaskRef,
   normalizedStatusPart,
@@ -180,145 +174,124 @@ const {
   taskCommandQuote, cleanPublicText, publicWords,
 } = require('./task/core/core.js');
 const {
-  reviewNextTaskTitle, rawReviewNextTaskTitle, reviewNextTaskTitleIsSpecific,
-  normalizeReviewNextTaskInput, genericContinuationIssues, findExistingReviewNextTask,
-  buildReviewFollowUpChildPredicate, taskEventOrderValue, eventIsTaskReviewChat,
-  eventClearsPendingReviewChat, buildPendingReviewChatPredicate, createReviewNextTask,
+  reviewNextTaskTitle,
+  normalizeReviewNextTaskInput, genericContinuationIssues,
+  buildReviewFollowUpChildPredicate,
+  buildPendingReviewChatPredicate, createReviewNextTask,
   createNextTaskIfRequested, continueWorkCommandForTask, certifiedReviewNextAction,
   proofBoundaryBlockedEvaluation, handoffAllowsHumanAccept, handoffIsProofBoundaryBlocked,
-  reviewSummary, titleToResultText, proofToReasonText, proofToHumanCheck,
-  taskReviewFormatCommandList, taskReviewProseCheckLabels, taskReviewLandingTested,
-  landingPayloadValue, taskReviewLanding, taskReviewResult, taskReviewSavedText,
-  cleanReviewProofText, reviewMessageLooksLikeProof, taskReviewEventProof, taskReviewProofFallback,
-  reviewReceiptPath, withReviewReceiptPath, taskReviewSummary, taskReviewInspectMetadata,
-  taskInspectFieldValues, reviewSummaryWithVerificationChat, reviewLandingForDisplay,
-  printReviewLanding, latestTaskEvent, verifiedProofCommand, autoCertifyCommandCandidatesForTask,
-  reviewBlockerForTask, reviewHandoffForTask, reviewActor, taskReviewClip, taskReviewFullEvidence,
-  taskReviewEvidencePaths, taskReviewCommandLooksSpecific, taskReviewUnescapedQuoteCount,
-  taskReviewCommandStartsInsideQuote, taskReviewWithoutQuotedSegments,
-  taskReviewTrimOutsideQuotedTail, taskReviewTrimTrailingOutsideQuote,
-  taskReviewCleanEvidenceCommand, taskReviewSplitEvidenceClauses,
-  taskReviewCommandIsDescribedSubject, taskReviewEvidenceCommands, taskReviewRecentThread,
-  taskReviewObjective, taskReviewVerificationFocus, taskReviewSpecificCodexPrompt,
+  taskReviewLanding,
+  withReviewReceiptPath, taskReviewSummary,
+  taskInspectFieldValues, reviewLandingForDisplay,
+  printReviewLanding, latestTaskEvent,
+  reviewBlockerForTask, reviewHandoffForTask, reviewActor, taskReviewClip,
+  taskReviewCleanEvidenceCommand,
+  taskReviewEvidenceCommands,
   taskReviewChatHandoff, taskWithReviewEvidence, taskWithAgentCertification, taskReviewChatContract,
   taskReviewChatNote,
 } = require('./task/review-evidence/review-evidence.js');
 const {
-  writeDefaultProjection, readLocalBusinessBinding, extractGoalLines, readGoalSources, taskAssignee,
-  scoreGoalMatch, pickTaskGoal, taskBaseObjective, taskObjective, buildTaskStreams, joinPlainList,
-  taskApprovalFor, enrichTaskProjection, clipForProjection, projectionMissions, projectionWishes,
-  taskTypeForCloud, taskStateForCloud, taskNeedsApprovalForCloud, ownerMemberIdForCloud,
-  taskDescriptionForCloud, cloudPayloadForTask, syncPlanForProjection, readProjectionFile,
+  writeDefaultProjection, readLocalBusinessBinding, taskAssignee,
+  taskApprovalFor, enrichTaskProjection, projectionMissions, projectionWishes,
+  taskStateForCloud,
+  taskDescriptionForCloud, syncPlanForProjection, readProjectionFile,
 } = require('./task/projection/projection.js');
 const {
-  compactTaskForStatus, compactTaskFromProjection, compactEventPayload, compactTaskEvent,
-  clipStatusText, clipStatusTitle, compactReviewActionRef, taskStatusSummary, humanEventType,
-  taskEventSummary, formatTaskEventCompact, formatTaskLine, printStatusTask, cmdStatus,
-  renderTaskDesk, cmdAdd, delegateHandoff, delegateTask, cmdDelegate, taskDayTextGroups,
-  taskDayTitle, compactTechnicalDetails, taskDayGroups, refreshKeptTaskList, keptCount, cmdKeep,
+  compactTaskForStatus, compactTaskFromProjection,
+  clipStatusText,
+  formatTaskEventCompact, cmdStatus,
+  cmdAdd, delegateTask, cmdDelegate, taskDayTextGroups,
+  taskDayTitle, taskDayGroups, refreshKeptTaskList, keptCount, cmdKeep,
   cmdDay, cmdFirstMinute, cmdHome, cmdList, cmdClaim, cmdRelease, cmdPlan, cmdDo, cmdBacklog,
   cmdClearPlan,
 } = require('./task/board/board.js');
 const {
-  taskQueueColumnKey, sortTasksNewestFirst, sortTasksOldestFirst, taskQueueItem, taskQueueLimit,
-  cleanTaskScopeValue, normalizeTaskQueueScope, taskQueueScopeFromArgs,
+  taskQueueLimit,
+  normalizeTaskQueueScope, taskQueueScopeFromArgs,
   taskQueueScopeFromSearchParams, taskQueueScopeFromBody, mergeTaskQueueScopes,
-  taskQueueScopeIsEmpty, taskScopeEquals, taskGoalScopeValues, taskReviewStateMatches,
-  taskMatchesScopeTag, taskMatchesQueueScope, filterTasksByScope, taskQueueScopeWithoutReviewState,
-  taskReviewStateCounts, taskHasReviewFollowUpChild, taskQueueReviewStateCounts,
-  taskReviewStateActionSample, normalizeTaskIdSet, taskHasPendingReviewChat,
-  pendingReviewChatActionSample, taskQueueReviewStateActions, formatTaskQueueScope,
-  noOpenTasksMessage, taskQueueContract, selectTaskForCurrent, taskCurrentContract,
-  buildTaskCurrent, printTaskCurrent, printTaskQueue, cmdCurrent, cmdQueue,
-  suggestNextClaimableTask, liveTaskWithTitle, readEndgameAgentAction, shellQuoteTaskArg,
-  buildEndgameTaskSeed, createEndgameSeedTask, nextActionFromCommand, cmdNextTruth,
-  reportSkippedDecisionsAndExit, isUninitializedTaskFolder, cmdNext, continueWorkForReviewTask,
+  taskQueueScopeIsEmpty,
+  filterTasksByScope,
+  taskHasReviewFollowUpChild,
+  normalizeTaskIdSet,
+  formatTaskQueueScope,
+  buildTaskCurrent, cmdCurrent, cmdQueue,
+  suggestNextClaimableTask,
+  isUninitializedTaskFolder, cmdNext, continueWorkForReviewTask,
   cmdContinueWork,
 } = require('./task/next/next.js');
 const {
-  taskQueueCapabilities, taskCapabilitiesContract, stableCapabilityJson, capabilityValuesEqual,
-  capabilityCheck, reviewLaneDrainBehaviorConformance, taskReviewLaneActDecision,
-  reviewLaneActBehaviorConformance, reviewLaneLoopBehaviorConformance,
-  reviewLaneRunBehaviorConformance, taskCapabilitiesCheckReport, cmdCapabilities,
+  taskQueueCapabilities, taskCapabilitiesContract,
+  taskReviewLaneActDecision,
+  taskCapabilitiesCheckReport, cmdCapabilities,
   cmdCapabilitiesCheck,
 } = require('./task/capabilities/capabilities.js');
 const {
-  taskReviewLaneDrainTask, humanAcceptWaitingDrain, proofBoundaryBlockedDrain,
-  pendingReviewChatDrain, taskReviewLaneDrainSelection, taskReviewLaneDrainReport,
-  cmdReviewLaneDrain, taskReviewLaneActOptionsFromArgs, taskReviewLaneActOptionsFromBody,
-  autoReviewableEvidence, autoReviewPendingReviewTask, taskReviewLaneAct, cmdReviewLaneAct,
-  normalizeReviewLaneLoopMaxSteps, taskReviewLaneLoopStopIsSafe, taskReviewLaneActSelectionKey,
-  taskReviewLaneLoopOptionsFromArgs, taskReviewLaneLoopOptionsFromBody, compactReviewLaneLoopStep,
+  taskReviewLaneDrainSelection, taskReviewLaneDrainReport,
+  cmdReviewLaneDrain, taskReviewLaneActOptionsFromBody,
+  taskReviewLaneAct, cmdReviewLaneAct,
+  normalizeReviewLaneLoopMaxSteps, taskReviewLaneLoopStopIsSafe,
+  taskReviewLaneLoopOptionsFromBody,
   taskReviewLaneLoop, cmdReviewLaneLoop, normalizeReviewLaneRunMaxRuns,
-  taskReviewLaneRunOptionsFromArgs, taskReviewLaneRunOptionsFromBody, taskReviewLaneRunStopIsSafe,
-  reviewLaneRunReceiptPaths, compactReviewLaneRunLoop, writeReviewLaneRunReceipt, taskReviewLaneRun,
+  taskReviewLaneRunOptionsFromBody, taskReviewLaneRunStopIsSafe,
+  taskReviewLaneRun,
   cmdReviewLaneRun,
 } = require('./task/review-lane/review-lane.js');
 const {
-  arrayFromPathValue, reviewQueueLimit, reviewQueueVerbose, reviewGroupTextLimit,
-  plainReviewBlockerMessage, evidenceRiskRank, reviewQueueItem, blockedReviewQueueItem,
-  reviewQueueHygiene, taskReviewQueue, certifiedPendingReviewTasks, reviewGroupKey,
-  reviewGroupValue, taskReviewGroups, taskReviewLandingLines, cmdReviews, cmdReviewChat,
-  taskReviewChatError, taskAllowsReviewChat, appendTaskReviewChat, cmdRevise,
+  evidenceRiskRank,
+  taskReviewQueue, certifiedPendingReviewTasks, reviewGroupKey,
+  reviewGroupValue, taskReviewLandingLines, cmdReviews, cmdReviewChat,
+  taskAllowsReviewChat, appendTaskReviewChat, cmdRevise,
 } = require('./task/reviews/reviews.js');
 const {
-  taskAuditTimestamp, taskAuditOutput, taskAuditReceiptPath, runTaskAuditVerify, cmdAudit,
+  cmdAudit,
   cmdReview,
 } = require('./task/audit/audit.js');
 const {
   cmdNote, cmdRetitle, cmdTag, cmdChat, stageErrorDetail, cmdInspect, cmdShow, cmdPage, taskDetail,
-  taskPageGoal, taskPageCurrentStage, taskPageStageRail, taskPageActions, taskPageNextAction,
+  taskPageCurrentStage, taskPageActions,
   taskPageContract,
 } = require('./task/card/card.js');
 const {
-  parseMemberFrontmatter, readTeamMembers, scoreTeamMember, plainMemberDescription, chooseTaskOwner,
-  isGenericPlanActor, taskTextMentionsActor, buildPublicPlan, renderPublicPlan, planTraceData,
-  planTraceNote, traceLineFromContent, latestTraceValue, taskHasTrace, taskPurpose, cmdPlanPreview,
+  readTeamMembers, chooseTaskOwner,
+  traceLineFromContent, latestTraceValue, taskHasTrace, taskPurpose, cmdPlanPreview,
   buildAutomaticPlanTrace,
 } = require('./task/plans/plans.js');
 const {
-  buildPublicResult, renderPublicResult, latestResultTrace, buildAcceptHumanResult,
-  refreshBrainScorecardsAfterAccept, nextMissionRouteAfterAccept, xpLandingText,
-  brainScorecardLandingText, buildVisibleAcceptReceipt, renderAcceptLanding, publishAcceptAgentXp,
-  todayResultLogName, appendResultOwnerLog, resultTraceData, resultTraceNote,
+  refreshBrainScorecardsAfterAccept, nextMissionRouteAfterAccept,
+  renderAcceptLanding, publishAcceptAgentXp,
   buildAutomaticResultTrace, cmdResult,
 } = require('./task/results/results.js');
 const {
-  taskStepError, taskStepStatusForReason, taskStepOptionsFromArgs, taskCurrentStepOptionsFromArgs,
-  taskStepOptionsFromBody, taskCurrentStepOptionsFromBody, parseStepReviewReward, taskStepFailure,
-  readyHandoffForStep, runTaskStep, runCurrentTaskStep, cmdCurrentStep, selectedNextKeyFromCurrent,
+  taskStepOptionsFromBody, taskCurrentStepOptionsFromBody,
+  runTaskStep, runCurrentTaskStep, cmdCurrentStep, selectedNextKeyFromCurrent,
   cmdStep,
 } = require('./task/steps/steps.js');
 const {
-  cmdDone, cmdFinish, cmdArchive, cmdReopen, taskCompletionTime, cmdClearDone, formatBytes,
+  cmdDone, cmdFinish, cmdArchive, cmdReopen, cmdClearDone,
   cmdPruneTestJunk, cmdReapMissionBlockers, cmdRelabelArchived, appendRelabelArchivedJournalReceipt,
 } = require('./task/closing/closing.js');
 const {
-  stampAcceptGroupMetadata, cmdAcceptGroup, readyWorkRoot, cmdReady, cmdTaskReceipt, cmdAccept,
+  cmdAcceptGroup, cmdReady, cmdTaskReceipt, cmdAccept,
   landingProofVerify, stampAutoAcceptMetadata, acceptReviewTask, certifyVerifyCandidate,
-  verifyIsOnlyFileChecks, stampCertifyVerifyMetadata, currentHeadSha, stampVerifyCacheMetadata,
-  lastCheckedMs, failedOnSameCode, stampReadyVerifyMetadata, landingVerifyFailureNote,
-  reverifyBeforeLanding, createRunBudget, acceptOrder, markAcceptDeferred, cmdCertifyVerified,
-  cmdLanding, cmdAutoAcceptCertified, autoAcceptSweepLabelValues, autoAcceptSweepNormalizedTokens,
-  autoAcceptSweepLane, autoAcceptSweepDeniedReason, autoAcceptSweepLatestProof,
-  autoAcceptSweepVerifierEvidence, autoAcceptSweepHappened, evaluateSweepAutoAccept, cmdSweepHeld,
+  cmdCertifyVerified,
+  cmdLanding, cmdAutoAcceptCertified,
+  evaluateSweepAutoAccept,
   cmdSweep,
 } = require('./task/landing/landing.js');
 const {
-  importTodoFile, importJournalFile, todayJournalPath, cmdImport, cmdWhere, cmdEvents, cmdLineage,
-  cmdExport, cmdSetup, extractTodoSectionMarkdown, normalizeRenderedTaskRef, renderedTaskRefSet,
-  markdownRowsForRender, taskRenderStatusCounts, taskRenderCountLabel, taskRenderSummaryLine,
+  cmdImport, cmdWhere, cmdEvents, cmdLineage,
+  cmdExport, cmdSetup, extractTodoSectionMarkdown,
   refreshExistingTodoMarkdown, autoRenderTodoFromDb, completeTodoTaskByTitle, cmdRender, cmdSync,
 } = require('./task/todo-sync/todo-sync.js');
 const {
-  taskApiQueueOptions, serveTaskApiOptions, serveTaskBoardPage, serveTaskList,
+  serveTaskApiOptions, serveTaskBoardPage, serveTaskList,
   serveTaskActivityStream, serveTaskCapabilities, serveTaskCapabilitiesCheck,
   serveTaskReviewLaneDrain, postTaskReviewLaneAct, postTaskReviewLaneLoop, postTaskReviewLaneRun,
   serveTaskCurrent, postCurrentTaskStep, postTaskCreate, postTaskClearPlan, serveTaskDetail,
   serveTaskPage, postTaskApiStep, postTaskApiContinueWork, postTaskApiClaim, postTaskApiMessage,
   postTaskApiChat, postTaskApiPlan, postTaskApiDo, postTaskApiBacklog, postTaskApiReviewChat,
   postTaskApiFinish, postTaskApiReady, postTaskApiAccept, postTaskApiRevise, postTaskApiReview,
-  serveTaskEvents, serveTaskOperation, matchTaskApiRoute, handleTaskApi, createTaskApiServer,
+  serveTaskOperation, createTaskApiServer,
   cmdServe,
 } = require('./task/api/api.js');
 

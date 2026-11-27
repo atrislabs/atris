@@ -11,7 +11,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-task-integrity-'));
+// The real path: on a Mac os.tmpdir() is /var/..., a symlink to /private/var/...,
+// and task rows are keyed by the real path, so the test must name the workspace
+// the same way the CLI does (on Linux the two spellings are already one).
+const tmpRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-task-integrity-')));
 const savedEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => key === 'HOME' || key === 'USER' || key.startsWith('ATRIS_')));
 for (const key of Object.keys(process.env)) if (key.startsWith('ATRIS_')) delete process.env[key];
 process.env.HOME = tmpRoot;
