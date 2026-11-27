@@ -2,5 +2,6 @@
   "lib/engine-registry.js": 35,
   "lib/model-names.js": 27,
   "lib/roster-models.js": 7,
-  "lib/runner-command.js": 3
+  "lib/runner-command.js": 3,
+  "commands/member.js": 3
 }
