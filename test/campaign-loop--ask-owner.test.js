@@ -35,7 +35,7 @@ test('askOwner forwards the owner, prompt, engine and model and returns the answ
   assert.deepStrictEqual(resolve.mock.calls[0].arguments, ['planner', root]);
   assert.strictEqual(run.mock.callCount(), 1);
   assert.deepStrictEqual(run.mock.calls[0].arguments, [[{
-    engine: 'codex', model: 'chosen-model', prompt, label: 'campaign example plan',
+    engine: 'codex', model: 'chosen-model', effort: 'low', prompt, label: 'campaign example plan',
   }], { root, timeoutMs: 5 * 60 * 1000 }]);
 });
 
@@ -47,7 +47,7 @@ test('askOwner defaults to claude and an empty model when no engine is selected'
     text: '', engine: 'claude', ok: false, no_engine: true,
   });
   assert.deepStrictEqual(run.mock.calls[0].arguments[0], [{
-    engine: 'claude', model: '', prompt: '', label: 'campaign empty plan',
+    engine: 'claude', model: '', effort: 'low', prompt: '', label: 'campaign empty plan',
   }]);
 });
 

@@ -218,7 +218,10 @@ const {
   missingOwnerMemberWarning,
   ensureMemberMissionFile,
   removeLegacyGeneratedMissionViews,
+  defaultMissionEffort,
+  runMissionAudible,
 } = require('../lib/mission-core');
+const { EFFORT_LEVELS } = require('../lib/effort-router');
 
 // A tick's time limit: the time left on the mission, capped by the roster
 // line's "max 20 min" when it sets one, else by the default tick cap.
@@ -2051,6 +2054,7 @@ function missionFromArgs(args) {
     '--native-goal-objective',
     '--visible-goal-status',
     '--visible-goal-objective',
+    '--effort',
   ], ['--json', '--always-on', '--xp-task', '--agent-xp', '--worktree', '--shared-checkout', '--duplicate', '--no-verify', '--spend-full-budget', '--use-whole-budget', '--stop-when-done', '--preflight', '--no-preflight', '--room-preflight', '--no-room-preflight', '--manual-ack', '--allow-native-goal-supersede', '--supersede-paused-native-goal', '--take-goal-slot'])
     .filter((part) => String(part || '').trim() !== '...');
   const objective = objectiveParts.join(' ').trim();
@@ -2117,8 +2121,13 @@ function missionFromArgs(args) {
   if (givenId && !/^[a-z0-9][a-z0-9-]{2,120}$/.test(givenId)) {
     exitMissionError('--mission-id takes lowercase letters, digits, and dashes', 2, wantsJson(args));
   }
+  const rawEffort = String(readFlag(args, '--effort', '') || '').trim().toLowerCase();
+  if (rawEffort && !EFFORT_LEVELS.includes(rawEffort)) {
+    exitMissionError(`Invalid --effort "${rawEffort}". Expected one of: ${EFFORT_LEVELS.join(', ')}.`, 2, wantsJson(args));
+  }
   const id = givenId || missionId(objective);
   const mission = {
+    ...(rawEffort ? { effort: rawEffort, roster_effort: rawEffort } : {}),
     schema: 'atris.mission.v1',
     id,
     slug: slugify(objective),
@@ -3728,6 +3737,8 @@ async function startMissionFromRunObjective(objective, args) {
   if (maxTicksOverride) startArgs.push('--max-ticks', String(maxTicksOverride));
   const model = readFlag(args, '--model', '');
   if (model) startArgs.push('--model', model);
+  const effort = readFlag(args, '--effort', '');
+  if (effort) startArgs.push('--effort', effort);
   if (hasFlag(args, '--always-on') || inferredLoop.wantsLongRun) startArgs.push('--always-on');
   if (hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp') || missionRunPreflight?.task_spine_required) startArgs.push('--xp-task');
 
@@ -10222,7 +10233,28 @@ async function executeMissionRunTicksPhase(context) {
       // honestly (clean stop, not a pause/blocker) rather than burn the rest
       // of the tick budget on heartbeats.
       if (consecutiveNoProgressTicks(ticks) >= 2) { pauseReason = 'no-progress'; break; }
-      if (consecutiveVerifierFails(ticks) >= 2) { pauseReason = 'consecutive-verifier-fails'; break; }
+      if (consecutiveVerifierFails(ticks) >= 2) {
+        // Two misses in a row: one read-only diagnostic turn before the halt,
+        // saved as feedback so the next attempt starts from the diagnosis.
+        if (!mission.audible_diagnosed_at && !hasFlag(args, '--no-audible') && process.env.ATRIS_MISSION_AUDIBLE !== '0') {
+          try {
+            const audible = await runMissionAudible(cwd, { mission, verifierResult });
+            if (audible && audible.ok && audible.diagnosis) {
+              mission = saveMission({
+                ...mission,
+                audible_diagnosed_at: new Date().toISOString(),
+                audible_engine: audible.engine || null,
+                audible_model: audible.model || null,
+                audible_effort: audible.effort || null,
+                audible_diagnosis: audible.diagnosis,
+                last_check_feedback: [mission.last_check_feedback, `[audible ${audible.engine || 'diagnose'}${audible.effort ? ` ${audible.effort}` : ''}] ${audible.diagnosis}`].filter(Boolean).join('\n\n'),
+              }, cwd, 'mission_audible', { engine: audible.engine || null, model: audible.model || null, effort: audible.effort || null }).mission;
+            }
+          } catch {}
+        }
+        pauseReason = 'consecutive-verifier-fails';
+        break;
+      }
       if (result.status === 'errored' && result.reason === 'too-deep') { pauseReason = 'too-deep'; break; }
       if (consecutiveIdenticalSummaryTicks(ticks) >= 3) { pauseReason = 'stuck-repeating'; break; }
       // A retired/inaccessible model is deterministic: the id is fixed for the run, so

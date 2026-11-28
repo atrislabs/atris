@@ -53,8 +53,8 @@ function readRepeatedFlag(args, name) {
 }
 
 function printHelp() {
-  console.log('Usage: atris bench run [--pack <id>] [--engine <name>] [--model <id>] [--task <id> ...] [--label baseline|candidate] [--experiment <id>] [--update-baseline] [--json]');
-  console.log('Usage: atris bench pair --candidate <dir|git-ref> [--pack <id>] [--engine <name>] [--model <id>] [--task <id> ...] [--min-win-margin <n>] [--repeats <n>] [--current <dir>] [--json]');
+  console.log('Usage: atris bench run [--pack <id>] [--engine <name>] [--model <id>] [--effort <level>] [--task <id> ...] [--label baseline|candidate] [--experiment <id>] [--update-baseline] [--json]');
+  console.log('Usage: atris bench pair --candidate <dir|git-ref> [--pack <id>] [--engine <name>] [--model <id>] [--effort <level>] [--candidate-effort <level>] [--task <id> ...] [--min-win-margin <n>] [--repeats <n>] [--current <dir>] [--json]');
   console.log('Usage: atris bench results [--last N] [--json]');
   console.log('Usage: atris bench tasks [--pack <id>] [--json]');
   console.log('Usage: atris bench packs [--json]');
@@ -95,6 +95,7 @@ async function runCommand(args) {
       pack: readInlineFirstFlag(args, '--pack') || undefined,
       engine: readInlineFirstFlag(args, '--engine') || undefined,
       model: readInlineFirstFlag(args, '--model') || undefined,
+      effort: readInlineFirstFlag(args, '--effort') || undefined,
       taskIds: readRepeatedFlag(args, '--task'),
       label: readInlineFirstFlag(args, '--label'),
       experiment: readInlineFirstFlag(args, '--experiment'),
@@ -138,6 +139,8 @@ async function pairCommand(args) {
       pack: readInlineFirstFlag(args, '--pack') || undefined,
       engine: readInlineFirstFlag(args, '--engine') || undefined,
       model: readInlineFirstFlag(args, '--model') || undefined,
+      effort: readInlineFirstFlag(args, '--effort') || undefined,
+      candidateEffort: readInlineFirstFlag(args, '--candidate-effort') || undefined,
       taskIds: readRepeatedFlag(args, '--task'),
       minWinMargin: readInlineFirstFlag(args, '--min-win-margin') || undefined,
       repeats: readInlineFirstFlag(args, '--repeats') || undefined,
