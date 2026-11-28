@@ -215,3 +215,4 @@ test/script-command.test.js
 test/check-command.test.js
 test/check-select.test.js
 test/timestone-command.test.js
+test/sandbox-command.test.js
