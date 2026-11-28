@@ -193,7 +193,7 @@ test('member run --ignite executes in isolated worktree and member status --all 
     const fakeCodex = path.join(binDir, 'codex');
     fs.writeFileSync(
       fakeCodex,
-      '#!/bin/sh\nprintf "%s\\n" "$2" > ignited-prompt.txt\necho "codex completed subagent shell tick"\n',
+      '#!/bin/sh\nprintf "%s\\n" "$@" > ignited-prompt.txt\necho "codex completed subagent shell tick"\n',
       'utf8'
     );
     fs.chmodSync(fakeCodex, 0o755);
