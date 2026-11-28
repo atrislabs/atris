@@ -952,10 +952,28 @@ function acceptedNotLandedNote(receipt) {
 // Every job a run leaves waiting keeps its reason. Counts alone hid one cause
 // holding every finished job for five days: the record said "8 skipped" and
 // nothing on disk said why.
-function waitingReasonRows(results) {
-  return (Array.isArray(results) ? results : [])
-    .filter((row) => row && row.action === 'skipped' && row.ref)
+const ACCEPT_WAITING_ACTIONS = new Set(['skipped', 'accept_failed', 'revise_failed', 'deferred']);
+const CERT_WAITING_ACTIONS = new Set(['verify_failed', 'certify_failed', 'deferred']);
+
+// Jobs held at the certification step never reach the accept step, so the
+// hourly record lists both, one row per job.
+function waitingReasonRows(results, certificationResults = []) {
+  const acceptRows = (Array.isArray(results) ? results : []).filter((row) => row && row.ref);
+  const seenAcceptRefs = new Set(acceptRows.map((row) => String(row.ref)));
+  const rows = acceptRows
+    .filter((row) => ACCEPT_WAITING_ACTIONS.has(row.action))
     .map((row) => ({ ref: String(row.ref), reason: String(row.reason || 'unknown') }));
+  const seenCertRefs = new Set();
+  for (const row of Array.isArray(certificationResults) ? certificationResults : []) {
+    if (!row || !row.ref) continue;
+    const ref = String(row.ref);
+    if (seenAcceptRefs.has(ref) || seenCertRefs.has(ref)) continue;
+    const waiting = (row.action === 'skipped' && row.reason !== 'already_landable') || CERT_WAITING_ACTIONS.has(row.action);
+    if (!waiting) continue;
+    rows.push({ ref, reason: String(row.reason || 'unknown'), stage: 'certification' });
+    seenCertRefs.add(ref);
+  }
+  return rows;
 }
 
 function waitingReasonSummary(receipt) {
@@ -978,6 +996,9 @@ function stuckBacklogNote(receipt) {
   if (scanned > 0 && accepted === 0) {
     const why = waitingReasonSummary(receipt);
     parts.push(`${certified}/${scanned} certified in review, none landed${why ? ` (${why})` : ''}`);
+  } else if (scanned === 0 && accepted === 0 && Array.isArray(receipt.waiting_reasons) && receipt.waiting_reasons.length) {
+    const why = waitingReasonSummary(receipt);
+    if (why) parts.push(`none certified to land (${why})`);
   }
   const unrunnable = Array.isArray(receipt.unrunnable_verifiers) ? receipt.unrunnable_verifiers.length : 0;
   if (unrunnable > 0) {
@@ -1457,7 +1478,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     receipt.scanned = parsed.scanned ?? null;
     receipt.revised = parsed.revised ?? null;
     receipt.skipped = parsed.skipped ?? null;
-    const waiting = waitingReasonRows(results);
+    const waiting = waitingReasonRows(results, parsed.certification?.results);
     if (waiting.length) receipt.waiting_reasons = waiting;
     receipt.undercounted = Boolean(parsed.undercounted);
     // Left for the next hour because the time ran out, not refused.

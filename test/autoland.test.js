@@ -2144,3 +2144,71 @@ test('every job a run leaves waiting keeps its reason, and the status line names
     ', 2/2 certified in review, none landed',
   );
 });
+
+test('certification-stage waiting reasons are retained, deduplicated, and surfaced when none are scanned', () => {
+  const { stuckBacklogNote, waitingReasonRows } = require('../commands/autoland');
+  const rows = waitingReasonRows(
+    [
+      { ref: 'CLI-1', action: 'skipped', reason: 'probation_needs_review' },
+      { ref: 'CLI-2', action: 'accepted' },
+    ],
+    [
+      { ref: 'CLI-1', action: 'skipped', reason: 'already_landable' },
+      { ref: 'CLI-2', action: 'skipped', reason: 'already_landable' },
+      { ref: 'CLI-3', action: 'skipped', reason: 'already_landable' },
+      { ref: 'CLI-4', action: 'skipped', reason: 'no_runnable_check_in_proof' },
+      { ref: 'CLI-4', action: 'deferred', reason: 'time_budget' },
+      { ref: 'CLI-5', action: 'verify_failed', reason: 'verify_failed' },
+      { ref: 'CLI-6', action: 'certify_failed', reason: 'not_ready' },
+      { ref: 'CLI-7', action: 'deferred', reason: 'time_budget' },
+    ],
+  );
+  assert.deepEqual(rows, [
+    { ref: 'CLI-1', reason: 'probation_needs_review' },
+    { ref: 'CLI-4', reason: 'no_runnable_check_in_proof', stage: 'certification' },
+    { ref: 'CLI-5', reason: 'verify_failed', stage: 'certification' },
+    { ref: 'CLI-6', reason: 'not_ready', stage: 'certification' },
+    { ref: 'CLI-7', reason: 'time_budget', stage: 'certification' },
+  ]);
+  assert.equal(
+    stuckBacklogNote({ certified: 0, scanned: 0, accepted: [], landed: [], waiting_reasons: [rows[1]] }),
+    ', none certified to land (1 no_runnable_check_in_proof)',
+  );
+});
+
+test('tick persists both certification-stage and accept-stage waiting reasons on disk', () => {
+  const { base, repo } = makeTempRepo();
+  try {
+    const noCheckCreated = runCli(['task', 'new', 'Missing runnable check', '--tag', 'code', '--json'], repo);
+    const uncertifiedRef = String(JSON.parse(noCheckCreated.stdout).task?.display_id);
+    assert.equal(runCli(['task', 'claim', uncertifiedRef, '--as', 'builder'], repo).status, 0);
+    assert.equal(
+      runCli(['task', 'ready', uncertifiedRef, '--proof', 'Receipt saved at atris/runs/demo-receipt.json, reviewed end to end.', '--as', 'builder'], repo).status,
+      0,
+    );
+
+    const secRef = certifiedVerifiedTask(repo, 'Rotate signing key', {
+      tag: 'security',
+      verify: 'git diff --check',
+      proof: 'Command passed: git diff --check (exit 0).',
+    });
+
+    autoland.writePolicy(repo, {
+      enabled: true,
+      enabled_by: 'keshav',
+      strict_verify: true,
+      daily_experiment: false,
+      janitor: false,
+    });
+    const tick = runCli(['autoland', 'tick', '--json'], repo);
+    assert.equal(tick.status, 0, tick.stderr || tick.stdout);
+    const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
+    const saved = JSON.parse(fs.readFileSync(path.join(repo, receipt.receipt_path), 'utf8'));
+    const byRef = Object.fromEntries((saved.waiting_reasons || []).map((row) => [row.ref, row]));
+    assert.equal(byRef[uncertifiedRef]?.reason, 'no_runnable_check_in_proof', JSON.stringify(saved.waiting_reasons));
+    assert.equal(byRef[uncertifiedRef]?.stage, 'certification', JSON.stringify(saved.waiting_reasons));
+    assert.equal(byRef[secRef]?.reason, 'denied_tag_security', JSON.stringify(saved.waiting_reasons));
+  } finally {
+    cleanupTempDir(base);
+  }
+});

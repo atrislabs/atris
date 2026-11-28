@@ -691,7 +691,7 @@ test('Bug 8: SKILL.md cannot bypass evaluation via advisory_only, changed_files,
   assert.equal(narrowBypass.reason, 'skill_eval_receipt_required');
 
   // 8c) Planted scorecard inside untrusted branchCopy MUST NOT satisfy skillEvalGate!
-  const validScores = { clarity: 4, trigger: 4, completeness: 4, safety: 4, verifiability: 4 };
+  const validScores = { instruction_clarity: 4, trigger_precision: 4, procedural_completeness: 4, safety: 4, verifiability: 4 };
   appendSkillEvalReceipt(branchCopy, {
     schema: SKILL_EVAL_SCHEMA,
     ts: new Date().toISOString(),
@@ -1014,7 +1014,7 @@ test('Audit 3: skill-eval-gate catches lowercase skill.md, subfiles, git failure
 
   // 3b) Skill subfile edits (scripts/* and references/*) MUST map to owning SKILL.md (both worktree and branch diff)!
   const oldReceiptTs = new Date(Date.now() - 5000).toISOString();
-  const scores = { clarity: 4, trigger: 4, completeness: 4, safety: 4, verifiability: 4 };
+  const scores = { instruction_clarity: 4, trigger_precision: 4, procedural_completeness: 4, safety: 4, verifiability: 4 };
   appendSkillEvalReceipt(root, {
     schema: SKILL_EVAL_SCHEMA,
     ts: oldReceiptTs,
@@ -1073,7 +1073,7 @@ test('Audit 3: skill-eval-gate catches lowercase skill.md, subfiles, git failure
   assert.equal(badShaGate.ok, false, 'mismatched skill_sha256 must fail closed');
   assert.equal(badShaGate.missing[0].reason, 'skill_sha256_mismatch');
 
-  // 3e) Learner-note exclusion MUST be consistent on branch ref diff (and case-insensitive)!
+  // 3e) A learner note committed on a branch is authored work and MUST be evaluated, never skipped!
   git(root, ['checkout', '-qb', 'learner-branch']);
   const learnerPath = 'atris/team/navigator/skills/auto-learned/skill.md';
   fs.mkdirSync(path.join(root, path.dirname(learnerPath)), { recursive: true });
@@ -1082,8 +1082,8 @@ test('Audit 3: skill-eval-gate catches lowercase skill.md, subfiles, git failure
   git(root, ['commit', '-qm', 'learner note only']);
   git(root, ['checkout', '-q', 'master']);
   const learnerBranchGate = skillEvalGate(root, { base: 'master', branch: 'learner-branch' });
-  assert.equal(learnerBranchGate.ok, true, 'learner notes must be excluded consistently on branch diffs without explicit paths');
-  assert.equal(learnerBranchGate.skipped, true);
+  assert.equal(learnerBranchGate.ok, false, 'committed learner notes on a branch must be evaluated');
+  assert.equal(learnerBranchGate.reason, 'skill_eval_receipt_required');
 
   // 3f) Epoch-zero / unknown change time (changed_at_ms === 0) MUST fail closed, never pass an old receipt!
   const epochSkill = 'atris/skills/epoch-zero/SKILL.md';

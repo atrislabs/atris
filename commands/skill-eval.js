@@ -6,19 +6,15 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { getEngineAdapter } = require('../lib/bench/engines');
 const {
+  RUBRIC_KEYS,
   SKILL_EVAL_SCHEMA,
   appendSkillEvalReceipt,
   changedSkillFiles,
+  computeSkillSha256,
+  identityFamily,
 } = require('../lib/skill-eval-gate');
 
 const REVIEW_DIRECTORY_PREFIX = 'atris-review-';
-const RUBRIC_KEYS = Object.freeze([
-  'instruction_clarity',
-  'trigger_precision',
-  'procedural_completeness',
-  'safety',
-  'verifiability',
-]);
 const JUDGE_ORDER = Object.freeze(['claude', 'codex', 'cursor']);
 
 function readFlag(args, name) {
@@ -64,14 +60,6 @@ function workerModelFromEnvironment(env = process.env) {
   if (env.DEVIN_SESSION_ID) return 'devin';
   if (env.ATRIS_RUNNER_MODEL) return String(env.ATRIS_RUNNER_MODEL).trim();
   return 'human';
-}
-
-function identityFamily(value) {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (/claude|anthropic/.test(normalized)) return 'claude';
-  if (/codex|openai|gpt/.test(normalized)) return 'codex';
-  if (/cursor/.test(normalized)) return 'cursor';
-  return normalized;
 }
 
 function resolveSkillPath(root, requested) {
@@ -241,7 +229,9 @@ function skillEvalCommand(args = [], dependencies = {}) {
       throw new Error(`the ${judge.name} judge failed${detail ? `: ${detail}` : ''}`);
     }
     const verdict = parseJudgePayload(result.stdout);
-    const changed = changedSkillFiles(root).find((entry) => entry.path === skill.relative);
+    const scanned = changedSkillFiles(root);
+    const changedList = Array.isArray(scanned) ? scanned : (Array.isArray(scanned && scanned.skills) ? scanned.skills : []);
+    const changed = changedList.find((entry) => entry.path === skill.relative);
     const receiptAt = new Date(Math.max(
       Date.now(),
       Number(changed && changed.changed_at_ms || 0) + 1,
@@ -252,6 +242,7 @@ function skillEvalCommand(args = [], dependencies = {}) {
       source: 'skill_eval',
       skill_path: skill.relative,
       skill_changed_at: changed ? changed.changed_at : null,
+      skill_sha256: computeSkillSha256(root, skill.relative) || null,
       worker_model: workerModel,
       judge_identity: judge.name,
       passed: verdict.passed,
