@@ -812,6 +812,11 @@ async function pushCommand(root, map, options, log) {
       if (!staged.ok) { log(`atris check: could not stage the change: ${staged.err.split('\n')[0]}`); return EXIT.failed; }
       log(`${receipts.CHECK_NEEDS_LANE_LINE}: it was not pushed to ${target.branch}`);
       log(`${STAGED_LINE}. Ready on ${ref.replace('refs/heads/', '')}; a runner lands it with: atris check land ${head.slice(0, 12)} --lane no-screen`);
+      const needsLane = result.receipt.checks.filter((row) => row.status === 'needs-lane');
+      if (result.code === EXIT.proven && needsLane.length === 0 && conditions[3].ok) {
+        const landCmd = rules.push.via || `ATRIS_CHECK_PERSON=0 atris check land ${head.slice(0, 12)} --lane no-screen`;
+        log(`no runner on this project? land it with: ${landCmd}`);
+      }
       return EXIT.partly;
     }
     if (rules.push.via) {
