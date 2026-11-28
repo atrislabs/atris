@@ -168,7 +168,7 @@ test('explicit routes failures exit nonzero while the default flow continues', a
   const command = path.resolve(__dirname, '../commands/perf.js');
   const run = (args, secret = 'exit-test-secret') => new Promise(resolve => {
     execFile(process.execPath, ['-e', 'require(process.argv[1]).perfCommand(JSON.parse(process.argv[2]), process.argv[3]).catch(() => { process.exitCode = 1; })', command, JSON.stringify(args), root],
-      { env: { ...process.env, ATRIS_INTERNAL_SECRET: secret } },
+      { env: { ...process.env, ATRIS_INTERNAL_SECRET: secret, ATRIS_PERF_ROUTES_URL: url + '/internal/perf/routes' } },
       (error, stdout, stderr) => resolve({ code: error?.code || 0, stdout, stderr }));
   });
   assert.equal((await run(['routes'])).code, 0);
@@ -194,11 +194,14 @@ test('backend routes authenticate, rank, record and survive missing or wrong sec
   const originalExitCode = process.exitCode;
   t.after(() => { process.exitCode = originalExitCode; });
   const originalSecret = process.env.ATRIS_INTERNAL_SECRET;
+  const originalRouteUrl = process.env.ATRIS_PERF_ROUTES_URL;
   const originalLog = console.log;
   const output = [];
   console.log = (...args) => output.push(args.join(' '));
   t.after(() => {
     console.log = originalLog;
+    if (originalRouteUrl === undefined) delete process.env.ATRIS_PERF_ROUTES_URL;
+    else process.env.ATRIS_PERF_ROUTES_URL = originalRouteUrl;
     if (originalSecret === undefined) delete process.env.ATRIS_INTERNAL_SECRET;
     else process.env.ATRIS_INTERNAL_SECRET = originalSecret;
   });
@@ -224,6 +227,7 @@ test('backend routes authenticate, rank, record and survive missing or wrong sec
   const dir = path.join(root, 'atris/perf');
   fs.mkdirSync(dir, { recursive: true });
   const url = `http://127.0.0.1:${server.address().port}`;
+  process.env.ATRIS_PERF_ROUTES_URL = url + '/internal/perf/routes';
   const config = [{ name: 'local', url: url + '/health' }, { name: 'routes', type: 'routes', url: url + '/internal/perf/routes' }];
   fs.writeFileSync(path.join(dir, 'targets.json'), JSON.stringify(config));
   delete process.env.ATRIS_INTERNAL_SECRET;
@@ -377,4 +381,22 @@ test('real requests measure phases, failures, slow reads and append report histo
   await assert.rejects(perfCommand(['remove', 'local'], root), /not found/);
   await perfCommand(['run'], root);
   assert.equal(fs.readFileSync(file, 'utf8').trim().split('\n').length, 2);
+});
+
+
+test('repository route sources cannot send secrets to unapproved origins', async t => {
+  const oldSecret = process.env.ATRIS_INTERNAL_SECRET, oldUrl = process.env.ATRIS_PERF_ROUTES_URL, oldExit = process.exitCode, oldLog = console.log;
+  const output = []; console.log = (...args) => output.push(args.join(' '));
+  process.env.ATRIS_INTERNAL_SECRET = 'secret'; delete process.env.ATRIS_PERF_ROUTES_URL;
+  t.after(() => { console.log = oldLog; process.exitCode = oldExit; if (oldSecret === undefined) delete process.env.ATRIS_INTERNAL_SECRET; else process.env.ATRIS_INTERNAL_SECRET = oldSecret; if (oldUrl === undefined) delete process.env.ATRIS_PERF_ROUTES_URL; else process.env.ATRIS_PERF_ROUTES_URL = oldUrl; });
+  let hits = 0; const server = http.createServer((req, res) => { hits++; res.end(); });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'perf-origin-')); t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const dir = path.join(root, 'atris/perf'); fs.mkdirSync(dir, { recursive: true });
+  for (const url of [`http://127.0.0.1:${server.address().port}/steal`, 'https://evil.example/internal/perf/routes']) {
+    fs.writeFileSync(path.join(dir, 'targets.json'), JSON.stringify([{ name: 'routes', type: 'routes', url }]));
+    output.length = 0; process.exitCode = undefined; await perfCommand(['routes'], root);
+    assert.equal(process.exitCode, 1); assert.match(output.join(' '), /approved https backend origin/); assert.equal(hits, 0);
+  }
 });

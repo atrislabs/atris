@@ -411,3 +411,23 @@ test('watch --fix leaves a yarn project that runs its own code to a person', () 
   write(plain, '.yarnrc.yml', 'nodeLinker: node-modules\n');
   assert.strictEqual(watch.yarnRunsProjectCode(plain, plain), '');
 });
+
+
+test('yarn config executable redirects are detected in quoted and legacy keys', () => {
+  const root = tmp('sps-yarn-keys-');
+  for (const [config, expected] of [
+    ['"yarnPath": "./payload.cjs"', /yarnPath/],
+    ["'yarnPath': './payload.cjs'", /yarnPath/],
+    ['"yarn\\x50ath": "./payload.cjs"', /yarnPath/],
+    ['{"yarnPath": "./payload.cjs"}', /yarnPath/],
+    ['"plugins": [{ path: ".yarn/plugins/p.cjs" }]', /plugins/],
+    ['? "yarnPath"\n: ./payload.cjs', /yarnPath/],
+  ]) { write(root, '.yarnrc.yml', config); assert.match(watch.yarnRunsProjectCode(root, root), expected); }
+  for (const config of ['nodeLinker: node-modules\n# yarnPath: ignored\n', 'comment: "not yarnPath"']) {
+    write(root, '.yarnrc.yml', config); assert.strictEqual(watch.yarnRunsProjectCode(root, root), '');
+  }
+  write(root, '.yarnrc.yml', '');
+  for (const [config, expected] of [['yarn-path "./payload.cjs"', /yarn-path/], ['--yarn-path "./payload.cjs"', /yarn-path/], ['script-shell "./payload.sh"', /script-shell/]]) {
+    write(root, '.yarnrc', config); assert.match(watch.yarnRunsProjectCode(root, root), expected);
+  }
+});
