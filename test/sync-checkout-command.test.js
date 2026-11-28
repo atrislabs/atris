@@ -12,11 +12,16 @@ const { listVaultSnapshots, restoreFromVault } = require('../lib/hygiene-vault')
 
 const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-sync-checkout-cmd-'));
 const fakeHome = path.join(sandbox, 'home');
+const tempDir = path.join(sandbox, 'tmp');
 fs.mkdirSync(fakeHome);
+fs.mkdirSync(tempDir);
 
 const savedEnv = {};
 const envOverrides = {
   HOME: fakeHome,
+  TMPDIR: tempDir,
+  TMP: tempDir,
+  TEMP: tempDir,
   GIT_CONFIG_GLOBAL: path.join(fakeHome, '.gitconfig'),
   GIT_CONFIG_NOSYSTEM: '1',
   GIT_CEILING_DIRECTORIES: sandbox,
@@ -406,10 +411,6 @@ function ageFile(filePath, ageMs = 2 * 60 * 60 * 1000) {
   fs.utimesSync(filePath, past, past);
 }
 
-function listVaultIndexTemps() {
-  return fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith('atris-vault-') && name.endsWith('.index'));
-}
-
 test('--vault option validation rejects conflicting or malformed flags', () => {
   const { checkout } = createRepos();
 
@@ -440,7 +441,6 @@ test('--vault option validation rejects conflicting or malformed flags', () => {
 
 test('--vault vaults untracked and tracked files before fast-forwarding when behind upstream', () => {
   const { seed, checkout } = createRepos();
-  const tempsBefore = new Set(listVaultIndexTemps());
 
   // Tracked unstaged edit + staged new file + stale untracked code/scratch + secret
   fs.writeFileSync(path.join(checkout, 'tracked.txt'), 'local tracked edit\n');
@@ -500,8 +500,8 @@ test('--vault vaults untracked and tracked files before fast-forwarding when beh
   );
 
   // No leftover temp index, WAL, or lock files
-  const tempsAfter = listVaultIndexTemps().filter((name) => !tempsBefore.has(name));
-  assert.deepStrictEqual(tempsAfter, []);
+  const vaultIndexTemps = fs.readdirSync(tempDir).filter((name) => /^atris-vault-.*\.index(\.lock)?$/.test(name));
+  assert.deepStrictEqual(vaultIndexTemps, []);
   const walDir = path.join(checkout, '.atris', 'vault');
   assert.deepStrictEqual(fs.existsSync(walDir) ? fs.readdirSync(walDir) : [], []);
   assert.strictEqual(fs.existsSync(path.join(checkout, '.git', 'atris-clean.lock')), false);
