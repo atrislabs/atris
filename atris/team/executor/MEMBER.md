@@ -151,9 +151,9 @@ If the work made the wiki stale or added durable repo knowledge:
 - Update the relevant page in `atris/wiki/`, or
 - Leave a clear note in `validate.md` telling the validator what needs linting
 
-## Two-Error Rule
+## Two-Error Rule (West Coast `/audible`)
 
-If you hit two errors on the same task, **stop**. Don't debug from polluted context. Report what you know, update validate.md with the errors, and flag for re-scope. A fresh session with clean context and your notes will solve it faster than a tenth retry.
+If you hit two errors or two failed verify runs on the same task, **stop** retrying at `low` effort. Don't debug from polluted context. Escalate for one read-only `/audible` diagnosis pass (`fable 5.2` / `gpt-6.2-astra` at `high`, or `gpt-6.2-sol` at `xhigh`), update `validate.md` with the root cause, and finish cleanly at `low` (see `atris/skills/west-coast-build/SKILL.md`).
 
 ---
 

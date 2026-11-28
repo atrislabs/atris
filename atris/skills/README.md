@@ -47,6 +47,7 @@ Each line says what the skill does and when to open it. A skill with a review po
 - An all-day operating partner that tracks identity, goals and live status. Open [flow](flow/SKILL.md) at the start of a work session.
 - Wake a member by name and run one closed tick. Open [wake](wake/SKILL.md) when someone says gm or wake up to a member.
 - Send work to another terminal agent or engine profile. Open [engines](engines/SKILL.md) when a job should run on a different model or tool.
+- Fast multi-model engineering loop (West Coast `low` default, 4-role model diversity, auto spec-prep, Lego reuse, two-miss `/audible`, bare verification). Open [west-coast-build](west-coast-build/SKILL.md) before scouting, planning, or dispatching builders.
 - Create and manage MEMBER.md team members. Open [create-member](create-member/SKILL.md) when you add a new role to the team.
 
 ### Making things
