@@ -111,6 +111,10 @@ function fakeServer({ notes = NOTES, files = {}, fail = {} } = {}) {
       const { agent, text } = options.body;
       return ok({ path: `team/${agent}/logs/2026-11-09.md`, line: `- 20:13 UTC ${text}`, new_notebook: false });
     }
+    if (key === 'POST /memory/log/retract') {
+      const { agent, text, day } = options.body;
+      return ok({ removed: text !== 'missing', path: `team/${agent}/logs/${day || '2026-11-09'}.md`, line: `- ${text}` });
+    }
     if (key === 'POST /memory/lesson') {
       const { agent, text, score_before: before, score_after: after } = options.body;
       const kept = after > before;
@@ -406,6 +410,30 @@ test('log and lesson keep the agent\'s own notebook; --as comes from ATRIS_AGENT
     assert.equal((await run(bad, server)).code, 2, bad.join(' '));
   }
   assert.equal(server.calls.length, 4);
+});
+
+test('log retracts a line, optionally on a given day, and validates its arguments', async () => {
+  const server = fakeServer();
+  const result = await run(['log', '--retract', 'sent wrong note', '--as', 'codex'], server);
+  assert.equal(result.text, 'Retracted from team/codex/logs/2026-11-09.md: sent wrong note');
+  assert.equal(server.calls[0].method, 'POST');
+  assert.equal(server.calls[0].path, '/memory/log/retract');
+  assert.deepEqual(server.calls[0].body, { text: 'sent wrong note', agent: 'codex' });
+  assert.equal(server.calls[0].options.retries, 0);
+  const dated = await run(['log', '--retract', 'sent wrong note', '--day', '2026-11-20', '--as', 'codex'], server);
+  assert.equal(dated.text, 'Retracted from team/codex/logs/2026-11-20.md: sent wrong note');
+  assert.deepEqual(server.calls[1].body, { text: 'sent wrong note', agent: 'codex', day: '2026-11-20' });
+  assert.equal((await run(['log', '--retract', 'missing', '--as', 'codex'], server)).text, 'No matching line in team/codex/logs/2026-11-09.md.');
+  for (const [args, message] of [
+    [['log', '--retract', 'x', '--day', '2026/11/20', '--as', 'codex'], '--day must be YYYY-MM-DD, like 2026-11-28'],
+    [['log', 'x', '--day', '2026-11-20', '--as', 'codex'], '--day goes with --retract'],
+    [['log', '--retract', '--as', 'codex'], 'say which line to retract'],
+  ]) {
+    const bad = await run(args, server);
+    assert.equal(bad.code, 2);
+    assert.ok(bad.errs.includes(message));
+  }
+  assert.equal(server.calls.length, 3);
 });
 
 test('usage prints the server\'s plain line', async () => {
@@ -714,4 +742,25 @@ test('day pages at the top of the folder are kept; other logs, lists and archive
   assert.match(r.text, /^logs\/2026\/2026-11-11\.md:1: /m);
   assert.doesNotMatch(r.text, /team\/a\/logs/);
   assert.match(r.text, /1 line from raw data files left out\./);
+});
+
+test('search puts person notes before day pages and keeps explicit search ordering', async () => {
+  const files = {
+    'logs/2026/2026-11-28.md': 'deploy first\ndeploy second\n',
+    'team/codex/logs/2026/2026-11-28.md': 'deploy agent\n',
+    'wiki/deploy.md': 'deploy wiki\n',
+    'team/builder/logs/2026-11-27.md': 'deploy legacy\n',
+    'logs/agent-run.md': 'deploy raw\n',
+    'logs/dump.txt': 'deploy dump\n',
+    'now.md': 'deploy now\n',
+    'logs/2026/2026-11-27.md': 'deploy older\n',
+  };
+  const server = fakeServer({ files });
+  const paths = async (args) => JSON.parse((await run([...args, '--json'], server)).text).hits.map((hit) => hit.path);
+  assert.deepEqual(await paths(['search', 'deploy']), ['wiki/deploy.md', 'now.md', 'logs/2026/2026-11-28.md', 'logs/2026/2026-11-28.md', 'logs/2026/2026-11-27.md']);
+  assert.deepEqual(await paths(['search', 'deploy', '--in', 'logs']), ['logs/2026/2026-11-28.md', 'logs/2026/2026-11-28.md', 'logs/2026/2026-11-27.md']);
+  assert.deepEqual(await paths(['search', 'deploy', '--all-files']), [
+    'logs/2026/2026-11-28.md', 'logs/2026/2026-11-28.md', 'team/codex/logs/2026/2026-11-28.md', 'wiki/deploy.md',
+    'team/builder/logs/2026-11-27.md', 'logs/agent-run.md', 'logs/dump.txt', 'now.md', 'logs/2026/2026-11-27.md',
+  ]);
 });
