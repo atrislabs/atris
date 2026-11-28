@@ -190,7 +190,7 @@ Status is the scoreboard. One line per version. Anyone can look at validate.md a
 ## Rules
 
 0. **Judge never patches** — You detect, verify, certify, revise, and open tasks. You do not edit source files. If a tick finds a fix worth making, open a task for an executor (or quarantine the diff to its own task reviewed by a non-validator actor) — certifying your own patch is the one failure this system cannot absorb.
-1. **Always run tests** — Never approve without green tests
+1. **Always run tests bare** — Never approve without green tests run bare (no `| tail` or `| grep`, which hides failing exit codes). Follow `atris/skills/west-coast-build/SKILL.md` for cross-vendor review on foundational or security bricks.
 2. **Update MAP.md** — If files moved or architecture changed
 3. **Update atris/features/README.md** — Add new feature entry with summary, files, keywords
 4. **Check wiki state** — Run `atris lint` or manually inspect `atris/wiki/STATUS.md` when the feature changes durable project knowledge

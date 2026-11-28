@@ -57,7 +57,7 @@ The first worker that is ready and not expired leads; the rest are backups in or
 - amara: on: grok bot
 ```
 
-No `on:` means this machine. `on: atris computer` is the computer Atris hosts; any other name (`grok bot`, `claude duet`, `dots`) is a bot on its own machine. A member that works elsewhere never runs here: its missions pause with "runs on <place>", and the roster shows a RUNS ON column. Set it with `atris engine roster set --member <name> [<tool> <model>] [--on "<place>"]`; moving a member keeps its engine, and swapping its engine keeps its place. The machine that is that place says so with `ATRIS_RUNS_AS="grok bot"` or one line in `~/.atris/RUNS_AS`; there the member runs, and everywhere else it is skipped.
+No `on:` means this machine. `on: atris computer` is the computer Atris hosts; any other name (`grok bot`, `claude duet`, `dots`) is a bot on its own machine. A member that works elsewhere never runs here: its missions pause with a runs-on message, and the roster shows a RUNS ON column. Set it with `atris engine roster set --member <name> [<tool> <model>] [--on "<place>"]`; moving a member keeps its engine, and swapping its engine keeps its place. The machine that is that place says so with `ATRIS_RUNS_AS="grok bot"` or one line in `~/.atris/RUNS_AS`; there the member runs, and everywhere else it is skipped.
 
 **Heavy models.** Astra and Fable should judge, not explore. Give their line `prep: search`: the search lead writes a brief of at most 300 lines first, and if prep fails the worker runs as usual.
 
@@ -104,7 +104,7 @@ Smoke: `reply with the word OK`, run from `$HOME`, 120s cap, one at a time on a 
 |--------|---------------|--------------|----------|--------:|-------|
 | Atris Fast | `atris chat --print "<prompt>"` | `atris:fast` | 2026-09-23 | 3.2 | Needs an initialized `atris/` workspace; see runtime requirements below. |
 | Claude | `claude -p "<prompt>" --model claude-opus-5-5 --output-format json --no-session-persistence` | `claude-opus-5-5` | 2026-09-23 | 20.3 | `--model opus` also resolves to `claude-opus-5-5` today; pin the id for reproducibility. |
-| Codex | `codex exec --dangerously-bypass-approvals-and-sandbox --ephemeral -m gpt-6-sol -c model_reasoning_effort=high -o <result-file> "<prompt>" </dev/null` (run from the target repo/worktree; read-only: swap the bypass flag for `--sandbox read-only`) | `gpt-6-sol`, high | 2026-09-23 | 13.8 | Keep the `</dev/null`: with stdin open codex prints "Reading additional input from stdin..." and waits forever (observed 2026-09-23). Outside a git repo add `--skip-git-repo-check` or it exits 1 (re-checked 2026-09-23). Final answer lands in the `-o` file. Run as a tracked background Bash task; in one-shot `claude -p` workers run it in the FOREGROUND, a one-shot session never wakes again (2026-08-11). `codex-companion.mjs task --background` is deprecated: its job store never notifies the session (2026-08-10). |
+| Codex | `codex exec -m gpt-6.1-terra -c model_reasoning_effort=low -c 'service_tier="fast"' --ignore-user-config -s workspace-write --ephemeral -C <worktree> "<prompt>" </dev/null` (read-only: `-s read-only`) | `gpt-6.1-terra`, low (fast) | 2026-11-28 | 13.8 | West Coast default: use `low` effort + `service_tier="fast"` for routine coding and scouting; reserve `gpt-6.2-astra`/`high` or `gpt-6.2-sol`/`xhigh` for unbounded architecture or two-miss `/audible` diagnosis. Keep `</dev/null`: with stdin open codex waits forever. Outside a git repo add `--skip-git-repo-check`. Run as a tracked background Bash task; in one-shot `claude -p` workers run in the FOREGROUND. |
 | Cursor | `cursor-agent --trust --model composer-2.5 -p "<prompt>"` (run from the target repo) | `composer-2.5` | 2026-09-23 | 37.5 | `--trust` required for non-interactive. |
 | Fable | `atris engine fable --timeout 120 --json "<question>"` | `claude-fable-5-1` | not re-run on 5.1 (2026-09-23 on `claude-fable-5`) | 21.4 | Canonical read-only FABLE ask with receipt; scale `--timeout` to the work. |
 | Composer | `cursor-agent --trust --model composer-2.5 -p "<prompt>"` | `composer-2.5` via Cursor | 2026-09-23 | 37.5 | Same binary as Cursor. |
@@ -118,16 +118,17 @@ Smoke: `reply with the word OK`, run from `$HOME`, 120s cap, one at a time on a 
 
 Headless dispatch permissions (verified 2026-08-11): `codex exec`, `grok`, and `cursor-agent` are allowlisted in `~/.claude/settings.json` so fresh and one-shot sessions can dispatch without a human approval click. A cold session that gets "requires approval" on an engine command means that allowlist regressed.
 
-## Picking an engine
+## Picking an engine (West Coast 4-role default)
 
-- **Cheap bounded errands**: Devin `swe-2-max` while its Free tag holds (check `devin models list`).
-- **Multi-file or long build**: Use the project's build pick. If there is no pick, use the router's choice.
-- **Judgment-heavy build**: Opus 5.5 subagent (Claude row).
-- **Review / deep judgment**: FABLE profile; Codex `gpt-6-sol` or Opus 5.5 as second validator.
-- **Quick fix**: Cursor.
-- **Search / bounded lookup**: Atris Fast; Haiku or Devin `swe-1.7-lightning` for read-only sweeps; Grok for quick second opinions.
-- **agy / opencode**: extra executors when you want a different model family.
-- Parallel builds across repos: one engine job per repo, never two engines writing the same checkout.
+Model weights and thinking effort are separate axes (full playbook: `atris/skills/west-coast-build/SKILL.md`). Default routine execution to `low` effort; escalate only on genuine uncertainty or after two repeated test misses (`/audible`).
+
+- **Coordinator (session model):** Everyday strategy, boundaries, spec packets, bare grading, and clean landings.
+- **Deep Thinker (`fable 5.2` / `gpt-6.2-astra` at `high`, `gpt-6.2-sol` at `xhigh`):** Strictly for unbounded architecture decisions or one-turn read-only `/audible` diagnosis after two misses (`prep: search`). Never routine coding loops.
+- **Everyday Worker (`opus 5.5` at `low` default, `medium` for review):** Default straight-shot builder for real design, multi-file wiring, integration tests, and deeper edge-case suites.
+- **Sprinter (`gpt-6.1-terra` or `haiku 5.5` at `low`):** Default for fast read-only scouts, auto spec-prep (`lib/roster-prep.js` -> `lib/spec-packet.js`), strict JSON triage, and crisp locked-down slices.
+- **Cross-vendor double team:** Run `gpt-6.1-terra low` + `opus 5.5 low` in parallel ONLY on permanent foundational or security-critical bricks, grade bare outside sandboxes, keep the tightest code + deepest tests.
+- **Cheap bounded errands:** Devin `swe-2-max` while its Free tag holds (check `devin models list`).
+- **Parallel builds across repos:** One engine job per repo/worktree; never two engines writing the same checkout.
 
 ## Models worth pinning (verified live 2026-09-23)
 

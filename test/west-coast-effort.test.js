@@ -67,11 +67,21 @@ test('buildMysteryBugDiagnosticPrompt enforces read-only root-cause protocol', (
 });
 
 test('resolveDiagnosticWorker reads the repo diagnose Deep Thinker lane from atris/ROSTER.md', () => {
-  const root = path.resolve(__dirname, '..');
-  const worker = resolveDiagnosticWorker(root);
-  assert.ok(worker);
-  assert.ok(['diagnose', 'hard problem', 'review'].includes(worker.job));
-  assert.ok(worker.engine);
+  // A temp room with the repo's own roster and its engines marked ready, so the
+  // answer does not depend on which engines this machine has installed.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-wc-diag-'));
+  try {
+    fs.mkdirSync(path.join(root, 'atris'));
+    fs.copyFileSync(path.resolve(__dirname, '..', 'atris', 'ROSTER.md'), path.join(root, 'atris', 'ROSTER.md'));
+    readEngineRegistry(root);
+    for (const name of ['claude', 'codex']) setEngineHealth(name, 'ready', root);
+    const worker = resolveDiagnosticWorker(root);
+    assert.ok(worker);
+    assert.equal(worker.job, 'diagnose');
+    assert.ok(worker.engine);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('dispatch-scout and code-review triage default to effort low for strict JSON', async () => {

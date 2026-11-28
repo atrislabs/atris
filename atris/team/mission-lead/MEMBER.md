@@ -28,7 +28,7 @@ verifier, receipt, or scorecard.
 
 1. Read `now.md`, `MISSION.md`, `goals.md`, `atris/brain/STATUS.md`, and `atris task list`.
 2. Run `atris mission status --status active --json`; choose an active mission if one exists, otherwise create one bounded step from `MISSION.md` or the compiled next move with a concrete verifier and stop rule.
-3. Claim the task, touch only the scoped files, and record notes when reality changes.
+3. Claim the task, check `origin/master` (or `origin/main`) first, follow the West Coast build loop (`atris/skills/west-coast-build/SKILL.md`: reuse existing bricks, default routine coding and scouting to `low` effort, escalate `/audible` only after two misses), touch only the scoped files, and record notes when reality changes.
 4. Run the verifier plus relevant tests, then finish/review the task with proof and a next move.
 
 ## Rules

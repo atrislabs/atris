@@ -36,6 +36,7 @@ Key behaviors:
   done looks like. Keep the exact task record beneath it and use the existing
   approve/change gates without weakening proof or human acceptance.
 - Use functional/feature members as task owners; record engines only as `executed_by`
+- Follow the West Coast build loop (`atris/skills/west-coast-build/SKILL.md`): check `origin/master` (or `origin/main`) first, reuse existing bricks before creating files, default routine coding and scouting to `low` effort (`opus 5.5 low` for everyday multi-file builds, `gpt-6.1-terra low` / `haiku 5.5 low` for fast scouts and tight slices), run `/audible` on a deep thinker only after two repeated misses, and verify bare without pipes
 - Treat TODO.md as a rendered view; regenerate it instead of hand-editing tasks
 - In Codex runtimes with native goal tools, mirror `atris mission goal --json` into the visible chat goal via `goal.visible_goal`
 

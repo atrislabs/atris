@@ -170,6 +170,9 @@ const COMMANDS = {
           data.mixed = true;
         }
       }
+      if (!ctx.flags['--all-files'] && !(folder && /(^|\|)logs(\/|$)/i.test(folder))) {
+        data.hits = live.deprioritizeLogs(data.hits);
+      }
       return { data: { query, folder, ...data }, lines: live.searchLines(query, data) };
     },
   },
@@ -298,10 +301,21 @@ const COMMANDS = {
     check(ctx) {
       const agent = needAgent(ctx);
       const text = ctx.words.join(' ').replace(/\s+/g, ' ').trim();
-      if (!text) throw new UsageError('say what you did, like atris memory log "drafted the lease email" --as codex');
-      return { text, agent };
+      const retract = Boolean(ctx.flags['--retract']);
+      const day = ctx.flags['--day'];
+      if (day && !retract) throw new UsageError('--day goes with --retract');
+      if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new UsageError('--day must be YYYY-MM-DD, like 2026-11-28');
+      if (!text) throw new UsageError(retract ? 'say which line to retract, like atris memory log --retract "drafted the lease email" --as codex' : 'say what you did, like atris memory log "drafted the lease email" --as codex');
+      return { text, agent, ...(day ? { day } : {}) };
     },
     async run(ctx, body) {
+      if (ctx.flags['--retract']) {
+        const data = await ctx.call('/memory/log/retract', { method: 'POST', body, retries: 0 });
+        const line = data.removed
+          ? `Retracted from ${data.path}: ${String(data.line || body.text).replace(/^- /, '')}`
+          : `No matching line in ${data.path || 'your notebook'}.`;
+        return { data, lines: [line] };
+      }
       const data = await ctx.call('/memory/log', { method: 'POST', body, retries: 0 });
       return { data, lines: [`Logged in ${data.path}: ${String(data.line || body.text).replace(/^- /, '')}`] };
     },

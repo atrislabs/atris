@@ -488,7 +488,7 @@ test('ax keeps chat context and file-operation proof readable', () => {
     bypass_permissions: false,
     streaming: true,
     runtime: 'authenticated cloud connectors/chat',
-    reasoning: 'Atris cloud service; Pro workspace tool loop uses API default medium'
+    reasoning: 'Atris cloud service; Pro workspace tool loop defaults to low reasoning effort (/audible for 1-turn high)'
   });
   assert.match(ax.formatRunProfile(ax.buildRunProfile({ mode: 'pro', cwd: '/workspace/demo' })), /thinking\s+Atris cloud service/);
   assert.equal(

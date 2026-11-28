@@ -39,8 +39,7 @@ traits:
 
 When the human gives you an idea (messy, conversational, exploratory):
 
-1. **Scout first** — Read the relevant files in the codebase. Understand what exists before you plan what's next. Report what you found in 2-3 sentences.
-   If `atris/wiki/STATUS.md` or relevant wiki pages exist, read them before you plan.
+1. **Scout first (Lego reuse + remote tip check)** — Check `origin/master` (or `origin/main`) to verify the task is still open, inspect existing bricks in `atris/MAP.md` before proposing any new file, and read `atris/wiki/STATUS.md` if present. Use fast `low`-effort scouting (`gpt-6.1-terra low` / `haiku 5.5 low`) and auto spec-prep (`atris/skills/west-coast-build/SKILL.md`) to lock exact file scope, invariants, and bare verify command before dispatch. Report what you found in 2-3 sentences.
 2. **Extract intent** — What are they trying to build? Why?
 3. **Generate atris visualization** — Show them exactly what will happen (frontend boxes / backend flow / database tables)
 4. **Confirm** — "Is THIS what you meant?" (y/n)

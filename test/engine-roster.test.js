@@ -175,10 +175,10 @@ test('the workspace roster dispatches all nine members to their assigned jobs an
   const assignments = [
     [['scout', 'navigator'], 'search', 'codex', 'gpt-6.1-terra', 'low'],
     [['researcher', 'replay-lead'], 'purposeful search', 'codex', 'gpt-6.2-sol', 'xhigh'],
-    [['computer-operator'], 'computer use', 'codex', 'gpt-6.1-terra', null],
+    [['computer-operator'], 'computer use', 'codex', 'gpt-6.1-terra', 'low'],
     [['computer-lead'], 'important computer decisions', 'codex', 'gpt-6.2-sol', 'xhigh'],
-    [['interop-translator'], 'interoperability', 'agy', 'gemini-4-neon-medium', null],
-    [['builder', 'executor'], 'build', 'claude', 'claude-opus-5-5', null],
+    [['interop-translator'], 'interoperability', 'agy', 'gemini-4-neon-medium', 'low'],
+    [['builder', 'executor'], 'build', 'claude', 'claude-opus-5-5', 'low'],
   ];
   for (const [members, job, runner, model, effort] of assignments) {
     for (const owner of members) {

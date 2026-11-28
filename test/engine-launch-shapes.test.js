@@ -178,7 +178,8 @@ test('every launch in the engines skill reads back', () => {
     const command = shape
       .replace(/"<(?:prompt|question)>"/g, `"${PROMPT}"`)
       .replace(/<result-file>/g, path.join(dir, 'result.md'))
-      .replace(/<brief>/g, promptFile);
+      .replace(/<brief>/g, promptFile)
+      .replace(/<worktree>/g, dir);
     const argv = shellArgv(command);
     const run = parseEngineProcess({ pid: 1, ppid: 0, elapsed_seconds: 5, command: psLine(argv) });
     assert.ok(run, `${name}: not read as a run\n${psLine(argv)}`);
