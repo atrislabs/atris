@@ -9286,6 +9286,7 @@ async function parseAndValidateMissionRunPhase(args) {
   const refereeEngine = readFlag(args, '--referee-engine', '');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
   const skipDrain = hasFlag(args, '--no-drain');
+  const skipAudible = hasFlag(args, '--no-audible');
   const createNext = hasFlag(args, '--create-next');
   const budgetTier = readMissionBudgetTier(args, { json: asJson });
   const maxTicksFlag = readFlag(args, '--max-ticks', '');
@@ -9324,6 +9325,7 @@ async function parseAndValidateMissionRunPhase(args) {
     refereeEngine,
     completeOnPass,
     skipDrain,
+    skipAudible,
     createNext,
     budgetTier,
     maxTicksFlag,
@@ -9503,6 +9505,7 @@ async function executeMissionRunTicksPhase(context) {
       verifyEach,
       completeOnPass,
       skipDrain,
+      skipAudible,
       maxTicksFlag,
       budgetTier,
       cadenceOverride,
@@ -10236,7 +10239,7 @@ async function executeMissionRunTicksPhase(context) {
       if (consecutiveVerifierFails(ticks) >= 2) {
         // Two misses in a row: one read-only diagnostic turn before the halt,
         // saved as feedback so the next attempt starts from the diagnosis.
-        if (!mission.audible_diagnosed_at && !hasFlag(args, '--no-audible') && process.env.ATRIS_MISSION_AUDIBLE !== '0') {
+        if (!mission.audible_diagnosed_at && !skipAudible && process.env.ATRIS_MISSION_AUDIBLE !== '0') {
           try {
             const audible = await runMissionAudible(cwd, { mission, verifierResult });
             if (audible && audible.ok && audible.diagnosis) {
