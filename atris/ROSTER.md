@@ -21,8 +21,9 @@
 - codex, model: gpt-6.2-sol, effort: xhigh
 
 ## diagnose (like review)
+- claude code, model: fable 5.2, effort: high, max: 20 min, prep: search
+- codex, model: gpt-6.2-astra, effort: high, max: 20 min, prep: search
 - codex, model: gpt-6.2-sol, effort: xhigh, max: 20 min, prep: search
-- claude code, model: opus 5.5, effort: high, max: 20 min, prep: search
 
 ## interoperability (like build)
 - agy, model: gemini-4-neon-medium
