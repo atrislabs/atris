@@ -9,6 +9,7 @@ const { spawnSync } = require('child_process');
 const { runEngineAskJobs } = require('../lib/engine-ask');
 const { runGit } = require('../lib/git-spawn');
 const { canonicalEngineName } = require('../lib/engine-registry');
+const { engineEffortLevels } = require('../lib/runner-command');
 const { defaultClaudeModel } = require('../lib/claude-spend-guard');
 const { defaultBranch } = require('../lib/zen');
 const wall = require('../lib/wall-of-shame');
@@ -195,7 +196,9 @@ async function reviewLenses(lenses, { root, diffPath, numstat, opts, executeAskJ
 
   const triageThenReview = async () => {
     if (!triaged.length) return;
-    const [answer] = await ask([{ engine: opts.engine || 'haiku', model: '', context: 'light', label: 'triage', prompt: triagePrompt(triaged, diffPath) }]);
+    const triageEngine = opts.engine || 'haiku';
+    const triageEffort = engineEffortLevels(triageEngine).includes('low') ? 'low' : '';
+    const [answer] = await ask([{ engine: triageEngine, model: '', ...(triageEffort ? { effort: triageEffort } : {}), context: 'light', label: 'triage', prompt: triagePrompt(triaged, diffPath) }]);
     const skip = answer.ok ? wall.parseTriage(answer.stdout, triaged.map((lens) => lens.name)) : null;
     if (!skip) note = `triage gave no usable answer (${answer.ok ? 'no lens list' : answer.reason}: ${lastLine(answer.stderr || answer.stdout)}), so every lens was reviewed.`;
     for (const [name, reason] of skip || []) rows.set(name, { lens: name, reviewer: whoAnswered(answer), verdict: 'not relevant', assessment: reason });

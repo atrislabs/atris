@@ -8,29 +8,33 @@
 
 ## search
 - codex, model: gpt-6.1-terra, effort: low
-- claude code, model: haiku 5.5
+- claude code, model: haiku 5.5, effort: low
 
 ## purposeful search (like search)
 - codex, model: gpt-6.2-sol, effort: xhigh
 
 ## computer use (like build)
-- codex, model: gpt-6.1-terra, max: 45 min
+- codex, model: gpt-6.1-terra, effort: low, max: 45 min
 - devin, model: swe-2-medium
 
 ## important computer decisions (like review)
 - codex, model: gpt-6.2-sol, effort: xhigh
 
+## diagnose (like review)
+- codex, model: gpt-6.2-sol, effort: xhigh, max: 20 min, prep: search
+- claude code, model: opus 5.5, effort: high, max: 20 min, prep: search
+
 ## interoperability (like build)
 - agy, model: gemini-4-neon-medium
 
 ## build
-- claude code, model: opus 5.5, max: 45 min
-- codex, model: gpt-6.1-terra, max: 45 min
-- claude code, model: sonnet 5.5, max: 45 min
+- claude code, model: opus 5.5, effort: low, max: 45 min
+- codex, model: gpt-6.1-terra, effort: low, max: 45 min
+- claude code, model: sonnet 5.5, effort: low, max: 45 min
 
 ## small build
-- claude code, model: opus 5.5, max: 20 min
-- grok, model: grok 4.7 fast, max: 20 min
+- claude code, model: opus 5.5, effort: low, max: 20 min
+- grok, model: grok 4.7 fast, effort: low, max: 20 min
 
 ## team
 - scout: search

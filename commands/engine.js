@@ -1465,9 +1465,18 @@ function attachRunRecords(report, root, now = new Date()) {
   const runs = readRosterRuns(root, { now, days: RUN_DAYS });
   if (!runs.length) return report;
   for (const row of report.jobs || []) {
-    for (const worker of row.workers || []) {
+    const workers = row.workers || [];
+    for (const worker of workers) {
       if (!worker.engine) continue;
-      const record = summarizeRuns(workerRuns(runs, { job: row.key || row.job, engine: worker.engine, model: worker.model || '' }), { days: RUN_DAYS });
+      const hasEffortSibling = workers.some((other) => other !== worker && other.engine === worker.engine
+        && String(other.model || '').toLowerCase() === String(worker.model || '').toLowerCase()
+        && String(other.effort || '').toLowerCase() !== String(worker.effort || '').toLowerCase());
+      const record = summarizeRuns(workerRuns(runs, {
+        job: row.key || row.job,
+        engine: worker.engine,
+        model: worker.model || '',
+        ...(hasEffortSibling ? { effort: worker.effort || '' } : {}),
+      }), { days: RUN_DAYS });
       if (record) worker.record = record;
     }
   }

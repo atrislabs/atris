@@ -57,7 +57,7 @@ function showHelp(log = console.log) {
   log('  atris swarm up <23 min | 1 hr>       run a timed swarm loop (auto-staffs if none active; member names go to fleet up)');
   log('    [--mission] [--exec "<cmd>"] [--verify "<cmd>"] [--dispatch] [--parallel N] [--in-place]');
   log('    [--stop-on-empty] [--watch-only] [--every 10m] [--max-cycles N] [--max-ticks 4] [--max-repeat-errors 2]');
-  log('    [--once] [--apply-dream] [--no-apply-dream] [--no-dream]');
+  log('    [--diagnose] [--recover] [--once] [--apply-dream] [--no-apply-dream] [--no-dream]');
   log('  atris swarm                          show active swarm, frozen modules, and hub health');
   log('  atris swarm start "<goal>"           explicitly register lead + N workers and post the lead brief');
   log('    [--lead coordinator] [--workers 2] [--team a,b] [--role builder]');
@@ -226,6 +226,8 @@ async function swarmCommand(args = [], options = {}) {
       watchOnly: Boolean(flags['watch-only']),
       stopOnEmpty: flags['no-stop-on-empty'] ? false : (flags['stop-on-empty'] ? true : undefined),
       maxRepeatErrors: flags['max-repeat-errors'] ? Number(flags['max-repeat-errors']) : undefined,
+      diagnose: Boolean(flags.diagnose || flags.recover),
+      recover: Boolean(flags.recover),
       expire: flags['no-expire'] ? false : true,
       reallocate: flags['no-reallocate'] ? false : true,
     };
@@ -579,6 +581,8 @@ async function swarmCommand(args = [], options = {}) {
     watchOnly: Boolean(flags['watch-only']),
     stopOnEmpty: flags['no-stop-on-empty'] ? false : (flags['stop-on-empty'] ? true : undefined),
     maxRepeatErrors: flags['max-repeat-errors'] ? Number(flags['max-repeat-errors']) : undefined,
+    diagnose: Boolean(flags.diagnose || flags.recover),
+    recover: Boolean(flags.recover),
     expire: flags['no-expire'] ? false : true,
     reallocate: flags['no-reallocate'] ? false : true,
     dream: flags['no-dream'] ? false : true,
