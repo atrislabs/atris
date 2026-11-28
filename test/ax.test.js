@@ -2054,3 +2054,66 @@ test('mercury CLI flags send the model and diffuse, piped text prints once', asy
     await closeServer(server);
   }
 });
+
+test('ax West Coast default: max and pro lanes default to low effort', () => {
+  assert.equal(ax.defaultReasoningEffortForMode('max'), 'low');
+  assert.equal(ax.defaultReasoningEffortForMode('pro'), 'low');
+  assert.equal(ax.defaultReasoningEffortForMode('fast'), null);
+  assert.equal(ax.defaultReasoningEffortForMode('rapid'), null);
+  assert.equal(ax.buildPayload('fix bug', { mode: 'max' }).reasoning_effort, 'low');
+  assert.equal(ax.buildPayload('fix bug', { mode: 'pro' }).reasoning_effort, 'low');
+  assert.equal(ax.buildPayload('fix bug', { mode: 'max', reasoningEffort: 'high' }).reasoning_effort, 'high');
+  assert.equal(ax.buildPayload('fix bug', { mode: 'max', reasoningEffort: null }).reasoning_effort, undefined);
+  assert.equal(ax.buildPayload('fix bug', { mode: 'rapid' }).reasoning_effort, undefined);
+});
+
+test('ax /audible slash builds a one-turn read-only diagnosis', () => {
+  const usage = ax.runChatSlash('/audible', { color: false });
+  assert.equal(usage.type, 'audible');
+  assert.match(usage.output, /usage: \/audible/);
+  assert.ok(!usage.runTurn);
+
+  const high = ax.runChatSlash('/audible flaky lock race', { mode: 'max', color: false });
+  assert.equal(high.type, 'audible');
+  assert.equal(high.runTurn, true);
+  assert.equal(high.audibleEffort, 'high');
+  assert.equal(high.planMode, true);
+  assert.match(high.prompt, /Do NOT write code or patch symptoms yet\./);
+  assert.match(high.prompt, /flaky lock race/);
+
+  const xhigh = ax.runChatSlash('/audible xhigh deadlock in queue', { mode: 'max', color: false });
+  assert.equal(xhigh.audibleEffort, 'xhigh');
+  assert.match(xhigh.prompt, /deadlock in queue/);
+});
+
+test('ax chat /audible runs one high read-only turn then snaps back to low', async () => {
+  const previousAuto = process.env.AX_AUTO_LOG;
+  process.env.AX_AUTO_LOG = '0';
+  const calls = [];
+  const output = { isTTY: false, write() { return true; } };
+  try {
+    await ax.chat({
+      mode: 'max',
+      cwd: NON_WORKSPACE_CWD,
+      input: Readable.from(['fix button copy\n', '/audible flaky cache race\n', 'apply the fix\n', 'exit\n']),
+      output,
+      runtimeHealth: async () => ({ backend: { ready: true, reachable: true }, fast: { ready: true }, permissions: { ready: true } }),
+      turnFunction: async (message, options) => {
+        calls.push({ message, reasoningEffort: options.reasoningEffort, planMode: options.planMode });
+        return { output: 'ok', durationMs: 1, events: [] };
+      },
+    });
+  } finally {
+    if (previousAuto === undefined) delete process.env.AX_AUTO_LOG;
+    else process.env.AX_AUTO_LOG = previousAuto;
+  }
+  assert.equal(calls.length, 3);
+  assert.equal(calls[0].reasoningEffort, 'low');
+  assert.equal(calls[0].planMode, false);
+  assert.equal(calls[1].reasoningEffort, 'high');
+  assert.equal(calls[1].planMode, true);
+  assert.match(calls[1].message, /Do NOT write code or patch symptoms yet\./);
+  assert.match(calls[1].message, /flaky cache race/);
+  assert.equal(calls[2].reasoningEffort, 'low');
+  assert.equal(calls[2].planMode, false);
+});

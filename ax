@@ -21,6 +21,7 @@ const axContext = require('./lib/ax-context');
 const axExt = require('./lib/ax-ext');
 const { runWriter1, buildSwapHandoff, createFlowSession, runFlowTurn } = require('./lib/writer-1');
 const axCommands = require('./lib/ax-commands');
+const { buildMysteryBugDiagnosticPrompt } = require('./lib/effort-router');
 
 const EXIT_WORDS = new Set(['exit', 'quit', ':q']);
 const BACKEND = {
@@ -462,9 +463,9 @@ function buildRunProfile(options = {}) {
   const route = resolveRoute(options.message || 'doctor', options);
   const payload = buildPayload(options.message || 'doctor', { mode, cwd, route });
   const reasoningByMode = mode === 'max'
-    ? 'Max workspace tool loop uses high reasoning effort'
+    ? 'Max workspace tool loop defaults to low reasoning effort (/audible for 1-turn high)'
     : mode === 'pro'
-      ? 'Pro workspace tool loop uses API default medium'
+      ? 'Pro workspace tool loop defaults to low reasoning effort (/audible for 1-turn high)'
       : mode === 'rapid'
         ? 'Rapid workspace tool loop uses thinking off'
         : 'Fast workspace tool loop uses provider default';
@@ -1086,6 +1087,11 @@ function resolveRoute(message, options = {}) {
   return 'cloud';
 }
 
+function defaultReasoningEffortForMode(mode) {
+  const normalized = normalizeMode(mode);
+  return normalized === 'max' || normalized === 'pro' ? 'low' : null;
+}
+
 function normalizeMode(mode) {
   if (String(mode || '').startsWith('model:')) return mode;
   if (mode === 'flow' || mode === 'cowrite' || mode === 'co-write') return 'flow';
@@ -1287,6 +1293,7 @@ const CHAT_COMMANDS = Object.freeze([
   { name: '/rapid', description: 'switch to the cheapest chat lane', type: 'tier', mode: 'rapid' },
   { name: '/alpha', description: 'switch to the experimental preview lane', type: 'tier', mode: 'alpha' },
   { name: '/effort', description: 'set reasoning effort (none → xhigh)', type: 'effort' },
+  { name: '/audible', description: 'run one read-only high-effort diagnostic turn then return to low', type: 'audible' },
   { name: '/new', description: 'start a new conversation', type: 'clear' },
   { name: '/clear', description: 'reset the current conversation', type: 'clear' },
   { name: '/compact', description: 'compact conversation history to free context', type: 'compact' },
@@ -1464,6 +1471,26 @@ function runChatSlash(line, options = {}) {
         '  pick: /effort none | low | medium | high | xhigh | default',
         ...REASONING_EFFORTS.map((level, index) => `  ${index + 1} ${level}`),
       ].join('\n'),
+    };
+  }
+  if (command.type === 'audible') {
+    if (!parsed.arg) {
+      return { type: 'audible', output: '· usage: /audible [xhigh] <mystery bug or hard question>' };
+    }
+    const xhighMatch = parsed.arg.match(/^xhigh\s+(.+)$/i);
+    const audibleEffort = xhighMatch ? 'xhigh' : 'high';
+    const question = xhighMatch ? xhighMatch[1].trim() : parsed.arg;
+    const prompt = buildMysteryBugDiagnosticPrompt({ task: question });
+    const returnEffort = options.reasoningEffort !== undefined
+      ? options.reasoningEffort
+      : defaultReasoningEffortForMode(mode);
+    return {
+      type: 'audible',
+      runTurn: true,
+      audibleEffort,
+      planMode: true,
+      prompt,
+      output: `· audible: 1 read-only ${audibleEffort} turn (returns to ${formatReasoningEffortLabel(returnEffort)} next)`,
     };
   }
   if (command.type === 'status') {
@@ -3295,8 +3322,11 @@ function buildPayload(message, options = {}) {
   if (turnId) {
     payload.turn_id = turnId;
   }
-  if (options.reasoningEffort) {
-    payload.reasoning_effort = String(options.reasoningEffort);
+  const effectiveEffort = options.reasoningEffort !== undefined
+    ? options.reasoningEffort
+    : defaultReasoningEffortForMode(mode);
+  if (effectiveEffort) {
+    payload.reasoning_effort = String(effectiveEffort);
   }
   const connectorPolicy = !local ? connectorTurnPolicy(message, { ...options, turnId }) : null;
   if (connectorPolicy) {
@@ -4278,7 +4308,10 @@ async function chat(options = {}) {
   const session = {
     approveMode: options.autoApprove || options.approveMode === 'auto' ? 'auto' : 'stage',
     planMode: Boolean(options.planMode),
-    reasoningEffort: options.reasoningEffort || null,
+    reasoningEffort: options.reasoningEffort !== undefined
+      ? options.reasoningEffort
+      : defaultReasoningEffortForMode(mode),
+    effortPinned: options.reasoningEffort !== undefined && options.reasoningEffort !== null,
   };
   let turnInFlight = false;
   let activeTurnController = null;
@@ -4351,14 +4384,22 @@ async function chat(options = {}) {
       isTTY: output.isTTY,
     });
     let effectiveInput = trimmed;
+    let turnEffortOverride = null;
+    let turnPlanModeOverride = null;
     if (slash && slash.type === 'custom') {
       output.write(`${paint(slash.output, [ANSI.muted], output)}\n`);
       effectiveInput = slash.prompt;
+    } else if (slash && slash.type === 'audible' && slash.runTurn) {
+      output.write(`${paint(slash.output, [ANSI.muted], output)}\n`);
+      effectiveInput = slash.prompt;
+      turnEffortOverride = slash.audibleEffort;
+      turnPlanModeOverride = true;
     } else if (slash) {
       if (slash.type === 'exit') return true;
       if (slash.mode) {
         const previousMode = mode;
         mode = slash.mode;
+        if (!session.effortPinned) session.reasoningEffort = defaultReasoningEffortForMode(slash.mode);
         if (previousMode !== slash.mode && history.length > 0) {
           const handoff = buildSwapHandoff(history, previousMode, slash.mode);
           if (handoff) {
@@ -4372,6 +4413,7 @@ async function chat(options = {}) {
       if (typeof slash.planMode === 'boolean') session.planMode = slash.planMode;
       if (Object.prototype.hasOwnProperty.call(slash, 'reasoningEffort')) {
         session.reasoningEffort = slash.reasoningEffort;
+        session.effortPinned = slash.reasoningEffort !== null;
       }
       if (slash.type === 'compact' && slash.compacted && slash.compacted.compactedTurns) {
         history.length = 0;
@@ -4553,9 +4595,9 @@ async function chat(options = {}) {
         route,
         business: options.business,
         verify: options.verify,
-        reasoningEffort: session.reasoningEffort,
+        reasoningEffort: turnEffortOverride || session.reasoningEffort,
         diffuse: options.diffuse,
-        planMode: session.planMode,
+        planMode: turnPlanModeOverride !== null ? turnPlanModeOverride : session.planMode,
         approveMode: session.approveMode,
         maxTurns: options.maxTurns,
         allowedTools: options.allowedTools,
@@ -6001,6 +6043,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  defaultReasoningEffortForMode,
   appendAutoOutcome,
   appendAutoPick,
   autoLaneForMessage,
