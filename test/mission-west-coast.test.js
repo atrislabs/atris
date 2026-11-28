@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 const REPO = path.resolve(__dirname, '..');
 const CLI = path.join(REPO, 'bin', 'atris.js');
 const { defaultMissionEffort, resolveMissionTickRunner, runMissionAudible } = require('../lib/mission-core');
+const { readEngineRegistry, setEngineHealth } = require('../lib/engine-registry');
 
 function tempRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-wc-'));
@@ -41,7 +42,14 @@ test('runMissionAudible asks the diagnose worker with a read-only prompt', async
     calls.push(jobs);
     return [{ ok: true, stdout: 'Root cause: missing await in save.' }];
   };
-  const out = await runMissionAudible(REPO, {
+  // The repo's roster in a temp room with its engines marked ready, so the
+  // worker does not depend on which engines this machine has installed.
+  const root = tempRoot();
+  fs.mkdirSync(path.join(root, 'atris'));
+  fs.copyFileSync(path.join(REPO, 'atris', 'ROSTER.md'), path.join(root, 'atris', 'ROSTER.md'));
+  readEngineRegistry(root);
+  for (const name of ['claude', 'codex']) setEngineHealth(name, 'ready', root);
+  const out = await runMissionAudible(root, {
     mission: { id: 'm3', objective: 'Make the save test pass' },
     verifierResult: { passed: false, stderr: 'AssertionError: expected saved', stdout: '' },
     ask,

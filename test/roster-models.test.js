@@ -357,7 +357,7 @@ test('with no roster, autopilot, plan review, dispatch, and missions launch exac
   });
   assert.match(fleet.buildEngineCommand('codex', '/tmp/p.md'), /--max-runtime 3600 /);
   const mission = resolveMissionTickRunner({ runner: 'auto' }, root, { now: NOW }).mission;
-  assert.equal(mission.roster_effort, undefined);
+  assert.equal(mission.roster_effort, 'low');
   assert.equal(mission.roster_max_seconds, undefined);
   assert.equal(fs.existsSync(path.join(root, 'atris', 'ROSTER.md')), false);
 }));
