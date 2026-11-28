@@ -27,6 +27,7 @@ every one of these files; `atris doc-health --fix-refs` pins old line refs.
 | agent next steps while approval waits | `lib/agent-next.js`, `commands/next.js`, `commands/now.js`, `commands/task.js`, `lib/member-context.js` | read-only owner-aware plan, claim, continue or review advice; human approval stays separate; all active candidates precede bounded output |
 | current evidence for the next work decision | `lib/next-work-context.js`, `lib/first-minute.js`, `lib/member-context.js`, `commands/task.js` | `task next --json` and autonomous prompts share goals, existing paths, candidates, prior outcomes, lessons and evidence gaps |
 | atris done command | `commands/done.js` | land what a coding agent built: check, accept, sign |
+| review proof command parsing | `commands/task/review-evidence/review-evidence.js`, `test/task-review-evidence.test.js`, `test/commands-5.test.js` | direct proof parsing cases and real CLI checks for the review handoff |
 | working values | `atris.md`, `lib/values.js`, `lib/opening-lines.js` | the four values (acceleration, accuracy, ambition, agency) shown at boot |
 | boot files an agent starts with | `commands/init.js`, `scripts/member-lab.js`, `scripts/boot-tokens.js`, `scripts/boot-usage.js` | lean agent instructions, member benchmark lab, and boot token measurements |
 | workspace protocol and voice | `atris/atris.md`, `atris/PERSONA.md`, `atris/skills/atris/SKILL.md` | operating protocol, communication style, and workspace skill |
