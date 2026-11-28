@@ -770,6 +770,7 @@ function showHelpAll() {
   console.log('  night      - Give your agent a goal for tonight with a dollar cap (atris night "<goal>" --cap 1)');
   console.log('  morning    - How last night went: score, what it learned (saved to your atris/ folder), spend');
   console.log('  town       - Walk the Atris town from here: look, go, map, who, night, grow (atris town --help)');
+  console.log("  sandbox    - Open a lot in town that any agent can add to, or add to someone else's");
   console.log('  element    - Headless single-focus swarm feed: next, yes, no, pass, talk, say, more (atris element --help)');
   console.log('  join       - Join a computer as a named agent (--name), or accept an invite (<code>)');
   console.log('  receipt    - Save evidence from an agent run');
@@ -2595,6 +2596,10 @@ if (command === 'guide') {
   Promise.resolve().then(() => require('../commands/balance').balanceCommand(process.argv.slice(3)))
     .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'sandbox') {
+  Promise.resolve().then(() => require('../commands/sandbox').sandboxCommand(process.argv.slice(3)))
+    .then((code) => { process.exitCode = code; })
+    .catch((err) => { console.error(err.message); process.exitCode = 1; });
 } else if (command === 'town') {
   // Play the town from a terminal: look, go, map, who, night, grow, streets.
   Promise.resolve().then(() => require('../commands/town').townCommand(process.argv.slice(3)))
