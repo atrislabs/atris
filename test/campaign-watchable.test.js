@@ -227,10 +227,10 @@ test('run can use a chosen engine like agy or fable', async () => {
   const plan = own.store.read('cmp-own').find((event) => event.type === 'step' && event.data.kind === 'plan');
   assert.equal(plan.data.engine, 'fake');
 
-  assert.deepEqual(chosenRunner('codex gpt-6.1-sol'), { runner: 'codex', model: 'gpt-6.1-sol' });
-  assert.deepEqual(chosenRunner('auto'), { runner: 'auto', model: '' });
+  assert.deepEqual(chosenRunner('codex gpt-6.1-sol'), { runner: 'codex', model: 'gpt-6.1-sol', effort: '' });
+  assert.deepEqual(chosenRunner('auto'), { runner: 'auto', model: '', effort: '' });
   // A name nobody knows goes through as written, so the mission start refuses it by name.
-  assert.deepEqual(chosenRunner('no-such-engine'), { runner: 'no-such-engine', model: '' });
+  assert.deepEqual(chosenRunner('no-such-engine'), { runner: 'no-such-engine', model: '', effort: '' });
 });
 
 // ------------------------------------------------- the campaign's feed card
