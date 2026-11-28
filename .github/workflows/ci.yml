@@ -40,7 +40,18 @@ jobs:
           git check-ref-format "$TARGET_REF"
           git fetch --no-tags --depth=32 origin "+$TARGET_REF:refs/remotes/origin/${TARGET_REF#refs/heads/}"
 
+      - name: Check preinstalled Node
+        id: node
+        run: |
+          if command -v node >/dev/null 2>&1; then
+            node --version
+            if [ "$(node -p 'process.versions.node.split(".")[0]')" = 24 ]; then
+              echo 'ready=true' >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
       - uses: actions/setup-node@v6
+        if: steps.node.outputs.ready != 'true'
         with:
           node-version: '24'
           package-manager-cache: false
@@ -64,12 +75,21 @@ jobs:
         with:
           fetch-depth: 2
 
+      - name: Check preinstalled Node
+        id: node
+        run: |
+          if command -v node >/dev/null 2>&1; then
+            node --version
+            if [ "$(node -p 'process.versions.node.split(".")[0]')" = 24 ]; then
+              echo 'ready=true' >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
       - uses: actions/setup-node@v6
+        if: steps.node.outputs.ready != 'true'
         with:
           node-version: '24'
           package-manager-cache: false
-
-      - run: npm ci
 
       - name: Run selected tests
         env:
@@ -80,7 +100,12 @@ jobs:
         run: |
           case "$MODE" in
             selected) node -e 'process.exitCode = require("./scripts/ci-impact-check").runFiles(JSON.parse(process.env.FILES), process.cwd())' ;;
-            quick) node scripts/ci-quick-check.js "$BASE" "$GROUP" ;;
+            quick)
+              if [ -z "${NODE_V8_COVERAGE:-}" ] && [ -z "${NODE_COMPILE_CACHE:-}" ]; then
+                export NODE_COMPILE_CACHE="$RUNNER_TEMP/atris-node-compile-cache"
+              fi
+              node scripts/ci-quick-check.js "$BASE" "$GROUP"
+              ;;
             full) ATRIS_TEST_SPLIT=1 node scripts/ci-test-shard.js "$GROUP" ;;
             *) exit 1 ;;
           esac

@@ -36,6 +36,8 @@ The phone checks for words kept after a failed send, replies that keep the card'
 
 The workspace-free help sweep in `test/commands-7.test.js` runs two CLI processes at a time. Every invocation has its own home and working folder and still checks the exit code, output and absence of local state.
 
+Quick pull request checks reuse Node's compiled code within each runner's temporary folder. The workflow does not enable the cache for coverage runs or the selected and full test groups.
+
 ## Feature: Release (`atris release`)
 
 **Purpose:** Tag a release, bump version, create GitHub release, draft /launch post
