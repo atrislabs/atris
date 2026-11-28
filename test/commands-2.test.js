@@ -1705,7 +1705,8 @@ test('mission run bounds errored claude ticks with max-ticks', () => {
       '',
     ].join('\n'), 'utf8');
     fs.chmodSync(fakeClaude, 0o755);
-    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
+    // The diagnostic turn after two failed checks is off here, so a test never starts a real engine.
+    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}`, ATRIS_MISSION_AUDIBLE: '0' };
 
     const start = runCli([
       'mission', 'start', '--no-verify', 'Bound failed worker attempts',
@@ -1761,7 +1762,8 @@ test('member run --minutes scales max-ticks past a single tick, untimed stays at
       '',
     ].join('\n'), 'utf8');
     fs.chmodSync(fakeClaude, 0o755);
-    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
+    // The diagnostic turn after two failed checks is off here, so a test never starts a real engine.
+    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}`, ATRIS_MISSION_AUDIBLE: '0' };
 
     const startMission = (title) => {
       const start = runCli([
@@ -1831,7 +1833,8 @@ test('allowed rate-limit info with a future resetsAt does not pause a timed run'
       '',
     ].join('\n'), 'utf8');
     fs.chmodSync(fakeClaude, 0o755);
-    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
+    // The diagnostic turn after two failed checks is off here, so a test never starts a real engine.
+    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}`, ATRIS_MISSION_AUDIBLE: '0' };
 
     const start = runCli([
       'mission', 'start', '--no-verify', 'timed run survives allowed rate-limit info',
@@ -1881,7 +1884,8 @@ test('member ping reaches the next tick prompt exactly once', () => {
       '',
     ].join('\n'), 'utf8');
     fs.chmodSync(fakeClaude, 0o755);
-    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
+    // The diagnostic turn after two failed checks is off here, so a test never starts a real engine.
+    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}`, ATRIS_MISSION_AUDIBLE: '0' };
 
     const start = runCli([
       'mission', 'start', '--no-verify', 'always-on member you can text',
@@ -1951,7 +1955,8 @@ test('stale session lock rotates to a fresh session instead of grinding the erro
       '',
     ].join('\n'), 'utf8');
     fs.chmodSync(fakeClaude, 0o755);
-    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
+    // The diagnostic turn after two failed checks is off here, so a test never starts a real engine.
+    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}`, ATRIS_MISSION_AUDIBLE: '0' };
 
     const start = runCli([
       'mission', 'start', '--no-verify', 'stale session lock rotates instead of pausing',
@@ -2024,7 +2029,8 @@ test('a resume against a vanished session rotates instead of grinding the error 
       '',
     ].join('\n'), 'utf8');
     fs.chmodSync(fakeClaude, 0o755);
-    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}` };
+    // The diagnostic turn after two failed checks is off here, so a test never starts a real engine.
+    const env = { PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}`, ATRIS_MISSION_AUDIBLE: '0' };
 
     const start = runCli([
       'mission', 'start', '--no-verify', 'vanished session rotates instead of pausing',
