@@ -106,7 +106,12 @@ jobs:
               fi
               node scripts/ci-quick-check.js "$BASE" "$GROUP"
               ;;
-            full) ATRIS_TEST_SPLIT=1 node scripts/ci-test-shard.js "$GROUP" ;;
+            full)
+              if [ -z "${NODE_V8_COVERAGE:-}" ] && [ -z "${NODE_COMPILE_CACHE:-}" ]; then
+                export NODE_COMPILE_CACHE="$RUNNER_TEMP/atris-node-compile-cache"
+              fi
+              ATRIS_TEST_SPLIT=1 node scripts/ci-test-shard.js "$GROUP"
+              ;;
             *) exit 1 ;;
           esac
 
