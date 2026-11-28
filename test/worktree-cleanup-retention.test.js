@@ -405,3 +405,98 @@ test('cleanup does not follow a webpack cache symlink', () => {
     fs.rmSync(outside, { recursive: true, force: true });
   }
 });
+
+function ageCopy(worktree, hours) {
+  const gitdir = git(worktree, ['rev-parse', '--absolute-git-dir']);
+  for (const file of [worktree, path.join(gitdir, 'HEAD'), path.join(gitdir, 'logs', 'HEAD')]) backdate(file, hours);
+}
+
+function makeUnmerged(root, worktree, branch) {
+  git(root, ['worktree', 'add', '-q', '-b', branch, worktree, 'HEAD']);
+  fs.writeFileSync(path.join(worktree, 'work.txt'), 'saved work\n');
+  git(worktree, ['add', 'work.txt']);
+  git(worktree, ['commit', '-qm', 'saved work']);
+  return git(worktree, ['rev-parse', 'HEAD']);
+}
+
+test('cleanup previews and removes an idle named copy while preserving its branch', () => {
+  const root = initRepo();
+  const worktree = `${root}-saved`;
+  try {
+    const head = makeUnmerged(root, worktree, 'saved');
+    ageCopy(worktree, 25);
+    const preview = cleanupWorktrees({ root, base: 'HEAD', activeCwds: [] });
+    assert.equal(preview.candidates.find((item) => item.path === fs.realpathSync(worktree))?.reason, 'saved_on_branch');
+    assert.equal(fs.existsSync(worktree), true);
+    const result = cleanupWorktrees({ root, base: 'HEAD', activeCwds: [], apply: true });
+    assert.equal(result.removed.find((item) => item.reason === 'saved_on_branch')?.reason, 'saved_on_branch', JSON.stringify(result));
+    assert.equal(fs.existsSync(worktree), false);
+    assert.equal(git(root, ['rev-parse', 'refs/heads/saved']), head);
+  } finally {
+    spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('cleanup keeps recent named and old detached unmerged copies', () => {
+  const root = initRepo();
+  const named = `${root}-recent`;
+  const detached = `${root}-detached-old`;
+  try {
+    makeUnmerged(root, named, 'recent');
+    ageCopy(named, 2);
+    makeUnmerged(root, detached, 'detached-old');
+    git(detached, ['checkout', '-q', '--detach']);
+    ageCopy(detached, 25);
+    const result = cleanupWorktrees({ root, base: 'HEAD', activeCwds: [], apply: true });
+    assert.equal(result.kept.find((item) => item.path === fs.realpathSync(named))?.reason, 'unmerged');
+    assert.equal(result.kept.find((item) => item.path === fs.realpathSync(detached))?.reason, 'detached_unmerged');
+  } finally {
+    for (const worktree of [named, detached]) spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('cleanup refuses a copy detached during verification', () => {
+  const root = initRepo();
+  const worktree = `${root}-race`;
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-branch-race-'));
+  const previousPath = process.env.PATH;
+  try {
+    makeUnmerged(root, worktree, 'race');
+    ageCopy(worktree, 25);
+    fs.writeFileSync(path.join(fakeBin, 'du'), '#!/bin/sh\n/usr/bin/du "$@"\ngit -C "$2" checkout -q --detach\n', { mode: 0o755 });
+    process.env.PATH = `${fakeBin}${path.delimiter}${previousPath}`;
+    const result = cleanupWorktrees({ root, base: 'HEAD', activeCwds: [], apply: true });
+    assert.equal(result.kept.find((item) => item.path === fs.realpathSync(worktree))?.reason, 'changed_or_active_during_verification');
+    assert.equal(fs.existsSync(worktree), true);
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH; else process.env.PATH = previousPath;
+    spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
+    fs.rmSync(fakeBin, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Python environments require a neighboring project marker', () => {
+  for (const [env, marker] of [['venv', 'requirements.txt'], ['.venv', 'pyproject.toml'], ['venv', null]]) {
+    const root = initRepo();
+    const worktree = `${root}-python`;
+    try {
+      fs.appendFileSync(path.join(root, '.gitignore'), 'venv/\n.venv/\n');
+      if (marker) fs.writeFileSync(path.join(root, marker), '');
+      git(root, ['add', '.']);
+      git(root, ['commit', '-qm', 'python project']);
+      makeUnmerged(root, worktree, 'python-copy');
+      fs.mkdirSync(path.join(worktree, env));
+      fs.writeFileSync(path.join(worktree, env, 'generated'), 'environment');
+      ageCopy(worktree, 25);
+      const result = cleanupWorktrees({ root, base: 'HEAD', activeCwds: [] });
+      if (marker) assert.equal(result.candidates.find((item) => item.path === fs.realpathSync(worktree))?.reason, 'saved_on_branch');
+      else assert.equal(result.kept.find((item) => item.path === fs.realpathSync(worktree))?.reason, 'ignored_data');
+    } finally {
+      spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  }
+});
