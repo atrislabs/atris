@@ -67,8 +67,11 @@ async function perfCommand(args = [], root = process.cwd()) {
       return false;
     }
     try {
-      const source = validateRouteSource(readEntries({ routeCollection: true }).find(t => t.type === 'routes') || defaultRouteSource);
-      const snapshot = await fetchRoutes(source, process.env.ATRIS_INTERNAL_SECRET);
+      const entries = readEntries({ routeCollection: true });
+      const envRouteUrl = String(process.env.ATRIS_PERF_ROUTES_URL || '').trim();
+      const options = { allowCustomOrigin: Boolean(envRouteUrl) };
+      const source = validateRouteSource(envRouteUrl ? { name: 'routes', type: 'routes', url: envRouteUrl } : entries.find(t => t.type === 'routes') || defaultRouteSource, options);
+      const snapshot = await fetchRoutes(source, process.env.ATRIS_INTERNAL_SECRET, 15000, options);
       fs.mkdirSync(dir, { recursive: true });
       ensurePerfIgnore(root);
       fs.appendFileSync(routesFile, JSON.stringify({ timestamp: new Date().toISOString(), source: source.url, ...snapshot }) + '\n');

@@ -493,6 +493,36 @@ function remoteSha(remote, ref) {
 
 const PUSH_MAP = { ...BASE_MAP, push: { max_files: 5, max_lines: 200 } };
 
+test('push: a large proven change prints a command that lands it', async (t) => {
+  const { root, remote, dir } = project(t, { map: PUSH_MAP });
+  write(root, 'src/feature.js', 'module.exports = function feature() { return 2; };\n');
+  for (let i = 0; i < 5; i += 1) write(root, `src/extra${i}.js`, `module.exports = ${i};\n`);
+  commit(root, 'Large change\n\nProof: node proof.test.js');
+  const sha = git(root, 'rev-parse', 'HEAD');
+  const result = await check(root, ['push']);
+  assert.equal(result.code, 3, result.out);
+  assert.match(result.out, /staged: waits for the no-screen lane/);
+  const command = `ATRIS_CHECK_PERSON=0 atris check land ${sha.slice(0, 12)} --lane no-screen`;
+  assert.ok(result.out.split('\n').includes(`no runner on this project? land it with: ${command}`), result.out);
+  const runner = otherClone(t, remote, dir);
+  const bin = path.join(dir, 'bin');
+  fs.mkdirSync(bin);
+  fs.symlinkSync(path.resolve(__dirname, '../bin/atris.js'), path.join(bin, 'atris'));
+  const landed = spawnSync(command, { cwd: runner, shell: true, encoding: 'utf8', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  assert.equal(landed.status, 0, landed.stdout + landed.stderr);
+  assert.equal(remoteSha(remote, 'master'), sha);
+});
+
+test('push: a change waiting for a lane does not suggest a local landing command', async (t) => {
+  const map = { ...PUSH_MAP, checks: { ...PUSH_MAP.checks, app: { run: 'node ok.js', where: 'no-screen', when: ['src/**'] } }, push: { ...PUSH_MAP.push, lane_status: 'echo success' } };
+  const { root, remote, before, result } = await stagedCase(t, { map, change: (repo) => write(repo, 'src/feature.js', 'module.exports = function feature() { return 2; };\n') });
+  assert.equal(result.code, 3, result.out);
+  assert.ok(receiptOf(root).checks.some((row) => row.status === 'needs-lane'));
+  assert.match(result.out, /staged: waits for the no-screen lane/);
+  assert.doesNotMatch(result.out, /no runner on this project\? land it with:/);
+  assert.equal(remoteSha(remote, 'master'), before);
+});
+
 test('push: first update on the latest default branch, then check that exact code, then push it', async (t) => {
   const { root, remote, dir } = project(t, { map: PUSH_MAP });
   const other = otherClone(t, remote, dir);

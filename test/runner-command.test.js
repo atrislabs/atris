@@ -681,3 +681,23 @@ test('launchFor agrees with the real launch for every engine and every spelling 
     }
   }
 });
+
+
+test('cursor model placeholders remain literal shell arguments', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'runner-injection-'));
+  try {
+    const bin = path.join(dir, 'cursor-agent'), marker = path.join(dir, 'marker'), promptFile = path.join(dir, 'prompt');
+    fs.writeFileSync(bin, '#!/usr/bin/env node\nconsole.log(JSON.stringify(process.argv.slice(2)))\n', { mode: 0o755 });
+    fs.writeFileSync(promptFile, 'hello');
+    for (const placeholder of ['model', 'prompt', 'pinnedEffortFlag']) {
+      const payload = `x{${placeholder}};touch ${marker};#`;
+      withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'cursor', ATRIS_RUNNER_BIN: bin }, () => {
+        const cmd = buildRunnerCommand({ promptFile, model: payload });
+        const result = spawnSync('sh', ['-c', cmd], { encoding: 'utf8', env: { ...process.env, PATH: `${dir}:${process.env.PATH}` } });
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(fs.existsSync(marker), false);
+        const args = JSON.parse(result.stdout); assert.equal(args[args.indexOf('--model') + 1], payload);
+      });
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
